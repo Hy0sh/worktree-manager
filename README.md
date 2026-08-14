@@ -85,6 +85,7 @@ wtm create feat/my-branch --no-start        # without starting the stack
 
 # lifecycle
 wtm list                                    # worktrees of the current project
+wtm start feat/my-branch                    # bring a stopped stack back up
 wtm stop feat/my-branch
 wtm remove feat/my-branch                   # local branch kept
 wtm remove feat/my-branch --force           # despite modified tracked files
