@@ -43,8 +43,19 @@ type Options struct {
 	Stack      *stack.Client
 }
 
-func (o Options) dest() string {
-	return filepath.Join(o.Project.Dir, ".worktrees", o.Branch)
+// dest is where the worktree goes. A branch name is not a safe path fragment:
+// `../..` escapes .worktrees entirely, and git only rejects such a refname
+// after directories have already been created for it.
+func (o Options) dest() (string, error) {
+	root := filepath.Join(o.Project.Dir, ".worktrees")
+	dest := filepath.Join(root, o.Branch)
+	if dest != root && !strings.HasPrefix(dest, root+string(os.PathSeparator)) {
+		return "", fmt.Errorf("invalid branch name %q: the worktree would land outside %s", o.Branch, root)
+	}
+	if dest == root {
+		return "", fmt.Errorf("invalid branch name %q", o.Branch)
+	}
+	return dest, nil
 }
 
 func (o Options) logf(format string, args ...any) {
@@ -55,7 +66,10 @@ func (o Options) logf(format string, args ...any) {
 
 // Create builds the worktree and, unless NoStart, brings its stack up.
 func Create(ctx context.Context, o Options) error {
-	dest := o.dest()
+	dest, err := o.dest()
+	if err != nil {
+		return err
+	}
 	if _, err := os.Lstat(dest); err == nil {
 		return fmt.Errorf("worktree %s already exists, remove it first (`wtm remove %s`)", dest, o.Branch)
 	}

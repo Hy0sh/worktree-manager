@@ -109,11 +109,13 @@ func (m *Manager) Refresh(ctx context.Context, name string, p config.Project) er
 // failed refresh never leaves a partial dump behind.
 func (m *Manager) dump(ctx context.Context, name string, p config.Project, cfg config.Backup, db string) error {
 	final := m.DumpPath(name)
-	if err := os.MkdirAll(filepath.Dir(final), 0o755); err != nil {
+	// A dump carries everything the migrations create, reference data included,
+	// so it stays readable by its owner alone.
+	if err := os.MkdirAll(filepath.Dir(final), 0o700); err != nil {
 		return err
 	}
 	tmpPath := final + ".tmp"
-	tmp, err := os.Create(tmpPath)
+	tmp, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		return fmt.Errorf("creating the temporary dump: %w", err)
 	}
@@ -157,14 +159,14 @@ func (m *Manager) writeMeta(ctx context.Context, name string, p config.Project) 
 }
 
 func (m *Manager) writeMetaFile(name string, meta Meta) error {
-	if err := os.MkdirAll(filepath.Dir(m.MetaPath(name)), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(m.MetaPath(name)), 0o700); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(m.MetaPath(name), append(data, '\n'), 0o644)
+	return os.WriteFile(m.MetaPath(name), append(data, '\n'), 0o600)
 }
 
 // migrate replays the migration history in a throwaway container whose memory

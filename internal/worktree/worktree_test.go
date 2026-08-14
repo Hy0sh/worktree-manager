@@ -837,3 +837,46 @@ func TestListReportsNoStatusWithoutCompose(t *testing.T) {
 		t.Fatalf("status = %q, a project without a stack is neither up nor down", entries[0].Status)
 	}
 }
+
+// A branch name is not a safe path fragment, and git only rejects such a
+// refname after directories have been created for it.
+func TestCreateRefusesABranchEscapingTheWorktreeDirectory(t *testing.T) {
+	f := newFixture(t)
+	for _, branch := range []string{"../../evil", "..", "../outside"} {
+		o := f.opts(branch)
+		o.NoStart = true
+		err := Create(context.Background(), o)
+		if err == nil {
+			t.Fatalf("branch %q should be refused", branch)
+		}
+		if !strings.Contains(err.Error(), "invalid branch name") {
+			t.Fatalf("error for %q = %v", branch, err)
+		}
+		if len(f.fake.Calls) != 0 {
+			t.Fatalf("nothing should run for %q, got %v", branch, f.fake.Lines())
+		}
+	}
+	// The escape target must not have been created either.
+	if _, err := os.Stat(filepath.Join(filepath.Dir(f.root), "evil")); !os.IsNotExist(err) {
+		t.Fatal("a directory was created outside the project")
+	}
+}
+
+func TestGeneratedFilesRefuseAnInjectableName(t *testing.T) {
+	f := newFixture(t)
+	o := f.opts("feat/x")
+	o.NoStart = true
+	o.Project.Dump = true
+	o.Name = `app"; rm -rf /; echo "`
+	if err := Create(context.Background(), o); err == nil {
+		t.Fatal("a project name that would inject shell should be refused")
+	}
+
+	o = f.opts("feat/x")
+	o.NoStart = true
+	o.Project.Dump = true
+	o.Project.Backup = &config.Backup{DBService: "db\n  evil:\n    image: x"}
+	if err := Create(context.Background(), o); err == nil {
+		t.Fatal("a service name that would inject YAML should be refused")
+	}
+}

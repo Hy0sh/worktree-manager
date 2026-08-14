@@ -122,6 +122,12 @@ func PortsOverride(allocations []Allocation) string {
 				"# publishes as literals, so the worktree stack does not fight the main one.\n" +
 				"services:\n")
 		}
+		// Service names come from the project's own compose file, which docker
+		// already constrains, but this document is generated so the check is
+		// cheap insurance against a newline smuggling in extra keys.
+		if strings.ContainsAny(service, "\n\r\"'#{}[]") {
+			continue
+		}
 		fmt.Fprintf(&b, "  %s:\n    ports: !override\n", service)
 		for _, a := range byService[service] {
 			fmt.Fprintf(&b, "      - \"%d:%s\"\n", a.Port, a.Container)

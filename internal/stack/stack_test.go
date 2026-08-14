@@ -71,9 +71,10 @@ func TestFindByBranch(t *testing.T) {
 }
 
 // The compose project name is the only handle on a worktree stack's containers
-// and volumes. This is the exact name wtc produced for branch feat/wtm-e2e.
-func TestProjectNameMatchesWtc(t *testing.T) {
-	if got := ProjectName("gallia-utopia", 1, "feat/wtm-e2e"); got != "gallia-utopia-wt-1-feat-wtm-e2e" {
+// and volumes, and it has to match what worktree-compose produced, character
+// for character, or an existing stack becomes unreachable.
+func TestProjectNameMatchesTheFormerTool(t *testing.T) {
+	if got := ProjectName("my-app", 1, "feat/wtm-e2e"); got != "my-app-wt-1-feat-wtm-e2e" {
 		t.Fatalf("ProjectName = %q", got)
 	}
 	if got := ProjectName("my-app", 3, "Fix/GAL_42--Weird"); got != "my-app-wt-3-fix-gal-42-weird" {
