@@ -78,12 +78,13 @@ wtm project create my-project --dir ~/dev/projects/my-project --base develop
 wtm project list
 
 # create a worktree + start its stack
-wtm my-app feat/my-branch            # base = the project's own
-wtm feat/my-branch                          # project = current repo
-wtm feat/my-branch main                     # explicit base
-wtm feat/my-branch --no-start               # without starting the stack
+wtm create my-app feat/my-branch            # base = the project's own
+wtm create feat/my-branch                   # project = current repo
+wtm create feat/my-branch main              # explicit base
+wtm create feat/my-branch --no-start        # without starting the stack
 
 # lifecycle
+wtm list                                    # worktrees of the current project
 wtm stop feat/my-branch
 wtm remove feat/my-branch                   # local branch kept
 wtm remove feat/my-branch --force           # despite modified tracked files
@@ -100,9 +101,12 @@ wtm backup remove my-app
 ```
 
 If the first argument is a registered project, it's treated as such;
-otherwise it's a branch of the current directory's project. A branch
-named `stop`, `remove`, `project`, or `backup` would be interpreted as
-a subcommand: in that case, go through git directly.
+otherwise it's a branch of the current directory's project.
+
+Creation deliberately sits behind the `create` verb. It used to be the bare
+form, `wtm <branch>`, until a mistyped `wtm list` created a branch called
+`list` along with its worktree: any unknown word silently mutated the
+repository. Now only a real subcommand runs, and anything else is rejected.
 
 ## Configuring the backup
 
@@ -213,7 +217,7 @@ Sequences of external commands are verified through `internal/execx` (an
 injectable runner). What isn't covered automatically, to check by hand on
 a real project (my-app):
 
-1. `wtm <project> <branch> --no-start` -> the worktree contains the
+1. `wtm create <project> <branch> --no-start` -> the worktree contains the
    `*.env` files, the `.git-container` and `.db-snapshot` symlinks.
 2. Without `--no-start` -> `wtc start` runs and the allocated ports are
    displayed.

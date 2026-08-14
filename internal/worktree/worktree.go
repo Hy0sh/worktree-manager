@@ -86,7 +86,7 @@ func Create(ctx context.Context, o Options) error {
 	o.logf("worktree ready: %s", dest)
 
 	if o.NoStart {
-		o.logf("stack not started (--no-start), run `wtm %s` without the flag to start it", o.Branch)
+		o.logf("stack not started (--no-start), run `wtm create %s` without the flag to start it", o.Branch)
 		return nil
 	}
 	return start(ctx, o, dest)
