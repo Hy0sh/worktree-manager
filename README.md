@@ -198,7 +198,14 @@ over 13 GB of cumulative caps while actually running in 2 GB. Ephemeral
 A worktree starting from an empty database replays the entire migration
 history, which on a large project means tens of minutes and a memory peak
 that can get the container OOM-killed. `backup refresh` records that work
-once, as a schema-only dump; every worktree then restores it in seconds.
+once as a dump, and every worktree restores it in seconds.
+
+The dump holds the database exactly as `migrate` left it, data included: not
+just the schema, but everything the migrations create, permissions and
+reference data among them. It stops there. Seed data is not in it, because
+seeds change far more often than migrations and are quick to replay, whereas
+the migration history is not. A fresh worktree therefore starts with a
+migrated database and still gets seeded, through `wtm exec`.
 
 Nothing is asked of the project. On creation, wtm links `.db-snapshot` to
 the central backup directory, writes a restore script next to the dump, and
