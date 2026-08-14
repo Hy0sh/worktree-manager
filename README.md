@@ -160,6 +160,13 @@ be reviewed and tweaked directly in `config.json`.
 `--git-container` is only useful for projects whose compose bind-mounts the
 git-dir into a container; left off, it creates nothing.
 
+`backup list` also reports how far each dump has fallen behind, by counting the
+commits touching migrations since the revision recorded next to it, and `create`
+says so when replaying that delta would cost time. A stale dump still works, the
+application simply migrates on top of it, so this is never a blocker. The
+migration files are found through `migrations_path`, whose default matches
+Django, Prisma and MikroORM alike.
+
 ## How ports are isolated
 
 Every published port is rebased so a worktree stack never fights the main one:

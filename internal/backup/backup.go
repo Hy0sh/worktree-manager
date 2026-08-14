@@ -149,10 +149,16 @@ func (m *Manager) writeMeta(ctx context.Context, name string, p config.Project) 
 	if err != nil {
 		return fmt.Errorf("reading the project revision: %w", err)
 	}
-	meta := Meta{
+	return m.writeMetaFile(name, Meta{
 		GeneratedAt: time.Now().UTC(),
 		GeneratedBy: currentUser(),
 		GitRev:      strings.TrimSpace(res.Stdout),
+	})
+}
+
+func (m *Manager) writeMetaFile(name string, meta Meta) error {
+	if err := os.MkdirAll(filepath.Dir(m.MetaPath(name)), 0o755); err != nil {
+		return err
 	}
 	data, err := json.MarshalIndent(meta, "", "  ")
 	if err != nil {

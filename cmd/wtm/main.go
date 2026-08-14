@@ -204,6 +204,12 @@ func newCreateCmd(a *app) *cobra.Command {
 				o.Base = rest[1]
 			}
 			o.NoStart = noStart
+			if p.Dump && !noStart {
+				if st := a.manager().Check(cmd.Context(), name, p); st.Behind() {
+					fmt.Fprintf(a.out, "note: the dump is %s, `wtm backup refresh %s` would save the replay\n",
+						st.Describe(), name)
+				}
+			}
 			return worktree.Create(cmd.Context(), o)
 		},
 	}
@@ -569,14 +575,18 @@ func newBackupCmd(a *app) *cobra.Command {
 				return nil
 			}
 			w := tabwriter.NewWriter(a.out, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "PROJECT\tSIZE\tGENERATED AT\tREVISION")
+			fmt.Fprintln(w, "PROJECT\tSIZE\tGENERATED AT\tREVISION\tMIGRATIONS")
 			for _, i := range infos {
 				if !i.Present {
-					fmt.Fprintf(w, "%s\tno backup\t\t\n", i.Name)
+					fmt.Fprintf(w, "%s\tno backup\t\t\t\n", i.Name)
 					continue
 				}
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", i.Name, humanSize(i.Size),
-					i.Meta.GeneratedAt.Format(time.RFC3339), shortRev(i.Meta.GitRev))
+				staleness := "unknown"
+				if p, err := a.cfg.Get(i.Name); err == nil {
+					staleness = a.manager().Check(cmd.Context(), i.Name, p).Describe()
+				}
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", i.Name, humanSize(i.Size),
+					i.Meta.GeneratedAt.Format(time.RFC3339), shortRev(i.Meta.GitRev), staleness)
 			}
 			return w.Flush()
 		},
