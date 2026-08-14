@@ -158,26 +158,40 @@ func (a *app) worktreeBranches(name string) []string {
 func newRootCmd() *cobra.Command {
 	a := &app{}
 	root := &cobra.Command{
-		Use:   "wtm [project] <branch> [base]",
-		Short: "Creates a ready-to-use worktree and starts its stack",
-		Long: "Creates a git worktree for a registered project, copies the environment\n" +
-			"files into it, links it to the central Postgres backup, then starts its\n" +
+		Use:   "wtm",
+		Short: "Manages git worktrees and the docker stack of each one",
+		Long: "Creates git worktrees for registered projects, copies the environment\n" +
+			"files into them, restores the central Postgres dump, and starts their\n" +
 			"stack via wtc (worktree-compose), which allocates the ports.\n\n" +
-			"If the first argument names a registered project, it is treated as such;\n" +
-			"otherwise it is the branch of the project of the current directory.",
-		// Not RangeArgs(1, 3): cobra would reject a bare `wtm` before RunE
-		// gets a chance to show the help, which is what a bare call deserves.
-		Args:              cobra.MaximumNArgs(3),
-		ValidArgsFunction: a.completeProjects,
-		SilenceUsage:      true,
-		SilenceErrors:     true,
+			"Creation goes through `wtm create`: no bare invocation ever touches a\n" +
+			"repository, so a typo cannot silently create a branch.",
+		SilenceUsage:  true,
+		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			return a.load()
 		},
+	}
+	root.AddCommand(
+		newCreateCmd(a), newListCmd(a), newStopCmd(a), newRemoveCmd(a),
+		newExecCmd(a), newProjectCmd(a), newBackupCmd(a), newDoctorCmd(a),
+	)
+	return root
+}
+
+func newCreateCmd(a *app) *cobra.Command {
+	var noStart bool
+	cmd := &cobra.Command{
+		Use:   "create [project] <branch> [base]",
+		Short: "Creates a worktree and starts its stack",
+		Long: "Creates a worktree for a registered project.\n\n" +
+			"If the first argument names a registered project, it is treated as such;\n" +
+			"otherwise it is a branch of the project of the current directory.\n" +
+			"An existing local branch is reused, and <base> is then ignored.",
+		Args:              cobra.RangeArgs(1, 3),
+		ValidArgsFunction: a.completeProjects,
+		SilenceUsage:      true,
+		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if len(args) == 0 {
-				return cmd.Help()
-			}
 			name, p, rest, err := a.resolve(args)
 			if err != nil {
 				return err
@@ -190,15 +204,44 @@ func newRootCmd() *cobra.Command {
 			if len(rest) == 2 {
 				o.Base = rest[1]
 			}
-			if o.NoStart, err = cmd.Flags().GetBool("no-start"); err != nil {
-				return err
-			}
+			o.NoStart = noStart
 			return worktree.Create(cmd.Context(), o)
 		},
 	}
-	root.Flags().Bool("no-start", false, "prepares the worktree without starting the stack")
-	root.AddCommand(newStopCmd(a), newRemoveCmd(a), newExecCmd(a), newProjectCmd(a), newBackupCmd(a), newDoctorCmd(a))
-	return root
+	cmd.Flags().BoolVar(&noStart, "no-start", false, "prepares the worktree without starting the stack")
+	return cmd
+}
+
+func newListCmd(a *app) *cobra.Command {
+	return &cobra.Command{
+		Use:               "list [project]",
+		Short:             "Lists the worktrees of a project",
+		Args:              cobra.RangeArgs(0, 1),
+		ValidArgsFunction: a.completeProjects,
+		SilenceUsage:      true,
+		SilenceErrors:     true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name, p, err := a.projectArg(args)
+			if err != nil {
+				return err
+			}
+			client := &wtc.Client{Runner: a.runner, Dir: p.Dir, Out: a.out, Bin: p.WtcBin}
+			worktrees, err := client.Worktrees(cmd.Context())
+			if err != nil {
+				return err
+			}
+			if len(worktrees) == 0 {
+				fmt.Fprintf(a.out, "no worktree for %s (create one with `wtm create <branch>`)\n", name)
+				return nil
+			}
+			w := tabwriter.NewWriter(a.out, 0, 0, 2, ' ', 0)
+			fmt.Fprintln(w, "INDEX\tBRANCH\tPATH")
+			for _, wt := range worktrees {
+				fmt.Fprintf(w, "%d\t%s\t%s\n", wt.Index, wt.Branch, wt.Path)
+			}
+			return w.Flush()
+		},
+	}
 }
 
 func newStopCmd(a *app) *cobra.Command {
