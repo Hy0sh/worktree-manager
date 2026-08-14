@@ -1,0 +1,9 @@
+# binaire compilé
+/wtm
+
+# dumps volumineux et régénérables, si le stockage est redirigé ici
+# (par défaut ils vivent dans ~/.config/wtm/backups)
+/backups/
+
+#superpowers
+docs/superpowers/
