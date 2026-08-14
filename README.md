@@ -11,25 +11,43 @@ Port assignments follow the same formula
 the same `.env` markers, so a worktree created with that tool keeps the ports
 it already had.
 
+## Requirements
+
+| | Why | When |
+|---|---|---|
+| Go >= 1.24 | to install the binary | install only |
+| `git` >= 2.31 | worktrees, and `--path-format` to resolve the repository from inside one | always |
+| `docker` with Compose v2 | starting a worktree's stack | projects that have one |
+
+Nothing else, on your machine or in the target project: no Node, no plugin, no
+file to add to the repository you point it at. A project without a compose file
+works too, there is simply no stack to start.
+
+Compose `!override` is used to rebase ports declared as literals, which needs
+Compose v2.24 or later.
+
 ## Installation
 
-```sh
-# from the published module
-GOBIN=$HOME/.local/bin go install github.com/Hy0sh/worktree-manager/cmd/wtm@latest
+No clone required:
 
-# or from a clone
-GOBIN=$HOME/.local/bin go install ./cmd/wtm
+```sh
+go install github.com/Hy0sh/worktree-manager/cmd/wtm@latest
 ```
 
-`wtm --version` reports the tag it was installed from, or the commit when built
-from a working copy.
+That puts the binary in `$(go env GOPATH)/bin`, usually `~/go/bin`, which is
+not always on your PATH. Either add it, or send the binary somewhere already on
+it:
 
-Without `GOBIN`, `go install` drops the binary in `$(go env GOPATH)/bin`
-(`~/go/bin`), which isn't always on PATH. To build without installing:
-`go build -o wtm ./cmd/wtm`.
+```sh
+GOBIN=$HOME/.local/bin go install github.com/Hy0sh/worktree-manager/cmd/wtm@latest
+```
 
-After changing the code, rerun the same command to refresh the installed
-binary.
+Check it with `wtm --version`, which reports the tag it was installed from, or
+the commit when built from a working copy.
+
+From a clone, for hacking on it: `go install ./cmd/wtm`, or `go build -o wtm
+./cmd/wtm` to build without installing. Rerun it after each change to refresh
+the installed binary.
 
 ## Shell completion
 
@@ -65,20 +83,6 @@ wtm stop <TAB>               # projects, plus branches that have a worktree
 wtm stop myapp <TAB>         # that project's worktree branches
 wtm backup refresh <TAB>     # registered project names
 ```
-
-## Prerequisites
-
-- `git`, plus `docker` / `docker compose` for projects that have a stack.
-  A repository without a compose file is fine: the worktree is created and
-  usable, there is simply no stack to start.
-- Nothing to install on the target project's side.
-- Nothing about the project's ports either: those written as `${VAR:-default}`
-  are rebased through the worktree's `.env`, those written as literals through
-  a generated compose file. A port stride can be set in `.wtcrc.json` or under
-  `wtc` in `package.json`.
-- For `dump: true`: nothing on the project's side. wtm generates the compose
-  file that mounts the dump and ships the restore script itself, so the
-  behaviour never depends on the branch a worktree was cut from.
 
 ## Usage
 
