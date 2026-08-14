@@ -76,12 +76,9 @@ func Create(ctx context.Context, o Options) error {
 		if err := linkSnapshotDir(o, dest); err != nil {
 			return fmt.Errorf("linking to the backup: %w", err)
 		}
-		if err := writeRestoreScript(o.BackupsDir, o.Name); err != nil {
-			return fmt.Errorf("writing the restore script: %w", err)
-		}
-		if err := writeSnapshotOverride(dest, o.Project.BackupConfig().DBService); err != nil {
-			return fmt.Errorf("writing the snapshot compose file: %w", err)
-		}
+	}
+	if err := ensureSnapshotAssets(o, dest); err != nil {
+		return err
 	}
 	o.logf("worktree ready: %s", dest)
 
@@ -90,6 +87,33 @@ func Create(ctx context.Context, o Options) error {
 		return nil
 	}
 	return start(ctx, o, dest)
+}
+
+// Start brings an existing worktree's stack back up. Without it, restarting a
+// stopped worktree means calling wtc with the index it derives, which is
+// exactly the internal knowledge this tool exists to hide.
+func Start(ctx context.Context, o Options) error {
+	wt, err := o.Wtc.FindByBranch(ctx, o.Branch)
+	if err != nil {
+		return err
+	}
+	return start(ctx, o, wt.Path)
+}
+
+// ensureSnapshotAssets writes the restore script and the generated compose
+// file. Idempotent, and run on every start so a worktree created before they
+// existed picks them up too.
+func ensureSnapshotAssets(o Options, dest string) error {
+	if !o.Project.Dump {
+		return nil
+	}
+	if err := writeRestoreScript(o.BackupsDir, o.Name); err != nil {
+		return fmt.Errorf("writing the restore script: %w", err)
+	}
+	if err := writeSnapshotOverride(dest, o.Project.BackupConfig().DBService); err != nil {
+		return fmt.Errorf("writing the snapshot compose file: %w", err)
+	}
+	return nil
 }
 
 // Stop takes the stack down and leaves the worktree in place.
@@ -274,6 +298,9 @@ func start(ctx context.Context, o Options, dest string) error {
 		return err
 	}
 	// Hand docker the generated snapshot file on top of the project's own.
+	if err := ensureSnapshotAssets(o, dest); err != nil {
+		return err
+	}
 	if o.Project.Dump {
 		env, err := composeFileEnv(o.Project.Dir, dest)
 		if err != nil {

@@ -172,7 +172,7 @@ func newRootCmd() *cobra.Command {
 		},
 	}
 	root.AddCommand(
-		newCreateCmd(a), newListCmd(a), newStopCmd(a), newRemoveCmd(a),
+		newCreateCmd(a), newListCmd(a), newStartCmd(a), newStopCmd(a), newRemoveCmd(a),
 		newExecCmd(a), newProjectCmd(a), newBackupCmd(a), newDoctorCmd(a),
 	)
 	return root
@@ -240,6 +240,24 @@ func newListCmd(a *app) *cobra.Command {
 				fmt.Fprintf(w, "%d\t%s\t%s\n", wt.Index, wt.Branch, wt.Path)
 			}
 			return w.Flush()
+		},
+	}
+}
+
+func newStartCmd(a *app) *cobra.Command {
+	return &cobra.Command{
+		Use:               "start [project] <branch>",
+		Short:             "Starts the stack of an existing worktree",
+		Args:              cobra.RangeArgs(1, 2),
+		ValidArgsFunction: a.completeTargets,
+		SilenceUsage:      true,
+		SilenceErrors:     true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name, p, rest, err := a.resolve(args)
+			if err != nil {
+				return err
+			}
+			return worktree.Start(cmd.Context(), a.options(name, p, rest[0]))
 		},
 	}
 }

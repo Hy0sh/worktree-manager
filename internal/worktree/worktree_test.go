@@ -606,3 +606,56 @@ func TestExecWithoutAnyKnownServiceIsActionable(t *testing.T) {
 		}
 	}
 }
+
+// Stopping a worktree used to be a one-way trip: bringing it back meant
+// calling wtc with the index it derives.
+func TestStartBringsAnExistingWorktreeBackUp(t *testing.T) {
+	f := newFixture(t)
+	installWtc(t, f.root)
+	mustWrite(t, filepath.Join(f.root, "compose.yaml"), "services:\n  db: {}\n")
+	o := f.opts("feat/x")
+	o.NoStart = true
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	f.fake.Calls = nil
+	if err := Start(context.Background(), f.opts("feat/x")); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	var started bool
+	for _, l := range f.fake.Lines() {
+		if strings.HasSuffix(l, "wtc start 1") {
+			started = true
+		}
+	}
+	if !started {
+		t.Fatalf("wtc start should have run, calls = %v", f.fake.Lines())
+	}
+}
+
+// A worktree created before the restore existed must pick it up on start.
+func TestStartRegeneratesTheSnapshotAssets(t *testing.T) {
+	f := newFixture(t)
+	installWtc(t, f.root)
+	mustWrite(t, filepath.Join(f.root, "compose.yaml"), "services:\n  db: {}\n")
+	o := f.opts("feat/x")
+	o.NoStart = true
+	o.Project.Dump = true
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	generated := filepath.Join(f.root, ".worktrees", "feat", "x", ".wtm-snapshot.yaml")
+	if err := os.Remove(generated); err != nil {
+		t.Fatal(err)
+	}
+
+	start := f.opts("feat/x")
+	start.Project.Dump = true
+	if err := Start(context.Background(), start); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if _, err := os.Stat(generated); err != nil {
+		t.Fatalf("start should have rewritten the snapshot file: %v", err)
+	}
+}
