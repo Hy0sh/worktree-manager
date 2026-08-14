@@ -55,9 +55,9 @@ func (u Usage) Warning() string {
 	if !u.Tight() {
 		return ""
 	}
-	return fmt.Sprintf("attention: %d stack(s) occupent déjà %s sur les %s de la VM Docker ; "+
-		"une de plus (~%s estimés) porterait le total à ~%s. Arrête une stack (`wtm stop <branche>`) "+
-		"ou augmente la RAM de Docker Desktop si ça coince.",
+	return fmt.Sprintf("warning: %d stack(s) already use %s out of the %s of the Docker VM; "+
+		"one more (~%s estimated) would bring the total to ~%s. Stop a stack (`wtm stop <branch>`) "+
+		"or increase Docker Desktop's RAM if it gets tight.",
 		u.Projects, Human(u.Used), Human(u.Total), Human(u.PerProject()), Human(u.Projected()))
 }
 
@@ -68,10 +68,10 @@ func Read(ctx context.Context, runner execx.Runner) (Usage, error) {
 
 	res, err := runner.Run(ctx, execx.Cmd{Name: "docker", Args: []string{"info", "--format", "{{.MemTotal}}"}})
 	if err != nil {
-		return u, fmt.Errorf("mémoire totale de la VM Docker: %w", err)
+		return u, fmt.Errorf("total memory of the Docker VM: %w", err)
 	}
 	if u.Total, err = strconv.ParseInt(strings.TrimSpace(res.Stdout), 10, 64); err != nil {
-		return u, fmt.Errorf("mémoire totale illisible (%q): %w", strings.TrimSpace(res.Stdout), err)
+		return u, fmt.Errorf("unreadable total memory (%q): %w", strings.TrimSpace(res.Stdout), err)
 	}
 
 	// Which containers belong to a stack, and which are throwaway `run` ones.
@@ -80,7 +80,7 @@ func Read(ctx context.Context, runner execx.Runner) (Usage, error) {
 		Args: []string{"ps", "--format", `{{.Names}}|{{.Label "com.docker.compose.project"}}|{{.Label "com.docker.compose.oneoff"}}`},
 	})
 	if err != nil {
-		return u, fmt.Errorf("projets compose en cours: %w", err)
+		return u, fmt.Errorf("running compose projects: %w", err)
 	}
 	project := map[string]string{}
 	seen := map[string]bool{}
@@ -102,7 +102,7 @@ func Read(ctx context.Context, runner execx.Runner) (Usage, error) {
 		Args: []string{"stats", "--no-stream", "--format", "{{.Name}}|{{.MemUsage}}"},
 	})
 	if err != nil {
-		return u, fmt.Errorf("consommation des conteneurs: %w", err)
+		return u, fmt.Errorf("container consumption: %w", err)
 	}
 	for _, line := range strings.Split(res.Stdout, "\n") {
 		name, usage, ok := strings.Cut(strings.TrimSpace(line), "|")
@@ -145,17 +145,17 @@ func ParseSize(s string) (int64, error) {
 			return int64(n * u.factor), nil
 		}
 	}
-	return 0, fmt.Errorf("taille non reconnue: %q", s)
+	return 0, fmt.Errorf("unrecognized size: %q", s)
 }
 
 // Human renders bytes the way the messages read best.
 func Human(n int64) string {
 	switch {
 	case n >= 1<<30:
-		return fmt.Sprintf("%.1f Go", float64(n)/(1<<30))
+		return fmt.Sprintf("%.1f GB", float64(n)/(1<<30))
 	case n >= 1<<20:
-		return fmt.Sprintf("%.0f Mo", float64(n)/(1<<20))
+		return fmt.Sprintf("%.0f MB", float64(n)/(1<<20))
 	default:
-		return fmt.Sprintf("%d o", n)
+		return fmt.Sprintf("%d B", n)
 	}
 }

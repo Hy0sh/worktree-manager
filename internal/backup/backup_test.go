@@ -170,7 +170,7 @@ func TestRefreshExplainsAnOOMKill(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error")
 	}
-	if !strings.Contains(err.Error(), "mémoire") {
+	if !strings.Contains(err.Error(), "memory") {
 		t.Fatalf("exit 137 should be explained as a memory problem, got %q", err.Error())
 	}
 }
@@ -336,7 +336,7 @@ func TestRefreshGivesUpWhenPostgresNeverReady(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error")
 	}
-	if !strings.Contains(err.Error(), "base de données") {
+	if !strings.Contains(err.Error(), "database") {
 		t.Fatalf("error should mention database readiness, got %q", err.Error())
 	}
 }

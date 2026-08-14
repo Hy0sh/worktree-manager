@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Hy0sh/worktree-manager/internal/compose"
 	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/dockermem"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
@@ -54,7 +55,7 @@ func (o Options) logf(format string, args ...any) {
 func Create(ctx context.Context, o Options) error {
 	dest := o.dest()
 	if _, err := os.Lstat(dest); err == nil {
-		return fmt.Errorf("le worktree %s existe déjà — supprime-le d'abord (`wtm remove %s`)", dest, o.Branch)
+		return fmt.Errorf("worktree %s already exists, remove it first (`wtm remove %s`)", dest, o.Branch)
 	}
 
 	if err := addWorktree(ctx, o, dest); err != nil {
@@ -66,20 +67,20 @@ func Create(ctx context.Context, o Options) error {
 		}
 	}
 	if err := copyEnvFiles(o.Project.Dir, dest); err != nil {
-		return fmt.Errorf("copie des fichiers .env: %w", err)
+		return fmt.Errorf("copying .env files: %w", err)
 	}
 	if err := copyComposeOverrides(o.Project.Dir, dest); err != nil {
-		return fmt.Errorf("copie des overrides compose: %w", err)
+		return fmt.Errorf("copying compose overrides: %w", err)
 	}
 	if o.Project.Dump {
 		if err := linkSnapshotDir(o, dest); err != nil {
-			return fmt.Errorf("lien vers le backup: %w", err)
+			return fmt.Errorf("linking to the backup: %w", err)
 		}
 	}
-	o.logf("worktree prêt: %s", dest)
+	o.logf("worktree ready: %s", dest)
 
 	if o.NoStart {
-		o.logf("stack non démarrée (--no-start) — lance `wtm %s` sans le flag pour la démarrer", o.Branch)
+		o.logf("stack not started (--no-start), run `wtm %s` without the flag to start it", o.Branch)
 		return nil
 	}
 	return start(ctx, o, dest)
@@ -92,9 +93,9 @@ func Stop(ctx context.Context, o Options) error {
 		return err
 	}
 	if err := o.Wtc.Stop(ctx, wt.Index); err != nil {
-		return fmt.Errorf("arrêt de la stack: %w", err)
+		return fmt.Errorf("stopping the stack: %w", err)
 	}
-	o.logf("stack arrêtée (worktree %d, %s)", wt.Index, o.Branch)
+	o.logf("stack stopped (worktree %d, %s)", wt.Index, o.Branch)
 	return nil
 }
 
@@ -107,9 +108,9 @@ func Remove(ctx context.Context, o Options) error {
 	// A worktree created with --no-start on a project without the
 	// devDependency must still be removable.
 	if err := o.Wtc.EnsureAvailable(); err != nil {
-		o.logf("attention: %v — suppression sans arrêt de stack", err)
+		o.logf("warning: %v (removing without stopping the stack)", err)
 	} else if err := o.Wtc.Stop(ctx, wt.Index); err != nil {
-		return fmt.Errorf("arrêt de la stack: %w", err)
+		return fmt.Errorf("stopping the stack: %w", err)
 	}
 
 	// The worktree always holds untracked files this tool created (.env copies,
@@ -122,7 +123,7 @@ func Remove(ctx context.Context, o Options) error {
 			return err
 		}
 		if changes != "" {
-			return fmt.Errorf("le worktree %s contient des modifications non commitées:\n%s\ncommite-les, ou relance avec --force", wt.Path, changes)
+			return fmt.Errorf("worktree %s has uncommitted changes:\n%s\ncommit them, or rerun with --force", wt.Path, changes)
 		}
 	}
 	if _, err := o.Runner.Run(ctx, execx.Cmd{
@@ -130,10 +131,10 @@ func Remove(ctx context.Context, o Options) error {
 		Args: []string{"-C", o.Project.Dir, "worktree", "remove", "--force", wt.Path},
 		Live: true,
 	}); err != nil {
-		return fmt.Errorf("suppression du worktree (la stack est déjà arrêtée): %w", err)
+		return fmt.Errorf("removing the worktree (the stack is already stopped): %w", err)
 	}
 	pruneEmptyParents(wt.Path, filepath.Join(o.Project.Dir, ".worktrees"))
-	o.logf("worktree supprimé: %s (branche %s conservée)", wt.Path, o.Branch)
+	o.logf("worktree removed: %s (branch %s kept)", wt.Path, o.Branch)
 	return nil
 }
 
@@ -156,24 +157,24 @@ func trackedChanges(ctx context.Context, o Options, wtPath string) (string, erro
 		Args: []string{"-C", wtPath, "status", "--porcelain", "--untracked-files=no"},
 	})
 	if err != nil {
-		return "", fmt.Errorf("état du worktree: %w", err)
+		return "", fmt.Errorf("worktree status: %w", err)
 	}
 	return strings.TrimSpace(res.Stdout), nil
 }
 
 func addWorktree(ctx context.Context, o Options, dest string) error {
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
-		return fmt.Errorf("création de %s: %w", filepath.Dir(dest), err)
+		return fmt.Errorf("creating %s: %w", filepath.Dir(dest), err)
 	}
 	args := []string{"-C", o.Project.Dir, "worktree", "add"}
 	if branchExists(ctx, o) {
-		o.logf("la branche %s existe déjà localement: réutilisée telle quelle, base %q ignorée", o.Branch, o.Base)
+		o.logf("branch %s already exists locally: reused as-is, base %q ignored", o.Branch, o.Base)
 		args = append(args, dest, o.Branch)
 	} else {
 		args = append(args, "-b", o.Branch, dest, o.Base)
 	}
 	if _, err := o.Runner.Run(ctx, execx.Cmd{Name: "git", Args: args, Live: true}); err != nil {
-		return fmt.Errorf("création du worktree: %w", err)
+		return fmt.Errorf("creating the worktree: %w", err)
 	}
 	return nil
 }
@@ -200,11 +201,11 @@ func linkGitContainer(ctx context.Context, o Options, dest string) error {
 			Args: []string{"-C", target.repo, "rev-parse", "--absolute-git-dir"},
 		})
 		if err != nil {
-			return fmt.Errorf("résolution du git-dir de %s: %w", target.repo, err)
+			return fmt.Errorf("resolving the git-dir of %s: %w", target.repo, err)
 		}
 		gitDir := strings.TrimSpace(res.Stdout)
 		if gitDir == "" {
-			return fmt.Errorf("git-dir vide pour %s", target.repo)
+			return fmt.Errorf("empty git-dir for %s", target.repo)
 		}
 		if err := forceSymlink(gitDir, target.link); err != nil {
 			return err
@@ -240,26 +241,60 @@ func start(ctx context.Context, o Options, dest string) error {
 		return err
 	}
 	if err := o.Wtc.Start(ctx, wt.Index); err != nil {
-		return fmt.Errorf("démarrage de la stack: %w", err)
+		return fmt.Errorf("starting the stack: %w", err)
 	}
-	ports, err := wtc.ReadPorts(dest)
-	if err != nil {
-		return fmt.Errorf("relecture des ports alloués: %w", err)
-	}
-	o.logf("stack démarrée (worktree %d, %s)", wt.Index, o.Branch)
-	if len(ports) > 0 {
-		o.logf("ports: %s", strings.Join(ports, " "))
+	o.logf("stack started (worktree %d, %s)", wt.Index, o.Branch)
+	for _, line := range endpoints(o.Project.Dir, dest) {
+		o.logf("  %s", line)
 	}
 	return nil
+}
+
+// endpoints pairs each service of the compose file with the port it actually
+// listens on in this worktree, so the output is a list of addresses to open
+// rather than the raw block of variables wtc wrote into .env.
+func endpoints(projectDir, worktreeDir string) []string {
+	base, err := compose.Base(projectDir)
+	if err != nil {
+		return nil
+	}
+	services, err := compose.ServicePorts(base)
+	if err != nil {
+		return nil
+	}
+	allocated, err := wtc.ReadPortValues(worktreeDir)
+	if err != nil {
+		return nil
+	}
+
+	width := 0
+	for _, s := range services {
+		if s.Var != "" && allocated[s.Var] != "" && len(s.Service) > width {
+			width = len(s.Service)
+		}
+	}
+	var out []string
+	for _, s := range services {
+		port := allocated[s.Var]
+		if s.Var == "" || port == "" {
+			continue // hardcoded port: wtc could not isolate it, doctor says so
+		}
+		address := "localhost:" + port
+		if s.IsWeb() {
+			address = "http://" + address
+		}
+		out = append(out, fmt.Sprintf("%-*s  %s", width, s.Service, address))
+	}
+	return out
 }
 
 // forceSymlink is `ln -sfn`: replace whatever is there.
 func forceSymlink(target, link string) error {
 	if err := os.Remove(link); err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("remplacement de %s: %w", link, err)
+		return fmt.Errorf("replacing %s: %w", link, err)
 	}
 	if err := os.Symlink(target, link); err != nil {
-		return fmt.Errorf("lien %s -> %s: %w", link, target, err)
+		return fmt.Errorf("linking %s -> %s: %w", link, target, err)
 	}
 	return nil
 }

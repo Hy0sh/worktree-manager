@@ -23,6 +23,41 @@ Without `GOBIN`, `go install` drops the binary in `$(go env GOPATH)/bin`
 After changing the code, rerun the same command to refresh the installed
 binary.
 
+## Shell completion
+
+Completion scripts are generated for bash, zsh, fish and powershell. Each
+shell has its own conventions; `wtm completion <shell> --help` prints the
+exact steps for yours. The usual ones:
+
+```sh
+# zsh: any directory on your fpath works
+mkdir -p ~/.zsh/completions
+wtm completion zsh > ~/.zsh/completions/_wtm
+# then, in ~/.zshrc, before compinit runs:
+#   fpath=(~/.zsh/completions $fpath)
+#   autoload -Uz compinit && compinit
+
+# bash: requires the bash-completion package
+wtm completion bash > ~/.local/share/bash-completion/completions/wtm
+
+# fish
+wtm completion fish > ~/.config/fish/completions/wtm.fish
+```
+
+With oh-my-zsh, `~/.oh-my-zsh/completions` is already on the fpath, so
+dropping `_wtm` there is enough and no `.zshrc` change is needed.
+
+Open a new shell afterwards. The script queries the binary at completion
+time, so it only needs regenerating when you upgrade to a version that adds
+commands. Arguments complete too, not just subcommands and flags:
+
+```
+wtm <TAB>                    # registered project names
+wtm stop <TAB>               # projects, plus branches that have a worktree
+wtm stop myapp <TAB>         # that project's worktree branches
+wtm backup refresh <TAB>     # registered project names
+```
+
 ## Prerequisites
 
 - `git`, `docker` / `docker compose` on PATH.

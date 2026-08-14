@@ -89,7 +89,7 @@ func (b Backup) Validate() error {
 		missing = append(missing, "migrate_command")
 	}
 	if len(missing) > 0 {
-		return fmt.Errorf("configuration de backup incomplète, il manque %s — complète l'entrée `backup` du projet dans config.json", strings.Join(missing, " et "))
+		return fmt.Errorf("incomplete backup configuration, missing %s (fill in the project's `backup` entry in config.json)", strings.Join(missing, " and "))
 	}
 	return nil
 }
@@ -112,7 +112,7 @@ func Dir() (string, error) {
 	}
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("répertoire personnel introuvable: %w", err)
+		return "", fmt.Errorf("home directory not found: %w", err)
 	}
 	return filepath.Join(home, ".config", "wtm"), nil
 }
@@ -146,11 +146,11 @@ func Load(path string) (*Config, error) {
 		return &Config{Projects: map[string]Project{}}, nil
 	}
 	if err != nil {
-		return nil, fmt.Errorf("lecture de %s: %w", path, err)
+		return nil, fmt.Errorf("reading %s: %w", path, err)
 	}
 	cfg := &Config{}
 	if err := json.Unmarshal(data, cfg); err != nil {
-		return nil, fmt.Errorf("%s est un JSON invalide: %w", path, err)
+		return nil, fmt.Errorf("%s is invalid JSON: %w", path, err)
 	}
 	if cfg.Projects == nil {
 		cfg.Projects = map[string]Project{}
@@ -161,7 +161,7 @@ func Load(path string) (*Config, error) {
 // Save writes the registry, creating the directory when needed.
 func (c *Config) Save(path string) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		return fmt.Errorf("création de %s: %w", filepath.Dir(path), err)
+		return fmt.Errorf("creating %s: %w", filepath.Dir(path), err)
 	}
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
@@ -191,11 +191,11 @@ func (c *Config) Has(name string) bool {
 func (c *Config) Get(name string) (Project, error) {
 	p, ok := c.Projects[name]
 	if !ok {
-		known := "aucun projet enregistré"
+		known := "no registered project"
 		if len(c.Projects) > 0 {
-			known = "projets enregistrés: " + strings.Join(c.Names(), ", ")
+			known = "registered projects: " + strings.Join(c.Names(), ", ")
 		}
-		return Project{}, fmt.Errorf("projet inconnu %q (%s) — voir `wtm project list`", name, known)
+		return Project{}, fmt.Errorf("unknown project %q (%s), see `wtm project list`", name, known)
 	}
 	return p, nil
 }
@@ -207,7 +207,7 @@ func (c *Config) ResolveCurrent(repoRoot string) (string, Project, error) {
 			return name, c.Projects[name], nil
 		}
 	}
-	return "", Project{}, fmt.Errorf("le dépôt %s n'est pas enregistré — lance `wtm project create <nom> --dir %s`", repoRoot, repoRoot)
+	return "", Project{}, fmt.Errorf("repository %s is not registered, run `wtm project create <name> --dir %s`", repoRoot, repoRoot)
 }
 
 // BaseBranchFor applies the project > config > fallback precedence.

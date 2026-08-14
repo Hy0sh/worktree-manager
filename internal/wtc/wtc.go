@@ -46,7 +46,7 @@ type Origin string
 
 const (
 	OriginConfigured Origin = "wtc_bin"
-	OriginProject    Origin = "projet"
+	OriginProject    Origin = "project"
 	OriginGlobal     Origin = "global"
 )
 
@@ -65,7 +65,7 @@ type Resolution struct {
 func (c *Client) Locate() (Resolution, error) {
 	if c.Bin != "" {
 		if _, err := os.Stat(c.Bin); err != nil {
-			return Resolution{}, fmt.Errorf("wtc_bin pointe sur %s, introuvable: %w", c.Bin, err)
+			return Resolution{}, fmt.Errorf("wtc_bin points to %s, not found: %w", c.Bin, err)
 		}
 		return resolution(c.Bin, OriginConfigured), nil
 	}
@@ -75,8 +75,8 @@ func (c *Client) Locate() (Resolution, error) {
 	if path, err := exec.LookPath("wtc"); err == nil {
 		return resolution(path, OriginGlobal), nil
 	}
-	return Resolution{}, fmt.Errorf("wtc introuvable — installe-le globalement (`npm install -g worktree-compose`), "+
-		"ou en devDependency du projet (%s), ou renseigne `wtc_bin` dans la config ; sinon utilise --no-start",
+	return Resolution{}, fmt.Errorf("wtc not found, install it globally (`npm install -g worktree-compose`), "+
+		"as a project devDependency (%s), or set `wtc_bin` in the config; otherwise use --no-start",
 		filepath.Join(c.Dir, "node_modules", ".bin"))
 }
 
@@ -137,7 +137,7 @@ func (c *Client) Worktrees(ctx context.Context) ([]Worktree, error) {
 		Args: []string{"-C", c.Dir, "worktree", "list", "--porcelain"},
 	})
 	if err != nil {
-		return nil, fmt.Errorf("énumération des worktrees: %w", err)
+		return nil, fmt.Errorf("listing worktrees: %w", err)
 	}
 	var (
 		out   []Worktree
@@ -184,11 +184,11 @@ func (c *Client) FindByBranch(ctx context.Context, branch string) (Worktree, err
 	for _, wt := range wts {
 		known = append(known, fmt.Sprintf("%d:%s", wt.Index, wt.Branch))
 	}
-	list := "aucun worktree lié"
+	list := "no linked worktree"
 	if len(known) > 0 {
-		list = "worktrees connus: " + strings.Join(known, ", ")
+		list = "known worktrees: " + strings.Join(known, ", ")
 	}
-	return Worktree{}, fmt.Errorf("aucun worktree pour la branche %q (%s)", branch, list)
+	return Worktree{}, fmt.Errorf("no worktree for branch %q (%s)", branch, list)
 }
 
 func (c *Client) run(ctx context.Context, args ...string) error {
@@ -213,6 +213,21 @@ func (c *Client) Start(ctx context.Context, index int) error {
 // Stop takes the worktree stack down, volumes preserved.
 func (c *Client) Stop(ctx context.Context, index int) error {
 	return c.run(ctx, "stop", fmt.Sprint(index))
+}
+
+// ReadPortValues returns the allocated ports keyed by environment variable.
+func ReadPortValues(worktreeDir string) (map[string]string, error) {
+	lines, err := ReadPorts(worktreeDir)
+	if err != nil {
+		return nil, err
+	}
+	values := make(map[string]string, len(lines))
+	for _, line := range lines {
+		if key, value, ok := strings.Cut(line, "="); ok {
+			values[strings.TrimSpace(key)] = strings.TrimSpace(value)
+		}
+	}
+	return values, nil
 }
 
 // ReadPorts returns the port assignments wtc wrote into the worktree .env.

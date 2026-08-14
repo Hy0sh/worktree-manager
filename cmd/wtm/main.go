@@ -28,7 +28,7 @@ import (
 
 func main() {
 	if err := newRootCmd().Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, "erreur:", err)
+		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
@@ -82,7 +82,7 @@ func (a *app) gitToplevel() (string, error) {
 		Args: []string{"rev-parse", "--show-toplevel"},
 	})
 	if err != nil {
-		return "", fmt.Errorf("le dossier courant n'est pas un dépôt git: %w", err)
+		return "", fmt.Errorf("current directory is not a git repository: %w", err)
 	}
 	return strings.TrimSpace(res.Stdout), nil
 }
@@ -103,29 +103,97 @@ func (a *app) manager() *backup.Manager {
 	return &backup.Manager{Runner: a.runner, Root: a.backups, Out: a.out}
 }
 
+// ensureLoaded backs the completion helpers: cobra does not run
+// PersistentPreRunE for the hidden __complete command, so the registry has to
+// be loaded on demand. A failure just means no suggestions.
+func (a *app) ensureLoaded() bool {
+	if a.cfg != nil {
+		return true
+	}
+	return a.load() == nil
+}
+
+// completeProjects suggests registered project names.
+func (a *app) completeProjects(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
+	if !a.ensureLoaded() || len(args) > 0 {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	return a.cfg.Names(), cobra.ShellCompDirectiveNoFileComp
+}
+
+// completeTargets suggests what `stop` and `remove` accept: a project name, or
+// a branch that actually has a worktree. Guessing branch names by hand is
+// exactly the friction worth removing here.
+func (a *app) completeTargets(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
+	if !a.ensureLoaded() {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	switch {
+	case len(args) == 0:
+		return append(a.cfg.Names(), a.worktreeBranches("")...), cobra.ShellCompDirectiveNoFileComp
+	case len(args) == 1 && a.cfg.Has(args[0]):
+		return a.worktreeBranches(args[0]), cobra.ShellCompDirectiveNoFileComp
+	}
+	return nil, cobra.ShellCompDirectiveNoFileComp
+}
+
+// worktreeBranches lists the branches that currently have a worktree, for the
+// named project or for the one of the current directory.
+func (a *app) worktreeBranches(name string) []string {
+	var p config.Project
+	var err error
+	if name != "" {
+		p, err = a.cfg.Get(name)
+	} else {
+		var root string
+		if root, err = a.gitToplevel(); err == nil {
+			_, p, err = a.cfg.ResolveCurrent(root)
+		}
+	}
+	if err != nil {
+		return nil
+	}
+	client := &wtc.Client{Runner: a.runner, Dir: p.Dir, Out: io.Discard, Bin: p.WtcBin}
+	worktrees, err := client.Worktrees(context.Background())
+	if err != nil {
+		return nil
+	}
+	branches := make([]string, 0, len(worktrees))
+	for _, w := range worktrees {
+		branches = append(branches, w.Branch)
+	}
+	return branches
+}
+
 func newRootCmd() *cobra.Command {
 	a := &app{}
 	root := &cobra.Command{
-		Use:   "wtm [projet] <branche> [base]",
-		Short: "Crée un worktree prêt à l'emploi et démarre sa stack",
-		Long: "Crée un worktree git pour un projet enregistré, y recopie les fichiers\n" +
-			"d'environnement, le relie au backup Postgres central puis démarre sa stack\n" +
-			"via wtc (worktree-compose), qui alloue les ports.\n\n" +
-			"Si le premier argument est un projet enregistré, il est traité comme tel ;\n" +
-			"sinon c'est la branche du projet du dossier courant.",
-		Args:          cobra.RangeArgs(1, 3),
-		SilenceUsage:  true,
-		SilenceErrors: true,
+		Use:   "wtm [project] <branch> [base]",
+		Short: "Creates a ready-to-use worktree and starts its stack",
+		Long: "Creates a git worktree for a registered project, copies the environment\n" +
+			"files into it, links it to the central Postgres backup, then starts its\n" +
+			"stack via wtc (worktree-compose), which allocates the ports.\n\n" +
+			"If the first argument names a registered project, it is treated as such;\n" +
+			"otherwise it is the branch of the project of the current directory.",
+		// Not RangeArgs(1, 3): cobra would reject a bare `wtm` before RunE
+		// gets a chance to show the help, which is what a bare call deserves.
+		Args:              cobra.MaximumNArgs(3),
+		ValidArgsFunction: a.completeProjects,
+		SilenceUsage:      true,
+		SilenceErrors:     true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			return a.load()
 		},
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if len(args) == 0 {
+				return cmd.Help()
+			}
 			name, p, rest, err := a.resolve(args)
 			if err != nil {
 				return err
 			}
 			if len(rest) > 2 {
-				return fmt.Errorf("trop d'arguments: %s", strings.Join(rest, " "))
+				return fmt.Errorf("too many arguments: %s", strings.Join(rest, " "))
 			}
 			o := a.options(name, p, rest[0])
 			o.Base = a.cfg.BaseBranchFor(p)
@@ -138,18 +206,19 @@ func newRootCmd() *cobra.Command {
 			return worktree.Create(cmd.Context(), o)
 		},
 	}
-	root.Flags().Bool("no-start", false, "prépare le worktree sans démarrer la stack")
+	root.Flags().Bool("no-start", false, "prepares the worktree without starting the stack")
 	root.AddCommand(newStopCmd(a), newRemoveCmd(a), newProjectCmd(a), newBackupCmd(a), newDoctorCmd(a))
 	return root
 }
 
 func newStopCmd(a *app) *cobra.Command {
 	return &cobra.Command{
-		Use:           "stop [projet] <branche>",
-		Short:         "Arrête la stack du worktree, sans le supprimer",
-		Args:          cobra.RangeArgs(1, 2),
-		SilenceUsage:  true,
-		SilenceErrors: true,
+		Use:               "stop [project] <branch>",
+		Short:             "Stops the worktree's stack, without removing it",
+		Args:              cobra.RangeArgs(1, 2),
+		ValidArgsFunction: a.completeTargets,
+		SilenceUsage:      true,
+		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name, p, rest, err := a.resolve(args)
 			if err != nil {
@@ -163,11 +232,12 @@ func newStopCmd(a *app) *cobra.Command {
 func newRemoveCmd(a *app) *cobra.Command {
 	var force bool
 	cmd := &cobra.Command{
-		Use:           "remove [projet] <branche>",
-		Short:         "Arrête la stack puis supprime le worktree (branche conservée)",
-		Args:          cobra.RangeArgs(1, 2),
-		SilenceUsage:  true,
-		SilenceErrors: true,
+		Use:               "remove [project] <branch>",
+		Short:             "Stops the stack then removes the worktree (branch kept)",
+		Args:              cobra.RangeArgs(1, 2),
+		ValidArgsFunction: a.completeTargets,
+		SilenceUsage:      true,
+		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name, p, rest, err := a.resolve(args)
 			if err != nil {
@@ -178,7 +248,7 @@ func newRemoveCmd(a *app) *cobra.Command {
 			return worktree.Remove(cmd.Context(), o)
 		},
 	}
-	cmd.Flags().BoolVar(&force, "force", false, "supprimer même si des fichiers suivis sont modifiés")
+	cmd.Flags().BoolVar(&force, "force", false, "remove even if tracked files are modified")
 	return cmd
 }
 
@@ -187,7 +257,7 @@ func newRemoveCmd(a *app) *cobra.Command {
 func newDoctorCmd(a *app) *cobra.Command {
 	return &cobra.Command{
 		Use:           "doctor",
-		Short:         "Diagnostique la configuration et la résolution de wtc",
+		Short:         "Diagnoses the configuration and wtc resolution",
 		Args:          cobra.NoArgs,
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -195,7 +265,7 @@ func newDoctorCmd(a *app) *cobra.Command {
 			fmt.Fprintf(a.out, "config   %s\n", a.cfgPath)
 			fmt.Fprintf(a.out, "backups  %s\n", a.backups)
 			if u, err := dockermem.Read(cmd.Context(), a.runner); err == nil && u.Total > 0 {
-				fmt.Fprintf(a.out, "docker   %s utilisés sur %s, %d stack(s) en cours (~%s par stack)\n",
+				fmt.Fprintf(a.out, "docker   %s used out of %s, %d stack(s) running (~%s per stack)\n",
 					dockermem.Human(u.Used), dockermem.Human(u.Total), u.Projects, dockermem.Human(u.PerProject()))
 				if msg := u.Warning(); msg != "" {
 					fmt.Fprintln(a.out, msg)
@@ -204,20 +274,20 @@ func newDoctorCmd(a *app) *cobra.Command {
 			if global, err := exec.LookPath("wtc"); err == nil {
 				fmt.Fprintf(a.out, "wtc global %s%s\n", global, versionSuffix(wtc.Client{Bin: global}))
 			} else {
-				fmt.Fprintln(a.out, "wtc global absent (`npm install -g worktree-compose` pour couvrir les projets non-Node)")
+				fmt.Fprintln(a.out, "wtc global missing (`npm install -g worktree-compose` to cover non-Node projects)")
 			}
 			if len(a.cfg.Projects) == 0 {
 				return nil
 			}
 			fmt.Fprintln(a.out)
 			w := tabwriter.NewWriter(a.out, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "PROJET\tWTC\tORIGINE\tVERSION")
+			fmt.Fprintln(w, "PROJECT\tWTC\tORIGIN\tVERSION")
 			for _, name := range a.cfg.Names() {
 				p := a.cfg.Projects[name]
 				c := wtc.Client{Runner: a.runner, Dir: p.Dir, Out: a.out, Bin: p.WtcBin}
 				r, err := c.Locate()
 				if err != nil {
-					fmt.Fprintf(w, "%s\tintrouvable\t\t\n", name)
+					fmt.Fprintf(w, "%s\tnot found\t\t\n", name)
 					continue
 				}
 				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", name, r.Path, r.Origin, orUnknown(r.Version))
@@ -243,12 +313,12 @@ func (a *app) reportPorts() error {
 		if err != nil || len(raw) == 0 {
 			continue
 		}
-		fmt.Fprintf(a.out, "\n%s: %d port(s) en dur dans %s, wtc ne pourra pas les isoler (%d déjà paramétré(s)).\n",
+		fmt.Fprintf(a.out, "\n%s: %d port(s) hardcoded in %s, wtc will not be able to isolate them (%d already parametrised).\n",
 			name, len(raw), filepath.Base(base), parametrised)
 		for _, line := range raw {
 			fmt.Fprintf(a.out, "  %s\n", line)
 		}
-		fmt.Fprintln(a.out, "  Passe-les en \"${NOM_PORT:-defaut}:cible\" dans ce fichier (un override ne suffit pas, wtc ne le lit pas).")
+		fmt.Fprintln(a.out, "  Turn them into \"${PORT_NAME:-default}:target\" in this file (an override is not enough, wtc does not read it).")
 	}
 	return nil
 }
@@ -263,13 +333,13 @@ func versionSuffix(c wtc.Client) string {
 
 func orUnknown(v string) string {
 	if v == "" {
-		return "inconnue"
+		return "unknown"
 	}
 	return v
 }
 
 func newProjectCmd(a *app) *cobra.Command {
-	cmd := &cobra.Command{Use: "project", Short: "Gère le registre de projets"}
+	cmd := &cobra.Command{Use: "project", Short: "Manages the project registry"}
 
 	var (
 		dir          string
@@ -284,8 +354,8 @@ func newProjectCmd(a *app) *cobra.Command {
 		env          []string
 	)
 	create := &cobra.Command{
-		Use:           "create <nom>",
-		Short:         "Enregistre un projet",
+		Use:           "create <name>",
+		Short:         "Registers a project",
 		Args:          cobra.ExactArgs(1),
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -296,10 +366,10 @@ func newProjectCmd(a *app) *cobra.Command {
 			}
 			info, err := os.Stat(abs)
 			if err != nil || !info.IsDir() {
-				return fmt.Errorf("%s n'est pas un répertoire accessible", abs)
+				return fmt.Errorf("%s is not an accessible directory", abs)
 			}
 			if a.cfg.Has(args[0]) {
-				return fmt.Errorf("le projet %q est déjà enregistré", args[0])
+				return fmt.Errorf("project %q is already registered", args[0])
 			}
 			p := config.Project{Dir: abs, BaseBranch: base, Dump: dump, GitContainer: gitContainer}
 			if dbService != "" || dbUser != "" || appService != "" || deps != "" || migrate != "" || len(env) > 0 {
@@ -320,35 +390,35 @@ func newProjectCmd(a *app) *cobra.Command {
 			if err := a.cfg.Save(a.cfgPath); err != nil {
 				return err
 			}
-			fmt.Fprintf(a.out, "projet %s enregistré (%s)\n", args[0], abs)
+			fmt.Fprintf(a.out, "project %s registered (%s)\n", args[0], abs)
 			return nil
 		},
 	}
-	create.Flags().StringVar(&dir, "dir", "", "chemin du dépôt (obligatoire)")
-	create.Flags().StringVar(&base, "base", "", "branche de base du projet")
-	create.Flags().BoolVar(&dump, "dump", false, "active le backup Postgres pour ce projet")
-	create.Flags().BoolVar(&gitContainer, "git-container", false, "crée les symlinks .git-container (projets qui bind-montent le git-dir)")
-	create.Flags().StringVar(&dbService, "db-service", "", "service compose de la base (défaut: "+config.DefaultDBService+")")
-	create.Flags().StringVar(&dbUser, "db-user", "", "utilisateur postgres (défaut: "+config.DefaultDBUser+")")
-	create.Flags().StringVar(&appService, "app-service", "", "service compose qui porte les migrations (ex: backend, api, php-nginx)")
-	create.Flags().StringVar(&deps, "deps", "", "commande d'installation des dépendances avant migration (ex: 'poetry install --no-root --with dev')")
-	create.Flags().StringVar(&migrate, "migrate", "", "commande de migration (ex: 'python manage.py migrate', 'npx prisma migrate deploy')")
-	create.Flags().StringArrayVar(&env, "env", nil, "variable passée au conteneur de migration, répétable (ex: --env DB_NAME="+config.DatabasePlaceholder+")")
+	create.Flags().StringVar(&dir, "dir", "", "path to the repository (required)")
+	create.Flags().StringVar(&base, "base", "", "project's base branch")
+	create.Flags().BoolVar(&dump, "dump", false, "enables the Postgres backup for this project")
+	create.Flags().BoolVar(&gitContainer, "git-container", false, "creates the .git-container symlinks (projects that bind-mount the git-dir)")
+	create.Flags().StringVar(&dbService, "db-service", "", "compose service for the database (default: "+config.DefaultDBService+")")
+	create.Flags().StringVar(&dbUser, "db-user", "", "postgres user (default: "+config.DefaultDBUser+")")
+	create.Flags().StringVar(&appService, "app-service", "", "compose service that runs the migrations (e.g. backend, api, php-nginx)")
+	create.Flags().StringVar(&deps, "deps", "", "dependency install command before migration (e.g. 'poetry install --no-root --with dev')")
+	create.Flags().StringVar(&migrate, "migrate", "", "migration command (e.g. 'python manage.py migrate', 'npx prisma migrate deploy')")
+	create.Flags().StringArrayVar(&env, "env", nil, "variable passed to the migration container, repeatable (e.g. --env DB_NAME="+config.DatabasePlaceholder+")")
 	_ = create.MarkFlagRequired("dir")
 
 	list := &cobra.Command{
 		Use:           "list",
-		Short:         "Liste les projets enregistrés",
+		Short:         "Lists the registered projects",
 		Args:          cobra.NoArgs,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(a.cfg.Projects) == 0 {
-				fmt.Fprintf(a.out, "aucun projet enregistré (%s)\n", a.cfgPath)
+				fmt.Fprintf(a.out, "no registered project (%s)\n", a.cfgPath)
 				return nil
 			}
 			w := tabwriter.NewWriter(a.out, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "NOM\tRÉPERTOIRE\tBASE\tDUMP")
+			fmt.Fprintln(w, "NAME\tDIRECTORY\tBASE\tDUMP")
 			for _, name := range a.cfg.Names() {
 				p := a.cfg.Projects[name]
 				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", name, p.Dir, a.cfg.BaseBranchFor(p), yesNo(p.Dump))
@@ -359,11 +429,12 @@ func newProjectCmd(a *app) *cobra.Command {
 
 	var assumeYes bool
 	remove := &cobra.Command{
-		Use:           "remove <nom>",
-		Short:         "Retire un projet du registre (worktrees et dépôt intacts)",
-		Args:          cobra.ExactArgs(1),
-		SilenceUsage:  true,
-		SilenceErrors: true,
+		Use:               "remove <name>",
+		ValidArgsFunction: a.completeProjects,
+		Short:             "Removes a project from the registry (worktrees and repository untouched)",
+		Args:              cobra.ExactArgs(1),
+		SilenceUsage:      true,
+		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 			if _, err := a.cfg.Get(name); err != nil {
@@ -371,8 +442,8 @@ func newProjectCmd(a *app) *cobra.Command {
 			}
 			m := a.manager()
 			if _, err := os.Stat(m.DumpPath(name)); err == nil {
-				if !assumeYes && !confirm(a.in, a.out, fmt.Sprintf("supprimer aussi le backup %s ?", m.DumpPath(name))) {
-					return fmt.Errorf("annulé")
+				if !assumeYes && !confirm(a.in, a.out, fmt.Sprintf("also delete the backup %s?", m.DumpPath(name))) {
+					return fmt.Errorf("cancelled")
 				}
 				if _, err := m.Remove(name); err != nil {
 					return err
@@ -382,22 +453,22 @@ func newProjectCmd(a *app) *cobra.Command {
 			if err := a.cfg.Save(a.cfgPath); err != nil {
 				return err
 			}
-			fmt.Fprintf(a.out, "projet %s retiré du registre\n", name)
+			fmt.Fprintf(a.out, "project %s removed from the registry\n", name)
 			return nil
 		},
 	}
-	remove.Flags().BoolVarP(&assumeYes, "yes", "y", false, "ne pas demander confirmation")
+	remove.Flags().BoolVarP(&assumeYes, "yes", "y", false, "do not ask for confirmation")
 
 	cmd.AddCommand(create, list, remove)
 	return cmd
 }
 
 func newBackupCmd(a *app) *cobra.Command {
-	cmd := &cobra.Command{Use: "backup", Short: "Gère le backup Postgres pré-migré des projets"}
+	cmd := &cobra.Command{Use: "backup", Short: "Manages the pre-migrated Postgres backup of projects"}
 
 	list := &cobra.Command{
 		Use:           "list",
-		Short:         "Liste les backups",
+		Short:         "Lists the backups",
 		Args:          cobra.NoArgs,
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -407,14 +478,14 @@ func newBackupCmd(a *app) *cobra.Command {
 				return err
 			}
 			if len(infos) == 0 {
-				fmt.Fprintln(a.out, "aucun projet avec backup activé")
+				fmt.Fprintln(a.out, "no project with backup enabled")
 				return nil
 			}
 			w := tabwriter.NewWriter(a.out, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "PROJET\tTAILLE\tGÉNÉRÉ LE\tRÉVISION")
+			fmt.Fprintln(w, "PROJECT\tSIZE\tGENERATED AT\tREVISION")
 			for _, i := range infos {
 				if !i.Present {
-					fmt.Fprintf(w, "%s\taucun backup\t\t\n", i.Name)
+					fmt.Fprintf(w, "%s\tno backup\t\t\n", i.Name)
 					continue
 				}
 				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", i.Name, humanSize(i.Size),
@@ -425,11 +496,12 @@ func newBackupCmd(a *app) *cobra.Command {
 	}
 
 	refresh := &cobra.Command{
-		Use:           "refresh [projet]",
-		Short:         "Régénère le backup (démarre la stack si besoin)",
-		Args:          cobra.RangeArgs(0, 1),
-		SilenceUsage:  true,
-		SilenceErrors: true,
+		Use:               "refresh [project]",
+		ValidArgsFunction: a.completeProjects,
+		Short:             "Regenerates the backup (starts the stack if needed)",
+		Args:              cobra.RangeArgs(0, 1),
+		SilenceUsage:      true,
+		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name, p, err := a.projectArg(args)
 			if err != nil {
@@ -440,8 +512,8 @@ func newBackupCmd(a *app) *cobra.Command {
 	}
 
 	remove := &cobra.Command{
-		Use:           "remove [projet]",
-		Short:         "Supprime le backup d'un projet",
+		Use:           "remove [project]",
+		Short:         "Deletes a project's backup",
 		Args:          cobra.RangeArgs(0, 1),
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -455,10 +527,10 @@ func newBackupCmd(a *app) *cobra.Command {
 				return err
 			}
 			if !removed {
-				fmt.Fprintf(a.out, "aucun backup à supprimer pour %s\n", name)
+				fmt.Fprintf(a.out, "no backup to delete for %s\n", name)
 				return nil
 			}
-			fmt.Fprintf(a.out, "backup de %s supprimé\n", name)
+			fmt.Fprintf(a.out, "backup of %s deleted\n", name)
 			return nil
 		},
 	}
@@ -489,7 +561,7 @@ func parseEnv(pairs []string) (map[string]string, error) {
 	for _, pair := range pairs {
 		key, value, ok := strings.Cut(pair, "=")
 		if !ok || key == "" {
-			return nil, fmt.Errorf("--env attend KEY=VALUE, reçu %q", pair)
+			return nil, fmt.Errorf("--env expects KEY=VALUE, got %q", pair)
 		}
 		out[key] = value
 	}
@@ -497,33 +569,33 @@ func parseEnv(pairs []string) (map[string]string, error) {
 }
 
 func confirm(in io.Reader, out io.Writer, question string) bool {
-	fmt.Fprintf(out, "%s [o/N] ", question)
+	fmt.Fprintf(out, "%s [y/N] ", question)
 	scanner := bufio.NewScanner(in)
 	if !scanner.Scan() {
 		return false
 	}
 	answer := strings.ToLower(strings.TrimSpace(scanner.Text()))
-	return answer == "o" || answer == "oui" || answer == "y" || answer == "yes"
+	return answer == "y" || answer == "yes"
 }
 
 func yesNo(b bool) string {
 	if b {
-		return "oui"
+		return "yes"
 	}
-	return "non"
+	return "no"
 }
 
 func humanSize(n int64) string {
 	const unit = 1024
 	if n < unit {
-		return fmt.Sprintf("%d o", n)
+		return fmt.Sprintf("%d B", n)
 	}
 	div, exp := int64(unit), 0
 	for n/div >= unit && exp < 3 {
 		div *= unit
 		exp++
 	}
-	return fmt.Sprintf("%.1f %co", float64(n)/float64(div), "kMG"[exp])
+	return fmt.Sprintf("%.1f %cB", float64(n)/float64(div), "kMG"[exp])
 }
 
 func shortRev(rev string) string {

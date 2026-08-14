@@ -128,7 +128,7 @@ func TestCreateExistingBranchIgnoresBase(t *testing.T) {
 	if strings.Contains(addLine, "-b") || strings.Contains(addLine, "develop") {
 		t.Fatalf("existing branch must be reused as-is, got %q", addLine)
 	}
-	if !strings.Contains(out.String(), "existe") {
+	if !strings.Contains(out.String(), "already exists") {
 		t.Fatalf("an info message about the existing branch was expected, got %q", out.String())
 	}
 }
@@ -270,6 +270,44 @@ func TestCreateStartsStackUnlessNoStart(t *testing.T) {
 	}
 	if !started {
 		t.Fatalf("wtc start should have run, calls = %v", f.fake.Lines())
+	}
+}
+
+// The raw wtc .env block ("BACKEND_PORT=28007 DB_PORT=25439") tells nobody
+// where to point a browser. Pair each service with its allocated port instead.
+func TestCreateListsServiceEndpointsAfterStart(t *testing.T) {
+	f := newFixture(t)
+	installWtc(t, f.root)
+	mustWrite(t, filepath.Join(f.root, "compose.yaml"), `services:
+  backend:
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+  db:
+    ports:
+      - "${DB_PORT:-5432}:5432"
+  legacy:
+    ports:
+      - "9000:9000"
+`)
+	// Copied into the worktree by Create, then read back as if wtc wrote it.
+	mustWrite(t, filepath.Join(f.root, ".env"), "FOO=bar\n\n# --- wtc port overrides ---\nBACKEND_PORT=28007\nDB_PORT=25439\n# --- end wtc ---\n")
+
+	var out strings.Builder
+	o := f.opts("feat/x")
+	o.Out = &out
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	got := out.String()
+	if !strings.Contains(got, "backend  http://localhost:28007") {
+		t.Fatalf("a web service should get a clickable URL, got:\n%s", got)
+	}
+	if !strings.Contains(got, "db       localhost:25439") {
+		t.Fatalf("a database should be listed without an http scheme, got:\n%s", got)
+	}
+	if strings.Contains(got, "legacy") {
+		t.Fatalf("a hardcoded port is not isolated, listing it would mislead:\n%s", got)
 	}
 }
 

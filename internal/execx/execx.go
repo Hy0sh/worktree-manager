@@ -59,7 +59,7 @@ func (e *Error) Error() string {
 	if msg == "" && e.Err != nil {
 		msg = e.Err.Error()
 	}
-	return fmt.Sprintf("`%s` a échoué (exit %d): %s", e.Cmd, e.ExitCode, msg)
+	return fmt.Sprintf("`%s` failed (exit %d): %s", e.Cmd, e.ExitCode, msg)
 }
 
 func (e *Error) Unwrap() error { return e.Err }

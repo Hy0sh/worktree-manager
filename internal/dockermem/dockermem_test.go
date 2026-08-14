@@ -25,7 +25,7 @@ func TestParseSize(t *testing.T) {
 			t.Fatalf("ParseSize(%q) = %d, want ~%d", in, got, want)
 		}
 	}
-	if _, err := ParseSize("beaucoup"); err == nil {
+	if _, err := ParseSize("lots"); err == nil {
 		t.Fatal("an unparsable size should be an error")
 	}
 }
@@ -107,7 +107,7 @@ func TestTightUsesMeasuredAveragePerStack(t *testing.T) {
 		t.Fatal("10 GiB projected out of ~10.9 GiB should warn")
 	}
 	msg := u.Warning()
-	for _, want := range []string{"4 stack", "Go", "wtm stop"} {
+	for _, want := range []string{"4 stack", "GB", "wtm stop"} {
 		if !strings.Contains(msg, want) {
 			t.Fatalf("warning %q should mention %q", msg, want)
 		}

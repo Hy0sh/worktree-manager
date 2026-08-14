@@ -75,7 +75,7 @@ func (m *Manager) Refresh(ctx context.Context, name string, p config.Project) er
 	if err := m.ensureUp(ctx, name, p, cfg); err != nil {
 		return err
 	}
-	if err := m.waitFor(ctx, "la base de données", dbWaitAttempts, execx.Cmd{
+	if err := m.waitFor(ctx, "the database", dbWaitAttempts, execx.Cmd{
 		Name: "docker",
 		Args: []string{"compose", "exec", "-T", cfg.DBService, "pg_isready", "-U", cfg.DBUser},
 		Dir:  p.Dir,
@@ -88,10 +88,10 @@ func (m *Manager) Refresh(ctx context.Context, name string, p config.Project) er
 	}()
 
 	if _, err := m.psql(ctx, p, cfg, "DROP DATABASE IF EXISTS "+db+";"); err != nil {
-		return fmt.Errorf("nettoyage de la base temporaire: %w", err)
+		return fmt.Errorf("cleaning up the temporary database: %w", err)
 	}
 	if _, err := m.psql(ctx, p, cfg, "CREATE DATABASE "+db+";"); err != nil {
-		return fmt.Errorf("création de la base temporaire: %w", err)
+		return fmt.Errorf("creating the temporary database: %w", err)
 	}
 	if err := m.migrate(ctx, p, cfg, db); err != nil {
 		return err
@@ -113,7 +113,7 @@ func (m *Manager) dump(ctx context.Context, name string, p config.Project, cfg c
 	tmpPath := final + ".tmp"
 	tmp, err := os.Create(tmpPath)
 	if err != nil {
-		return fmt.Errorf("création du dump temporaire: %w", err)
+		return fmt.Errorf("creating the temporary dump: %w", err)
 	}
 	_, runErr := m.Runner.Run(ctx, execx.Cmd{
 		Name:   "docker",
@@ -132,9 +132,9 @@ func (m *Manager) dump(ctx context.Context, name string, p config.Project, cfg c
 	}
 	if err := os.Rename(tmpPath, final); err != nil {
 		_ = os.Remove(tmpPath)
-		return fmt.Errorf("publication du dump: %w", err)
+		return fmt.Errorf("publishing the dump: %w", err)
 	}
-	m.logf("dump écrit: %s", final)
+	m.logf("dump written: %s", final)
 	return nil
 }
 
@@ -145,7 +145,7 @@ func (m *Manager) writeMeta(ctx context.Context, name string, p config.Project) 
 		Dir:  p.Dir,
 	})
 	if err != nil {
-		return fmt.Errorf("lecture de la révision du projet: %w", err)
+		return fmt.Errorf("reading the project revision: %w", err)
 	}
 	meta := Meta{
 		GeneratedAt: time.Now().UTC(),
@@ -190,7 +190,7 @@ func (m *Manager) migrate(ctx context.Context, p config.Project, cfg config.Back
 	args = append(args, cfg.AppService, "sh", "-c", shell)
 
 	if _, err := m.Runner.Run(ctx, execx.Cmd{Name: "docker", Args: args, Dir: p.Dir, Live: true}); err != nil {
-		return fmt.Errorf("migrations sur la base temporaire: %w", withOOMHint(err))
+		return fmt.Errorf("migrations on the temporary database: %w", withOOMHint(err))
 	}
 	return nil
 }
@@ -200,7 +200,7 @@ func (m *Manager) migrate(ctx context.Context, p config.Project, cfg config.Back
 func writeMemOverride(service string) (string, error) {
 	f, err := os.CreateTemp("", "wtm-mem-*.yaml")
 	if err != nil {
-		return "", fmt.Errorf("override mémoire temporaire: %w", err)
+		return "", fmt.Errorf("temporary memory override: %w", err)
 	}
 	_, err = f.WriteString("services:\n  " + service + ":\n    mem_limit: 0\n")
 	if closeErr := f.Close(); err == nil {
@@ -223,7 +223,7 @@ func (m *Manager) ensureUp(ctx context.Context, name string, p config.Project, c
 		Dir:  p.Dir,
 	})
 	if err != nil {
-		return fmt.Errorf("état de la stack %s: %w", name, err)
+		return fmt.Errorf("state of stack %s: %w", name, err)
 	}
 	running := map[string]bool{}
 	for _, line := range strings.Split(res.Stdout, "\n") {
@@ -237,7 +237,7 @@ func (m *Manager) ensureUp(ctx context.Context, name string, p config.Project, c
 		missing = append(missing, cfg.DBService)
 	}
 	if len(missing) == 0 {
-		m.logf("base de données de %s déjà démarrée", name)
+		m.logf("database of %s already running", name)
 		return nil
 	}
 	if _, err := m.Runner.Run(ctx, execx.Cmd{
@@ -246,7 +246,7 @@ func (m *Manager) ensureUp(ctx context.Context, name string, p config.Project, c
 		Dir:  p.Dir,
 		Live: true,
 	}); err != nil {
-		return fmt.Errorf("démarrage de la stack %s: %w", name, err)
+		return fmt.Errorf("starting stack %s: %w", name, err)
 	}
 	return nil
 }
@@ -276,7 +276,7 @@ func (m *Manager) waitFor(ctx context.Context, label string, defaultAttempts int
 			}
 		}
 	}
-	return fmt.Errorf("délai dépassé en attendant %s (%d tentatives): %w", label, attempts, last)
+	return fmt.Errorf("timed out waiting for %s (%d attempts): %w", label, attempts, last)
 }
 
 func (m *Manager) psql(ctx context.Context, p config.Project, cfg config.Backup, sql string) (execx.Result, error) {
@@ -327,7 +327,7 @@ func (m *Manager) ReadMeta(name string) (Meta, error) {
 	}
 	var meta Meta
 	if err := json.Unmarshal(data, &meta); err != nil {
-		return Meta{}, fmt.Errorf("%s est illisible: %w", m.MetaPath(name), err)
+		return Meta{}, fmt.Errorf("%s is unreadable: %w", m.MetaPath(name), err)
 	}
 	return meta, nil
 }
@@ -354,7 +354,7 @@ func (m *Manager) Remove(name string) (bool, error) {
 func withOOMHint(err error) error {
 	var e *execx.Error
 	if errors.As(err, &e) && e.ExitCode == 137 {
-		return fmt.Errorf("%w\nprocessus tué (exit 137), très probablement faute de mémoire: augmente la RAM allouée à Docker, ou arrête le temps du refresh les services non nécessaires (frontend, celery, pgadmin)", err)
+		return fmt.Errorf("%w\nprocess killed (exit 137), most likely out of memory: increase the RAM allocated to Docker, or stop non-essential services during the refresh (frontend, celery, pgadmin)", err)
 	}
 	return err
 }
@@ -376,5 +376,5 @@ func currentUser() string {
 	if u, err := user.Current(); err == nil && u.Username != "" {
 		return u.Username
 	}
-	return "inconnu"
+	return "unknown"
 }

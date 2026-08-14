@@ -28,7 +28,7 @@ func Files(dir string) ([]string, error) {
 		}
 	}
 	if len(files) == 0 {
-		return nil, fmt.Errorf("aucun fichier compose trouvé dans %s", dir)
+		return nil, fmt.Errorf("no compose file found in %s", dir)
 	}
 	for _, name := range overrideNames {
 		if path := filepath.Join(dir, name); exists(path) {
