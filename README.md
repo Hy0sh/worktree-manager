@@ -88,6 +88,11 @@ wtm stop feat/my-branch
 wtm remove feat/my-branch                   # local branch kept
 wtm remove feat/my-branch --force           # despite modified tracked files
 
+# run anything in the worktree's own containers
+wtm exec feat/my-branch -- python manage.py seed_data
+wtm exec feat/my-branch -- bash
+wtm exec feat/my-branch --service db -- psql -U postgres
+
 # Postgres backup
 wtm backup refresh my-app            # starts db+backend if needed
 wtm backup list
@@ -174,6 +179,11 @@ the stack starts, on top of the project's own compose files.
 
 Putting the mount in the project's compose instead would tie the behaviour
 to the branch the worktree was cut from, since that file is versioned.
+
+The dump carries the schema and the migration table, never data, so a fresh
+worktree still needs its own seed. `wtm exec` is the way in: reaching the
+container by hand means knowing the compose project name wtc derives from the
+repository, the index and the branch, which is internal knowledge.
 
 Postgres only runs `docker-entrypoint-initdb.d` on an empty data directory,
 which gives the right semantics for free: a fresh worktree restores, an

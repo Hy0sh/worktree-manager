@@ -405,3 +405,29 @@ func copyFile(src, dst string) error {
 	}
 	return os.WriteFile(dst, data, info.Mode().Perm())
 }
+
+// Exec runs a command inside the worktree's application container. Doing it by
+// hand means knowing the compose project name wtc derives, which is internal
+// knowledge no user should need.
+func Exec(ctx context.Context, o Options, service string, command []string) error {
+	wt, err := o.Wtc.FindByBranch(ctx, o.Branch)
+	if err != nil {
+		return err
+	}
+	if service == "" {
+		service = o.Project.BackupConfig().AppService
+	}
+	if service == "" {
+		return fmt.Errorf("no application service known for this project: pass --service, " +
+			"or set app_service in its config")
+	}
+	project := wtc.ProjectName(filepath.Base(o.Project.Dir), wt.Index, wt.Branch)
+	args := append([]string{"compose", "-p", project, "exec", service}, command...)
+	_, err = o.Runner.Run(ctx, execx.Cmd{
+		Name:        "docker",
+		Args:        args,
+		Dir:         wt.Path,
+		Interactive: true,
+	})
+	return err
+}

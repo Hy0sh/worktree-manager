@@ -24,6 +24,9 @@ type Cmd struct {
 	Stdout io.Writer
 	// Live mirrors output to the terminal, for long commands like docker build.
 	Live bool
+	// Interactive hands the process the terminal itself, so that a shell or
+	// any prompt-driven command behaves normally. Nothing is captured.
+	Interactive bool
 }
 
 func (c Cmd) String() string {
@@ -78,6 +81,24 @@ func (r OSRunner) Run(ctx context.Context, c Cmd) (Result, error) {
 		cmd.Env = append(os.Environ(), c.Env...)
 	}
 	cmd.Stdin = c.Stdin
+
+	// An interactive command needs the real terminal on all three streams:
+	// capturing output would break line editing, and without stdin a shell
+	// exits immediately.
+	if c.Interactive {
+		cmd.Stdin = os.Stdin
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		runErr := cmd.Run()
+		var res Result
+		if cmd.ProcessState != nil {
+			res.ExitCode = cmd.ProcessState.ExitCode()
+		}
+		if runErr != nil {
+			return res, &Error{Cmd: c.String(), ExitCode: res.ExitCode, Err: runErr}
+		}
+		return res, nil
+	}
 
 	var outBuf, errBuf bytes.Buffer
 	outs := []io.Writer{}

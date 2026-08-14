@@ -197,7 +197,7 @@ func newRootCmd() *cobra.Command {
 		},
 	}
 	root.Flags().Bool("no-start", false, "prepares the worktree without starting the stack")
-	root.AddCommand(newStopCmd(a), newRemoveCmd(a), newProjectCmd(a), newBackupCmd(a), newDoctorCmd(a))
+	root.AddCommand(newStopCmd(a), newRemoveCmd(a), newExecCmd(a), newProjectCmd(a), newBackupCmd(a), newDoctorCmd(a))
 	return root
 }
 
@@ -217,6 +217,36 @@ func newStopCmd(a *app) *cobra.Command {
 			return worktree.Stop(cmd.Context(), a.options(name, p, rest[0]))
 		},
 	}
+}
+
+func newExecCmd(a *app) *cobra.Command {
+	var service string
+	cmd := &cobra.Command{
+		Use:   "exec [project] <branch> -- <command>...",
+		Short: "Runs a command in the worktree's application container",
+		Long: "Runs a command inside the container of a worktree's stack, resolving the\n" +
+			"compose project name for you.\n\n" +
+			"  wtm exec feat/my-branch -- python manage.py seed_data\n" +
+			"  wtm exec feat/my-branch -- bash",
+		Args:              cobra.MinimumNArgs(2),
+		ValidArgsFunction: a.completeTargets,
+		SilenceUsage:      true,
+		SilenceErrors:     true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			dash := cmd.ArgsLenAtDash()
+			if dash < 1 {
+				return fmt.Errorf("separate the command with --, as in " +
+					"`wtm exec <branch> -- python manage.py seed_data`")
+			}
+			name, p, rest, err := a.resolve(args[:dash])
+			if err != nil {
+				return err
+			}
+			return worktree.Exec(cmd.Context(), a.options(name, p, rest[0]), service, args[dash:])
+		},
+	}
+	cmd.Flags().StringVar(&service, "service", "", "compose service to run in (defaults to the project's app_service)")
+	return cmd
 }
 
 func newRemoveCmd(a *app) *cobra.Command {

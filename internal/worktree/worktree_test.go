@@ -561,3 +561,48 @@ func TestRemoveDropsTheStackVolumes(t *testing.T) {
 		t.Fatalf("both volumes should be removed, got %q", removal)
 	}
 }
+
+// Running a command in a worktree stack otherwise means knowing the compose
+// project name wtc derives, which is internal knowledge.
+func TestExecTargetsTheWorktreeStack(t *testing.T) {
+	f := newFixture(t)
+	o := f.opts("feat/x")
+	o.Project.Backup = &config.Backup{AppService: "backend"}
+	if err := Exec(context.Background(), o, "", []string{"python", "manage.py", "seed_data"}); err != nil {
+		t.Fatalf("Exec: %v", err)
+	}
+	last := f.fake.Lines()[len(f.fake.Lines())-1]
+	want := "docker compose -p " + wtc.ProjectName(filepath.Base(f.root), 1, "feat/x") +
+		" exec backend python manage.py seed_data"
+	if last != want {
+		t.Fatalf("exec call =\n  %q\nwant\n  %q", last, want)
+	}
+	if dir := f.fake.Calls[len(f.fake.Calls)-1].Dir; dir != filepath.Join(f.root, ".worktrees", "feat", "x") {
+		t.Fatalf("must run from the worktree, got %q", dir)
+	}
+}
+
+func TestExecServiceFlagOverridesTheConfiguredOne(t *testing.T) {
+	f := newFixture(t)
+	o := f.opts("feat/x")
+	o.Project.Backup = &config.Backup{AppService: "backend"}
+	if err := Exec(context.Background(), o, "frontend", []string{"sh"}); err != nil {
+		t.Fatalf("Exec: %v", err)
+	}
+	if last := f.fake.Lines()[len(f.fake.Lines())-1]; !strings.HasSuffix(last, "exec frontend sh") {
+		t.Fatalf("--service should win, got %q", last)
+	}
+}
+
+func TestExecWithoutAnyKnownServiceIsActionable(t *testing.T) {
+	f := newFixture(t)
+	err := Exec(context.Background(), f.opts("feat/x"), "", []string{"sh"})
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	for _, want := range []string{"--service", "app_service"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q should mention %q", err.Error(), want)
+		}
+	}
+}
