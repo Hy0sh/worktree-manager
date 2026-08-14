@@ -42,6 +42,9 @@ type Project struct {
 const (
 	DefaultDBService = "db"
 	DefaultDBUser    = "postgres"
+	// DefaultMigrationsPath covers Django's app/migrations, Prisma's
+	// prisma/migrations and MikroORM's src/database/migrations.
+	DefaultMigrationsPath = "*migrations/*"
 	// DatabasePlaceholder is replaced by the throwaway database name in
 	// migrate_command and in every env value.
 	DatabasePlaceholder = "{{database}}"
@@ -62,6 +65,10 @@ type Backup struct {
 	// MigrateCommand builds the schema, e.g. "python manage.py migrate",
 	// "npx prisma migrate deploy", "mikro-orm migration:up". Required.
 	MigrateCommand string `json:"migrate_command,omitempty"`
+	// MigrationsPath is the git pathspec of the migration files, used to tell
+	// whether a dump has fallen behind. The default matches the layout of
+	// Django, Prisma and MikroORM alike.
+	MigrationsPath string `json:"migrations_path,omitempty"`
 	// Env tells the app which database to target: {"DB_NAME": "{{database}}"}
 	// or {"DATABASE_URL": "postgresql://user:pass@db:5432/{{database}}"}.
 	Env map[string]string `json:"env,omitempty"`
@@ -78,6 +85,9 @@ func (p Project) BackupConfig() Backup {
 	}
 	if b.DBUser == "" {
 		b.DBUser = DefaultDBUser
+	}
+	if b.MigrationsPath == "" {
+		b.MigrationsPath = DefaultMigrationsPath
 	}
 	return b
 }
