@@ -22,6 +22,7 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/dockermem"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
+	"github.com/Hy0sh/worktree-manager/internal/gitx"
 	"github.com/Hy0sh/worktree-manager/internal/worktree"
 	"github.com/Hy0sh/worktree-manager/internal/wtc"
 )
@@ -68,23 +69,12 @@ func (a *app) resolve(args []string) (string, config.Project, []string, error) {
 		p, err := a.cfg.Get(args[0])
 		return args[0], p, args[1:], err
 	}
-	root, err := a.gitToplevel()
+	root, err := gitx.RepoRoot(context.Background(), a.runner)
 	if err != nil {
 		return "", config.Project{}, nil, err
 	}
 	name, p, err := a.cfg.ResolveCurrent(root)
 	return name, p, args, err
-}
-
-func (a *app) gitToplevel() (string, error) {
-	res, err := a.runner.Run(context.Background(), execx.Cmd{
-		Name: "git",
-		Args: []string{"rev-parse", "--show-toplevel"},
-	})
-	if err != nil {
-		return "", fmt.Errorf("current directory is not a git repository: %w", err)
-	}
-	return strings.TrimSpace(res.Stdout), nil
 }
 
 func (a *app) options(name string, p config.Project, branch string) worktree.Options {
@@ -146,7 +136,7 @@ func (a *app) worktreeBranches(name string) []string {
 		p, err = a.cfg.Get(name)
 	} else {
 		var root string
-		if root, err = a.gitToplevel(); err == nil {
+		if root, err = gitx.RepoRoot(context.Background(), a.runner); err == nil {
 			_, p, err = a.cfg.ResolveCurrent(root)
 		}
 	}
@@ -545,7 +535,7 @@ func (a *app) projectArg(args []string) (string, config.Project, error) {
 		p, err := a.cfg.Get(args[0])
 		return args[0], p, err
 	}
-	root, err := a.gitToplevel()
+	root, err := gitx.RepoRoot(context.Background(), a.runner)
 	if err != nil {
 		return "", config.Project{}, err
 	}
