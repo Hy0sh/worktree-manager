@@ -1,5 +1,5 @@
-// Package worktree creates, starts, stops and removes project worktrees. It is
-// the Go port of bin/new-worktree, with the docker side delegated to wtc.
+// Package worktree creates, starts, stops and removes project worktrees, and
+// drives the docker stack that goes with each one.
 package worktree
 
 import (
@@ -16,7 +16,7 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/dockermem"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
-	"github.com/Hy0sh/worktree-manager/internal/wtc"
+	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
 
 // composeOverrides are copied verbatim when present, like bin/new-worktree did.
@@ -39,7 +39,7 @@ type Options struct {
 	BackupsDir string
 	Runner     execx.Runner
 	Out        io.Writer
-	Wtc        *wtc.Client
+	Stack      *stack.Client
 }
 
 func (o Options) dest() string {
@@ -94,7 +94,7 @@ func Create(ctx context.Context, o Options) error {
 // stopped worktree means calling wtc with the index it derives, which is
 // exactly the internal knowledge this tool exists to hide.
 func Start(ctx context.Context, o Options) error {
-	wt, err := o.Wtc.FindByBranch(ctx, o.Branch)
+	wt, err := o.Stack.FindByBranch(ctx, o.Branch)
 	if err != nil {
 		return err
 	}
@@ -119,11 +119,11 @@ func ensureSnapshotAssets(o Options, dest string) error {
 
 // Stop takes the stack down and leaves the worktree in place.
 func Stop(ctx context.Context, o Options) error {
-	wt, err := o.Wtc.FindByBranch(ctx, o.Branch)
+	wt, err := o.Stack.FindByBranch(ctx, o.Branch)
 	if err != nil {
 		return err
 	}
-	if err := o.Wtc.Stop(ctx, wt.Index); err != nil {
+	if err := o.Stack.Down(ctx, o.projectName(wt), wt.Path); err != nil {
 		return fmt.Errorf("stopping the stack: %w", err)
 	}
 	o.logf("stack stopped (worktree %d, %s)", wt.Index, o.Branch)
@@ -132,15 +132,11 @@ func Stop(ctx context.Context, o Options) error {
 
 // Remove stops the stack then removes the worktree, keeping the local branch.
 func Remove(ctx context.Context, o Options) error {
-	wt, err := o.Wtc.FindByBranch(ctx, o.Branch)
+	wt, err := o.Stack.FindByBranch(ctx, o.Branch)
 	if err != nil {
 		return err
 	}
-	// A worktree created with --no-start on a project without the
-	// devDependency must still be removable.
-	if err := o.Wtc.EnsureAvailable(); err != nil {
-		o.logf("warning: %v (removing without stopping the stack)", err)
-	} else if err := o.Wtc.Stop(ctx, wt.Index); err != nil {
+	if err := o.Stack.Down(ctx, o.projectName(wt), wt.Path); err != nil {
 		return fmt.Errorf("stopping the stack: %w", err)
 	}
 
@@ -173,8 +169,8 @@ func Remove(ctx context.Context, o Options) error {
 // removeVolumes drops the stack's volumes once the worktree is gone. `docker
 // compose down`, which wtc runs on stop, deliberately keeps them: without this
 // every removed worktree leaves its database behind forever.
-func removeVolumes(ctx context.Context, o Options, wt wtc.Worktree) {
-	project := wtc.ProjectName(filepath.Base(o.Project.Dir), wt.Index, wt.Branch)
+func removeVolumes(ctx context.Context, o Options, wt stack.Worktree) {
+	project := stack.ProjectName(filepath.Base(o.Project.Dir), wt.Index, wt.Branch)
 	res, err := o.Runner.Run(ctx, execx.Cmd{
 		Name: "docker",
 		Args: []string{"volume", "ls", "-q", "--filter", "label=com.docker.compose.project=" + project},
@@ -284,9 +280,6 @@ func linkSnapshotDir(o Options, dest string) error {
 }
 
 func start(ctx context.Context, o Options, dest string) error {
-	if err := o.Wtc.EnsureAvailable(); err != nil {
-		return err
-	}
 	// Advisory only: the measurement can fail for a dozen harmless reasons and
 	// the user knows their machine better than an extrapolation does.
 	if u, err := dockermem.Read(ctx, o.Runner); err == nil {
@@ -294,22 +287,21 @@ func start(ctx context.Context, o Options, dest string) error {
 			o.logf("%s", msg)
 		}
 	}
-	wt, err := o.Wtc.FindByBranch(ctx, o.Branch)
+	wt, err := o.Stack.FindByBranch(ctx, o.Branch)
 	if err != nil {
 		return err
 	}
-	// Hand docker the generated snapshot file on top of the project's own.
 	if err := ensureSnapshotAssets(o, dest); err != nil {
 		return err
 	}
-	if o.Project.Dump {
-		env, err := composeFileEnv(o.Project.Dir, dest)
-		if err != nil {
-			return err
-		}
-		o.Wtc.Env = append(o.Wtc.Env, env)
+	if err := allocatePorts(o, wt, dest); err != nil {
+		return err
 	}
-	if err := o.Wtc.Start(ctx, wt.Index); err != nil {
+	files, err := composeFiles(o, dest)
+	if err != nil {
+		return err
+	}
+	if err := o.Stack.Up(ctx, o.projectName(wt), dest, files); err != nil {
 		return fmt.Errorf("starting the stack: %w", err)
 	}
 	o.logf("stack started (worktree %d, %s)", wt.Index, o.Branch)
@@ -317,6 +309,52 @@ func start(ctx context.Context, o Options, dest string) error {
 		o.logf("  %s", line)
 	}
 	return nil
+}
+
+// projectName is the compose project of a worktree stack, which isolates its
+// containers, network and volumes from the main stack and from one another.
+func (o Options) projectName(wt stack.Worktree) string {
+	return stack.ProjectName(filepath.Base(o.Project.Dir), wt.Index, wt.Branch)
+}
+
+// allocatePorts rebases every parameterised port of the compose file for this
+// worktree and records them in its .env, where docker compose picks them up.
+func allocatePorts(o Options, wt stack.Worktree, dest string) error {
+	base, err := compose.Base(o.Project.Dir)
+	if err != nil {
+		return err
+	}
+	services, err := compose.ServicePorts(base)
+	if err != nil {
+		return err
+	}
+	allocations, err := stack.Allocate(services, wt.Index, stack.Stride(o.Project.Dir))
+	if err != nil {
+		return err
+	}
+	if len(allocations) == 0 {
+		o.logf("warning: no port is parameterised as ${VAR:-default} in %s, this stack cannot be isolated",
+			filepath.Base(base))
+		return nil
+	}
+	return stack.WriteEnvOverrides(dest, allocations)
+}
+
+// composeFiles lists what docker compose must read, in order: the project's
+// own files as they exist in the worktree, then the generated snapshot file.
+func composeFiles(o Options, dest string) ([]string, error) {
+	projectFiles, err := compose.Files(o.Project.Dir)
+	if err != nil {
+		return nil, err
+	}
+	var files []string
+	for _, f := range projectFiles {
+		files = append(files, filepath.Join(dest, filepath.Base(f)))
+	}
+	if o.Project.Dump {
+		files = append(files, filepath.Join(dest, snapshotOverride))
+	}
+	return files, nil
 }
 
 // endpoints pairs each service of the compose file with the port it actually
@@ -331,7 +369,7 @@ func endpoints(projectDir, worktreeDir string) []string {
 	if err != nil {
 		return nil
 	}
-	allocated, err := wtc.ReadPortValues(worktreeDir)
+	allocated, err := stack.ReadPortValues(worktreeDir)
 	if err != nil {
 		return nil
 	}
@@ -438,7 +476,7 @@ func copyFile(src, dst string) error {
 // hand means knowing the compose project name wtc derives, which is internal
 // knowledge no user should need.
 func Exec(ctx context.Context, o Options, service string, command []string) error {
-	wt, err := o.Wtc.FindByBranch(ctx, o.Branch)
+	wt, err := o.Stack.FindByBranch(ctx, o.Branch)
 	if err != nil {
 		return err
 	}
@@ -449,7 +487,7 @@ func Exec(ctx context.Context, o Options, service string, command []string) erro
 		return fmt.Errorf("no application service known for this project: pass --service, " +
 			"or set app_service in its config")
 	}
-	project := wtc.ProjectName(filepath.Base(o.Project.Dir), wt.Index, wt.Branch)
+	project := stack.ProjectName(filepath.Base(o.Project.Dir), wt.Index, wt.Branch)
 	args := append([]string{"compose", "-p", project, "exec", service}, command...)
 	_, err = o.Runner.Run(ctx, execx.Cmd{
 		Name:        "docker",
@@ -463,7 +501,7 @@ func Exec(ctx context.Context, o Options, service string, command []string) erro
 // Path returns the worktree directory, so a shell can compose with it:
 // `cd $(wtm path feat/x)`.
 func Path(ctx context.Context, o Options) (string, error) {
-	wt, err := o.Wtc.FindByBranch(ctx, o.Branch)
+	wt, err := o.Stack.FindByBranch(ctx, o.Branch)
 	if err != nil {
 		return "", err
 	}
@@ -475,7 +513,7 @@ func Path(ctx context.Context, o Options) (string, error) {
 // stays on the machine, for editors, agents and anything else that works on
 // the files rather than in the running application.
 func Run(ctx context.Context, o Options, command []string) error {
-	wt, err := o.Wtc.FindByBranch(ctx, o.Branch)
+	wt, err := o.Stack.FindByBranch(ctx, o.Branch)
 	if err != nil {
 		return err
 	}
@@ -490,7 +528,7 @@ func Run(ctx context.Context, o Options, command []string) error {
 
 // Entry is one worktree as `wtm list` shows it.
 type Entry struct {
-	wtc.Worktree
+	stack.Worktree
 	// Status is "up", "down", or "-" when docker could not be reached.
 	Status string
 }
@@ -504,7 +542,7 @@ const dockerStatusTimeout = 5 * time.Second
 
 // List returns the project's worktrees along with the state of their stack.
 func List(ctx context.Context, o Options) ([]Entry, error) {
-	worktrees, err := o.Wtc.Worktrees(ctx)
+	worktrees, err := o.Stack.Worktrees(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -514,7 +552,7 @@ func List(ctx context.Context, o Options) ([]Entry, error) {
 		status := StatusUnknown
 		if running != nil {
 			status = "down"
-			if running[wtc.ProjectName(filepath.Base(o.Project.Dir), wt.Index, wt.Branch)] {
+			if running[stack.ProjectName(filepath.Base(o.Project.Dir), wt.Index, wt.Branch)] {
 				status = "up"
 			}
 		}
