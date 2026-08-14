@@ -39,6 +39,10 @@ jobs:
       - name: Build
         run: go build ./...
 
+      # govulncheck needs a newer Go than this module's floor, and setup-go
+      # pins GOTOOLCHAIN=local, so this step is allowed to fetch the toolchain
+      # it needs. The build above stays on the floor, which is the point.
       - name: Vulnerabilities
-        run: |
-          go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+        env:
+          GOTOOLCHAIN: auto
+        run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
