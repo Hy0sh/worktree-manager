@@ -62,7 +62,9 @@ wtm backup refresh <TAB>     # registered project names
 
 ## Prerequisites
 
-- `git`, `docker` / `docker compose` on PATH.
+- `git`, plus `docker` / `docker compose` for projects that have a stack.
+  A repository without a compose file is fine: the worktree is created and
+  usable, there is simply no stack to start.
 - Nothing to install on the target project's side.
 - Nothing about the project's ports either: those written as `${VAR:-default}`
   are rebased through the worktree's `.env`, those written as literals through
@@ -205,7 +207,10 @@ just the schema, but everything the migrations create, permissions and
 reference data among them. It stops there. Seed data is not in it, because
 seeds change far more often than migrations and are quick to replay, whereas
 the migration history is not. A fresh worktree therefore starts with a
-migrated database and still gets seeded, through `wtm exec`.
+migrated database and still gets seeded, through `wtm exec`. It says so on
+its own: a stack whose database is brand new prints a reminder, once, with the
+command to run. Measured on a real project, seeding took 33 seconds against
+the twenty minutes the migration history costs.
 
 Nothing is asked of the project. On creation, wtm links `.db-snapshot` to
 the central backup directory, writes a restore script next to the dump, and

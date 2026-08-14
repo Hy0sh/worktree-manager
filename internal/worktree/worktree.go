@@ -124,6 +124,10 @@ func Stop(ctx context.Context, o Options) error {
 	if err != nil {
 		return err
 	}
+	if !hasCompose(o.Project.Dir) {
+		o.logf("no compose file in this project: no stack to stop")
+		return nil
+	}
 	if err := o.Stack.Down(ctx, o.projectName(wt), wt.Path); err != nil {
 		return fmt.Errorf("stopping the stack: %w", err)
 	}
@@ -137,8 +141,10 @@ func Remove(ctx context.Context, o Options) error {
 	if err != nil {
 		return err
 	}
-	if err := o.Stack.Down(ctx, o.projectName(wt), wt.Path); err != nil {
-		return fmt.Errorf("stopping the stack: %w", err)
+	if hasCompose(o.Project.Dir) {
+		if err := o.Stack.Down(ctx, o.projectName(wt), wt.Path); err != nil {
+			return fmt.Errorf("stopping the stack: %w", err)
+		}
 	}
 
 	// The worktree always holds untracked files this tool created (.env copies,
@@ -165,6 +171,16 @@ func Remove(ctx context.Context, o Options) error {
 	o.logf("worktree removed: %s (branch %s kept)", wt.Path, o.Branch)
 	removeVolumes(ctx, o, wt)
 	return nil
+}
+
+// hasVolumes reports whether this stack already has volumes, which tells a
+// restart from a first start.
+func hasVolumes(ctx context.Context, o Options, wt stack.Worktree) bool {
+	res, err := o.Runner.Run(ctx, execx.Cmd{
+		Name: "docker",
+		Args: []string{"volume", "ls", "-q", "--filter", "label=com.docker.compose.project=" + o.projectName(wt)},
+	})
+	return err == nil && strings.TrimSpace(res.Stdout) != ""
 }
 
 // removeVolumes drops the stack's volumes once the worktree is gone. `docker
@@ -281,6 +297,12 @@ func linkSnapshotDir(o Options, dest string) error {
 }
 
 func start(ctx context.Context, o Options, dest string) error {
+	// A repository without a compose file simply has no stack. The worktree is
+	// still perfectly usable, so this is a note and not a failure.
+	if !hasCompose(o.Project.Dir) {
+		o.logf("no compose file in this project: no stack to start, the worktree is ready")
+		return nil
+	}
 	// Advisory only: the measurement can fail for a dozen harmless reasons and
 	// the user knows their machine better than an extrapolation does.
 	if u, err := dockermem.Read(ctx, o.Runner); err == nil {
@@ -302,14 +324,27 @@ func start(ctx context.Context, o Options, dest string) error {
 	if err != nil {
 		return err
 	}
+	fresh := !hasVolumes(ctx, o, wt)
 	if err := o.Stack.Up(ctx, o.projectName(wt), dest, files); err != nil {
 		return fmt.Errorf("starting the stack: %w", err)
 	}
 	o.logf("stack started (worktree %d, %s)", wt.Index, o.Branch)
+	// The dump carries what the migrations create, never seed data, so a
+	// brand new database comes up migrated but empty.
+	if fresh && o.Project.Dump {
+		o.logf("note: the database was restored from the dump and holds no seed data yet,")
+		o.logf("      seed it with `wtm exec %s -- <your seed command>`", o.Branch)
+	}
 	for _, line := range endpoints(o, wt) {
 		o.logf("  %s", line)
 	}
 	return nil
+}
+
+// hasCompose reports whether the project ships a docker compose file at all.
+func hasCompose(projectDir string) bool {
+	_, err := compose.Base(projectDir)
+	return err == nil
 }
 
 // projectName is the compose project of a worktree stack, which isolates its
@@ -564,7 +599,11 @@ func List(ctx context.Context, o Options) ([]Entry, error) {
 	if err != nil {
 		return nil, err
 	}
-	running := runningProjects(ctx, o.Runner)
+	// A project with no compose file has no stack, so it is neither up nor down.
+	running := map[string]bool(nil)
+	if hasCompose(o.Project.Dir) {
+		running = runningProjects(ctx, o.Runner)
+	}
 	entries := make([]Entry, 0, len(worktrees))
 	for _, wt := range worktrees {
 		status := StatusUnknown

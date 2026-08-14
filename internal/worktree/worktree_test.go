@@ -741,3 +741,99 @@ func TestListSurvivesAnUnreachableDocker(t *testing.T) {
 func wantProject(f *fixture) string {
 	return stack.ProjectName(filepath.Base(f.root), 1, "feat/x")
 }
+
+// Plenty of repositories have no docker stack at all. The worktree is still
+// useful there, so this must be a note and not a failure.
+func TestCreateOnAProjectWithoutCompose(t *testing.T) {
+	f := newFixture(t)
+	if err := os.Remove(filepath.Join(f.root, "compose.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	o := f.opts("feat/x")
+	o.Out = &out
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("a project without compose must not fail: %v", err)
+	}
+	if !strings.Contains(out.String(), "no compose file") {
+		t.Fatalf("the absence of a stack should be stated:\n%s", out.String())
+	}
+	for _, l := range f.fake.Lines() {
+		if strings.Contains(l, "docker") {
+			t.Fatalf("nothing docker should run, got %q", l)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(f.root, ".worktrees", "feat", "x")); err != nil {
+		t.Fatalf("the worktree itself must still be created: %v", err)
+	}
+}
+
+func TestStopAndRemoveWithoutCompose(t *testing.T) {
+	f := newFixture(t)
+	if err := os.Remove(filepath.Join(f.root, "compose.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	if err := Stop(context.Background(), f.opts("feat/x")); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if err := Remove(context.Background(), f.opts("feat/x")); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+}
+
+// A restored database comes up migrated but empty, which is worth saying once,
+// and only when the database is actually new.
+func TestFreshDatabaseWarnsAboutSeeding(t *testing.T) {
+	f := newFixture(t)
+	var out strings.Builder
+	o := f.opts("feat/x")
+	o.Project.Dump = true
+	o.Out = &out
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if !strings.Contains(out.String(), "no seed data") || !strings.Contains(out.String(), "wtm exec feat/x") {
+		t.Fatalf("a fresh database should be flagged as unseeded:\n%s", out.String())
+	}
+}
+
+func TestRestartDoesNotWarnAboutSeeding(t *testing.T) {
+	f := newFixture(t)
+	first := f.opts("feat/x")
+	first.NoStart = true
+	first.Project.Dump = true
+	if err := Create(context.Background(), first); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	inner := f.fake.Handler
+	f.fake.Handler = func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(c.String(), "volume ls") {
+			return execx.Result{Stdout: "wt_postgres_data\n"}, nil
+		}
+		return inner(c)
+	}
+	var out strings.Builder
+	o := f.opts("feat/x")
+	o.Project.Dump = true
+	o.Out = &out
+	if err := Start(context.Background(), o); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if strings.Contains(out.String(), "no seed data") {
+		t.Fatalf("an existing database keeps its data, no warning expected:\n%s", out.String())
+	}
+}
+
+func TestListReportsNoStatusWithoutCompose(t *testing.T) {
+	f := newFixture(t)
+	if err := os.Remove(filepath.Join(f.root, "compose.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := List(context.Background(), f.opts(""))
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if entries[0].Status != StatusUnknown {
+		t.Fatalf("status = %q, a project without a stack is neither up nor down", entries[0].Status)
+	}
+}
