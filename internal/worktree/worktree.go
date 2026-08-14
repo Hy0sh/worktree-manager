@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/Hy0sh/worktree-manager/internal/compose"
 	"github.com/Hy0sh/worktree-manager/internal/config"
@@ -457,4 +458,88 @@ func Exec(ctx context.Context, o Options, service string, command []string) erro
 		Interactive: true,
 	})
 	return err
+}
+
+// Path returns the worktree directory, so a shell can compose with it:
+// `cd $(wtm path feat/x)`.
+func Path(ctx context.Context, o Options) (string, error) {
+	wt, err := o.Wtc.FindByBranch(ctx, o.Branch)
+	if err != nil {
+		return "", err
+	}
+	return wt.Path, nil
+}
+
+// Run executes a command on the host with the worktree as working directory.
+// This is the counterpart of Exec: Exec goes inside the stack's container, Run
+// stays on the machine, for editors, agents and anything else that works on
+// the files rather than in the running application.
+func Run(ctx context.Context, o Options, command []string) error {
+	wt, err := o.Wtc.FindByBranch(ctx, o.Branch)
+	if err != nil {
+		return err
+	}
+	_, err = o.Runner.Run(ctx, execx.Cmd{
+		Name:        command[0],
+		Args:        command[1:],
+		Dir:         wt.Path,
+		Interactive: true,
+	})
+	return err
+}
+
+// Entry is one worktree as `wtm list` shows it.
+type Entry struct {
+	wtc.Worktree
+	// Status is "up", "down", or "-" when docker could not be reached.
+	Status string
+}
+
+// StatusUnknown is shown when docker did not answer in time. A listing is a
+// read-only question about git and must never hang on an unresponsive daemon.
+const StatusUnknown = "-"
+
+// dockerStatusTimeout keeps the listing responsive whatever docker is doing.
+const dockerStatusTimeout = 5 * time.Second
+
+// List returns the project's worktrees along with the state of their stack.
+func List(ctx context.Context, o Options) ([]Entry, error) {
+	worktrees, err := o.Wtc.Worktrees(ctx)
+	if err != nil {
+		return nil, err
+	}
+	running := runningProjects(ctx, o.Runner)
+	entries := make([]Entry, 0, len(worktrees))
+	for _, wt := range worktrees {
+		status := StatusUnknown
+		if running != nil {
+			status = "down"
+			if running[wtc.ProjectName(filepath.Base(o.Project.Dir), wt.Index, wt.Branch)] {
+				status = "up"
+			}
+		}
+		entries = append(entries, Entry{Worktree: wt, Status: status})
+	}
+	return entries, nil
+}
+
+// runningProjects returns the compose projects with a running container, or
+// nil when docker cannot be reached.
+func runningProjects(ctx context.Context, runner execx.Runner) map[string]bool {
+	ctx, cancel := context.WithTimeout(ctx, dockerStatusTimeout)
+	defer cancel()
+	res, err := runner.Run(ctx, execx.Cmd{
+		Name: "docker",
+		Args: []string{"ps", "--format", `{{.Label "com.docker.compose.project"}}`},
+	})
+	if err != nil {
+		return nil
+	}
+	running := map[string]bool{}
+	for _, line := range strings.Split(res.Stdout, "\n") {
+		if name := strings.TrimSpace(line); name != "" {
+			running[name] = true
+		}
+	}
+	return running
 }
