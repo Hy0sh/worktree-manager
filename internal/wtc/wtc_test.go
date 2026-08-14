@@ -249,3 +249,14 @@ func TestReadPortsWithoutBlockReturnsNothing(t *testing.T) {
 		t.Fatalf("expected no ports, got %v", ports)
 	}
 }
+
+// The compose project name is the only handle on a worktree stack's containers
+// and volumes. This is the exact name wtc produced for branch feat/wtm-e2e.
+func TestProjectNameMatchesWtc(t *testing.T) {
+	if got := ProjectName("gallia-utopia", 1, "feat/wtm-e2e"); got != "gallia-utopia-wt-1-feat-wtm-e2e" {
+		t.Fatalf("ProjectName = %q", got)
+	}
+	if got := ProjectName("my-app", 3, "Fix/GAL_42--Weird"); got != "my-app-wt-3-fix-gal-42-weird" {
+		t.Fatalf("ProjectName = %q", got)
+	}
+}

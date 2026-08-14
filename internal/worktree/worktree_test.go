@@ -467,3 +467,97 @@ func TestRemovePropagatesGitFailure(t *testing.T) {
 		t.Fatalf("git error should be propagated, got %q", err.Error())
 	}
 }
+
+// Relying on the project's compose to mount the dump made the behaviour depend
+// on the branch the worktree was cut from, since that file is versioned. wtm
+// carries the restore itself so any project gets it, on any branch.
+func TestCreateShipsItsOwnRestoreMechanism(t *testing.T) {
+	f := newFixture(t)
+	o := f.opts("feat/x")
+	o.NoStart = true
+	o.Project.Dump = true
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	script := filepath.Join(f.backups, "myapp", "restore-snapshot.sh")
+	info, err := os.Stat(script)
+	if err != nil {
+		t.Fatalf("the restore script should sit next to the dump: %v", err)
+	}
+	if info.Mode().Perm()&0o100 == 0 {
+		t.Fatalf("the restore script must be executable, got %v", info.Mode())
+	}
+	body, err := os.ReadFile(script)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "pg_restore") || !strings.Contains(string(body), "myapp.dump") {
+		t.Fatalf("restore script does not target the project dump:\n%s", body)
+	}
+
+	generated, err := os.ReadFile(filepath.Join(f.root, ".worktrees", "feat", "x", ".wtm-snapshot.yaml"))
+	if err != nil {
+		t.Fatalf("the generated compose file is missing: %v", err)
+	}
+	for _, want := range []string{"db:", "/db-snapshot:ro", "docker-entrypoint-initdb.d"} {
+		if !strings.Contains(string(generated), want) {
+			t.Fatalf("generated compose file should contain %q:\n%s", want, generated)
+		}
+	}
+}
+
+func TestStartPassesTheGeneratedComposeFileToDocker(t *testing.T) {
+	f := newFixture(t)
+	installWtc(t, f.root)
+	mustWrite(t, filepath.Join(f.root, "compose.yaml"), "services:\n  db: {}\n")
+	o := f.opts("feat/x")
+	o.Project.Dump = true
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	var env []string
+	for _, c := range f.fake.Calls {
+		if strings.HasSuffix(c.Name, "wtc") {
+			env = c.Env
+		}
+	}
+	var found string
+	for _, e := range env {
+		if strings.HasPrefix(e, "COMPOSE_FILE=") {
+			found = e
+		}
+	}
+	if found == "" {
+		t.Fatalf("wtc must receive COMPOSE_FILE so docker picks up the snapshot file, env = %v", env)
+	}
+	if !strings.Contains(found, ".wtm-snapshot.yaml") || !strings.Contains(found, "compose.yaml") {
+		t.Fatalf("COMPOSE_FILE should list the project files and ours, got %q", found)
+	}
+}
+
+// A removed worktree used to leave its database volume behind forever, because
+// `docker compose down` keeps volumes.
+func TestRemoveDropsTheStackVolumes(t *testing.T) {
+	f := newFixture(t)
+	installWtc(t, f.root)
+	inner := f.fake.Handler
+	f.fake.Handler = func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(c.String(), "volume ls") {
+			return execx.Result{Stdout: "wt_postgres_data\nwt_rustfs_data\n"}, nil
+		}
+		return inner(c)
+	}
+	if err := Remove(context.Background(), f.opts("feat/x")); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	var removal string
+	for _, l := range f.fake.Lines() {
+		if strings.Contains(l, "volume rm") {
+			removal = l
+		}
+	}
+	if !strings.Contains(removal, "wt_postgres_data") || !strings.Contains(removal, "wt_rustfs_data") {
+		t.Fatalf("both volumes should be removed, got %q", removal)
+	}
+}

@@ -79,3 +79,19 @@ func TestIsWebOnlyForWebPorts(t *testing.T) {
 		}
 	}
 }
+
+func TestPortLabelDisambiguatesMultiPortServices(t *testing.T) {
+	cases := map[ServicePort]string{
+		{Service: "mailhog", Var: "MAILHOG_WEB_PORT", Container: "8025"}:           "web",
+		{Service: "mailhog", Var: "MAILHOG_SMTP_PORT", Container: "1025"}:          "smtp",
+		{Service: "rustfs", Var: "RUSTFS_CONSOLE_PORT", Container: "9001"}:         "console",
+		{Service: "kubectl", Var: "KUBECTL_MINIO_CONSOLE_PORT", Container: "9003"}: "minio-console",
+		// Nothing left once the service name is stripped: fall back to the port.
+		{Service: "backend", Var: "BACKEND_PORT", Container: "8000"}: "8000",
+	}
+	for in, want := range cases {
+		if got := PortLabel(in); got != want {
+			t.Fatalf("PortLabel(%s) = %q, want %q", in.Var, got, want)
+		}
+	}
+}
