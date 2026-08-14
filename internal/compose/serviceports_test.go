@@ -95,3 +95,48 @@ func TestPortLabelDisambiguatesMultiPortServices(t *testing.T) {
 		}
 	}
 }
+
+// A project that already remaps its ports on purpose must keep that mapping as
+// the reference, otherwise rebasing from the base file would silently undo it.
+func TestMergedServicePortsLetsTheOverrideWin(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, "compose.yaml", `services:
+  postgres:
+    ports:
+      - "5432:5432"
+  api:
+    ports:
+      - "3000:3000"
+  web:
+    ports:
+      - "8080:80"
+`)
+	write(t, dir, "compose.override.yaml", `services:
+  postgres:
+    ports: !override
+      - "55432:5432"
+  api:
+    ports: !override
+      - "18000:3000"
+`)
+	ports, err := MergedServicePorts(dir)
+	if err != nil {
+		t.Fatalf("MergedServicePorts: %v", err)
+	}
+	byService := map[string]ServicePort{}
+	for _, p := range ports {
+		byService[p.Service] = p
+	}
+	if got := byService["postgres"].Host; got != "55432" {
+		t.Fatalf("postgres host port = %s, the override must win", got)
+	}
+	if got := byService["api"].Host; got != "18000" {
+		t.Fatalf("api host port = %s, the override must win", got)
+	}
+	if got := byService["web"].Host; got != "8080" {
+		t.Fatalf("web is absent from the override, it keeps %s", got)
+	}
+	if len(ports) != 3 {
+		t.Fatalf("expected one port per service, got %+v", ports)
+	}
+}

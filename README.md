@@ -64,9 +64,10 @@ wtm backup refresh <TAB>     # registered project names
 
 - `git`, `docker` / `docker compose` on PATH.
 - Nothing to install on the target project's side.
-- Host ports in the project's `compose.yaml` parameterized as `${VAR:-default}`,
-  otherwise they cannot be rebased and would collide with the main stack.
-  A port stride can be set in `.wtcrc.json` or under `wtc` in `package.json`.
+- Nothing about the project's ports either: those written as `${VAR:-default}`
+  are rebased through the worktree's `.env`, those written as literals through
+  a generated compose file. A port stride can be set in `.wtcrc.json` or under
+  `wtc` in `package.json`.
 - For `dump: true`: nothing on the project's side. wtm generates the compose
   file that mounts the dump and ships the restore script itself, so the
   behaviour never depends on the branch a worktree was cut from.
@@ -154,11 +155,26 @@ wtm project create platform --dir ~/dev/projects/platform \
 defaults to `db` and `--db-user` defaults to `postgres`. These settings can
 be reviewed and tweaked directly in `config.json`.
 
-Two things worth flagging. `--git-container` is only useful for projects
-whose compose bind-mounts the git-dir into a container; left off, it
-creates nothing. And ports can only be rebased if the compose file expresses
-them as `${VAR:-default}`: a project with hardcoded ports will need adapting
-before automatic worktree startup makes sense.
+`--git-container` is only useful for projects whose compose bind-mounts the
+git-dir into a container; left off, it creates nothing.
+
+## How ports are isolated
+
+Every published port is rebased so a worktree stack never fights the main one:
+`20000 + project offset + default port + worktree index * stride`, with a
+fallback above 65535. Ports declared as `${VAR:-default}` are written into the
+worktree's `.env`, and ports written as literals into a generated compose file
+that replaces the service's `ports` list, since compose appends otherwise.
+
+Three details earned their place the hard way. The reference is the project's
+*merged* compose configuration, not just the base file: a project already
+remapping a port on purpose keeps that mapping. The project offset exists
+because the formula otherwise knows nothing about the project, so two projects
+whose database listens on 5432 would land on the same host port; it is assigned
+at registration, and the first project keeps 0 so its existing worktrees are
+untouched. And a `.env` tracked by git is left alone, the generated compose
+file carrying the ports instead, so starting a stack never dirties the
+worktree.
 
 ## Diagnostics
 

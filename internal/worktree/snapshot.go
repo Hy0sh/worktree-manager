@@ -14,6 +14,9 @@ import (
 // carries it instead, so any project gets the restore without changing a line.
 const snapshotOverride = ".wtm-snapshot.yaml"
 
+// portsOverride is generated whenever a project publishes literal ports.
+const portsOverride = ".wtm-ports.yaml"
+
 // restoreScript runs inside the database container. Postgres only executes
 // docker-entrypoint-initdb.d on an empty data directory, which is exactly the
 // wanted semantics: a fresh worktree restores, an existing one is left alone.

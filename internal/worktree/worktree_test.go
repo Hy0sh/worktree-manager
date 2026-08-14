@@ -270,8 +270,8 @@ func TestCreateStartsStackUnlessNoStart(t *testing.T) {
 	}
 }
 
-// The raw wtc .env block ("BACKEND_PORT=28007 DB_PORT=25439") tells nobody
-// where to point a browser. Pair each service with its allocated port instead.
+// A raw .env block ("BACKEND_PORT=28007 DB_PORT=25439") tells nobody where to
+// point a browser. Pair each service with the port it actually listens on.
 func TestCreateListsServiceEndpointsAfterStart(t *testing.T) {
 	f := newFixture(t)
 	mustWrite(t, filepath.Join(f.root, "compose.yaml"), `services:
@@ -302,8 +302,10 @@ func TestCreateListsServiceEndpointsAfterStart(t *testing.T) {
 	if !strings.Contains(got, "db       localhost:25439") {
 		t.Fatalf("a database should be listed without an http scheme, got:\n%s", got)
 	}
-	if strings.Contains(got, "legacy") {
-		t.Fatalf("a hardcoded port is not isolated, listing it would mislead:\n%s", got)
+	// A hardcoded port is rebased through the generated compose file, so it
+	// belongs in the list like any other.
+	if !strings.Contains(got, "legacy   localhost:29007") {
+		t.Fatalf("a rebased hardcoded port should be listed too:\n%s", got)
 	}
 }
 

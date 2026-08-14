@@ -28,8 +28,14 @@ type Project struct {
 	// GitContainer creates the .git-container symlinks. Opt-in: it only helps
 	// projects whose compose bind-mounts the git directory into a container
 	// (macOS/VirtioFS cannot mount the pointer file a linked worktree uses).
-	GitContainer bool    `json:"git_container,omitempty"`
-	Backup       *Backup `json:"backup,omitempty"`
+	GitContainer bool `json:"git_container,omitempty"`
+	// PortOffset shifts every rebased port of this project. The allocation
+	// formula only knows the default port, the worktree index and the stride,
+	// so without it two projects whose database listens on 5432 would fight
+	// over the same host port. Zero for the first project, which keeps the
+	// ports it already had.
+	PortOffset int     `json:"port_offset,omitempty"`
+	Backup     *Backup `json:"backup,omitempty"`
 }
 
 // Defaults for the most common docker compose layout.
@@ -165,6 +171,20 @@ func (c *Config) Save(path string) error {
 		return err
 	}
 	return os.WriteFile(path, append(data, '\n'), 0o644)
+}
+
+// NextPortOffset returns a free offset for a new project, in steps of 1000.
+// The first project keeps 0 so its existing worktrees are untouched.
+func (c *Config) NextPortOffset() int {
+	taken := map[int]bool{}
+	for _, p := range c.Projects {
+		taken[p.PortOffset] = true
+	}
+	for offset := 0; ; offset += 1000 {
+		if !taken[offset] {
+			return offset
+		}
+	}
 }
 
 // Names lists the registered projects, sorted.

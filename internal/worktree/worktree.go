@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -294,7 +295,7 @@ func start(ctx context.Context, o Options, dest string) error {
 	if err := ensureSnapshotAssets(o, dest); err != nil {
 		return err
 	}
-	if err := allocatePorts(o, wt, dest); err != nil {
+	if err := allocatePorts(ctx, o, wt, dest); err != nil {
 		return err
 	}
 	files, err := composeFiles(o, dest)
@@ -305,7 +306,7 @@ func start(ctx context.Context, o Options, dest string) error {
 		return fmt.Errorf("starting the stack: %w", err)
 	}
 	o.logf("stack started (worktree %d, %s)", wt.Index, o.Branch)
-	for _, line := range endpoints(o.Project.Dir, dest) {
+	for _, line := range endpoints(o, wt) {
 		o.logf("  %s", line)
 	}
 	return nil
@@ -319,22 +320,48 @@ func (o Options) projectName(wt stack.Worktree) string {
 
 // allocatePorts rebases every parameterised port of the compose file for this
 // worktree and records them in its .env, where docker compose picks them up.
-func allocatePorts(o Options, wt stack.Worktree, dest string) error {
-	base, err := compose.Base(o.Project.Dir)
+func allocations(o Options, wt stack.Worktree) ([]stack.Allocation, error) {
+	services, err := compose.MergedServicePorts(o.Project.Dir)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	services, err := compose.ServicePorts(base)
-	if err != nil {
-		return err
-	}
-	allocations, err := stack.Allocate(services, wt.Index, stack.Stride(o.Project.Dir))
+	return stack.Allocate(services, wt.Index, stack.Stride(o.Project.Dir), o.Project.PortOffset)
+}
+
+// tracked reports whether git follows a file, in which case wtm must not
+// rewrite it.
+func tracked(ctx context.Context, o Options, dir, name string) bool {
+	_, err := o.Runner.Run(ctx, execx.Cmd{
+		Name: "git",
+		Args: []string{"-C", dir, "ls-files", "--error-unmatch", name},
+	})
+	return err == nil
+}
+
+func allocatePorts(ctx context.Context, o Options, wt stack.Worktree, dest string) error {
+	allocations, err := allocations(o, wt)
 	if err != nil {
 		return err
 	}
 	if len(allocations) == 0 {
-		o.logf("warning: no port is parameterised as ${VAR:-default} in %s, this stack cannot be isolated",
-			filepath.Base(base))
+		o.logf("warning: this project publishes no port, nothing to isolate")
+		return nil
+	}
+	// Ports written as literals cannot be reached through the environment, so
+	// they are rebased in a generated compose file instead.
+	override := stack.PortsOverride(allocations)
+	path := filepath.Join(dest, portsOverride)
+	if override == "" {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+	} else if err := os.WriteFile(path, []byte(override), 0o644); err != nil {
+		return fmt.Errorf("writing the ports compose file: %w", err)
+	}
+	// Writing into a tracked .env would dirty the worktree on every start, and
+	// the generated compose file already carries the ports docker needs.
+	if tracked(ctx, o, dest, ".env") {
+		o.logf("note: .env is tracked by git, ports are only set in %s", portsOverride)
 		return nil
 	}
 	return stack.WriteEnvOverrides(dest, allocations)
@@ -354,48 +381,39 @@ func composeFiles(o Options, dest string) ([]string, error) {
 	if o.Project.Dump {
 		files = append(files, filepath.Join(dest, snapshotOverride))
 	}
+	if path := filepath.Join(dest, portsOverride); fileExists(path) {
+		files = append(files, path)
+	}
 	return files, nil
 }
 
-// endpoints pairs each service of the compose file with the port it actually
-// listens on in this worktree, so the output is a list of addresses to open
-// rather than the raw block of variables wtc wrote into .env.
-func endpoints(projectDir, worktreeDir string) []string {
-	base, err := compose.Base(projectDir)
-	if err != nil {
-		return nil
-	}
-	services, err := compose.ServicePorts(base)
-	if err != nil {
-		return nil
-	}
-	allocated, err := stack.ReadPortValues(worktreeDir)
-	if err != nil {
+// endpoints pairs each service with the port it actually listens on in this
+// worktree, so the output is a list of addresses to open rather than the raw
+// block of variables written into .env.
+func endpoints(o Options, wt stack.Worktree) []string {
+	allocations, err := allocations(o, wt)
+	if err != nil || len(allocations) == 0 {
 		return nil
 	}
 
 	// A service can publish several ports (mailhog exposes SMTP and a web UI),
 	// and repeating its bare name would leave no way to tell them apart. The
-	// variable name carries the distinction, so use it as a suffix.
+	// variable name, or the container port, carries the distinction.
 	count := map[string]int{}
-	for _, s := range services {
-		count[s.Service]++
+	for _, a := range allocations {
+		count[a.Service]++
 	}
 
 	type entry struct{ label, address string }
 	var entries []entry
 	width := 0
-	for _, s := range services {
-		port := allocated[s.Var]
-		if s.Var == "" || port == "" {
-			continue // hardcoded port: wtc could not isolate it, doctor says so
+	for _, a := range allocations {
+		label := a.Service
+		if count[a.Service] > 1 {
+			label += "/" + compose.PortLabel(compose.ServicePort{Service: a.Service, Var: a.Var, Container: a.Container})
 		}
-		label := s.Service
-		if count[s.Service] > 1 {
-			label += "/" + compose.PortLabel(s)
-		}
-		address := "localhost:" + port
-		if s.IsWeb() {
+		address := "localhost:" + strconv.Itoa(a.Port)
+		if (compose.ServicePort{Container: a.Container}).IsWeb() {
 			address = "http://" + address
 		}
 		if len(label) > width {
@@ -580,4 +598,9 @@ func runningProjects(ctx context.Context, runner execx.Runner) map[string]bool {
 		}
 	}
 	return running
+}
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
 }

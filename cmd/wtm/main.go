@@ -17,7 +17,6 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Hy0sh/worktree-manager/internal/backup"
-	"github.com/Hy0sh/worktree-manager/internal/compose"
 	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/dockermem"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
@@ -352,44 +351,18 @@ func newDoctorCmd(a *app) *cobra.Command {
 				}
 			}
 			if len(a.cfg.Projects) == 0 {
-				return a.reportPorts()
+				return nil
 			}
 			fmt.Fprintln(a.out)
 			w := tabwriter.NewWriter(a.out, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "PROJECT\tDIRECTORY\tPORT STRIDE")
+			fmt.Fprintln(w, "PROJECT\tDIRECTORY\tSTRIDE\tOFFSET")
 			for _, name := range a.cfg.Names() {
 				p := a.cfg.Projects[name]
-				fmt.Fprintf(w, "%s\t%s\t%d\n", name, p.Dir, stack.Stride(p.Dir))
+				fmt.Fprintf(w, "%s\t%s\t%d\t%d\n", name, p.Dir, stack.Stride(p.Dir), p.PortOffset)
 			}
-			if err := w.Flush(); err != nil {
-				return err
-			}
-			return a.reportPorts()
+			return w.Flush()
 		},
 	}
-}
-
-// reportPorts flags projects whose ports wtc cannot isolate. Parametrising them
-// in an override would not help: wtc reads only the base compose file, so the
-// change has to land there.
-func (a *app) reportPorts() error {
-	for _, name := range a.cfg.Names() {
-		base, err := compose.Base(a.cfg.Projects[name].Dir)
-		if err != nil {
-			continue
-		}
-		raw, parametrised, err := compose.Ports(base)
-		if err != nil || len(raw) == 0 {
-			continue
-		}
-		fmt.Fprintf(a.out, "\n%s: %d port(s) hardcoded in %s, wtc will not be able to isolate them (%d already parametrised).\n",
-			name, len(raw), filepath.Base(base), parametrised)
-		for _, line := range raw {
-			fmt.Fprintf(a.out, "  %s\n", line)
-		}
-		fmt.Fprintln(a.out, "  Turn them into \"${PORT_NAME:-default}:target\" in this file (an override is not enough, wtc does not read it).")
-	}
-	return nil
 }
 
 func newRunCmd(a *app) *cobra.Command {
@@ -476,7 +449,13 @@ func newProjectCmd(a *app) *cobra.Command {
 			if a.cfg.Has(args[0]) {
 				return fmt.Errorf("project %q is already registered", args[0])
 			}
-			p := config.Project{Dir: abs, BaseBranch: base, Dump: dump, GitContainer: gitContainer}
+			p := config.Project{
+				Dir:          abs,
+				BaseBranch:   base,
+				Dump:         dump,
+				GitContainer: gitContainer,
+				PortOffset:   a.cfg.NextPortOffset(),
+			}
 			if dbService != "" || dbUser != "" || appService != "" || deps != "" || migrate != "" || len(env) > 0 {
 				envMap, err := parseEnv(env)
 				if err != nil {
@@ -496,6 +475,9 @@ func newProjectCmd(a *app) *cobra.Command {
 				return err
 			}
 			fmt.Fprintf(a.out, "project %s registered (%s)\n", args[0], abs)
+			if p.PortOffset > 0 {
+				fmt.Fprintf(a.out, "ports shifted by %d so they do not clash with the other projects\n", p.PortOffset)
+			}
 			return nil
 		},
 	}
