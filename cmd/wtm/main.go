@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"text/tabwriter"
@@ -23,8 +22,8 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/dockermem"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 	"github.com/Hy0sh/worktree-manager/internal/gitx"
+	"github.com/Hy0sh/worktree-manager/internal/stack"
 	"github.com/Hy0sh/worktree-manager/internal/worktree"
-	"github.com/Hy0sh/worktree-manager/internal/wtc"
 )
 
 func main() {
@@ -85,7 +84,7 @@ func (a *app) options(name string, p config.Project, branch string) worktree.Opt
 		BackupsDir: a.backups,
 		Runner:     a.runner,
 		Out:        a.out,
-		Wtc:        &wtc.Client{Runner: a.runner, Dir: p.Dir, Out: a.out, Bin: p.WtcBin},
+		Stack:      &stack.Client{Runner: a.runner, Dir: p.Dir, Out: a.out},
 	}
 }
 
@@ -143,7 +142,7 @@ func (a *app) worktreeBranches(name string) []string {
 	if err != nil {
 		return nil
 	}
-	client := &wtc.Client{Runner: a.runner, Dir: p.Dir, Out: io.Discard, Bin: p.WtcBin}
+	client := &stack.Client{Runner: a.runner, Dir: p.Dir, Out: io.Discard}
 	worktrees, err := client.Worktrees(context.Background())
 	if err != nil {
 		return nil
@@ -162,7 +161,7 @@ func newRootCmd() *cobra.Command {
 		Short: "Manages git worktrees and the docker stack of each one",
 		Long: "Creates git worktrees for registered projects, copies the environment\n" +
 			"files into them, restores the central Postgres dump, and starts their\n" +
-			"stack via wtc (worktree-compose), which allocates the ports.\n\n" +
+			"docker stack on its own set of ports.\n\n" +
 			"Creation goes through `wtm create`: no bare invocation ever touches a\n" +
 			"repository, so a typo cannot silently create a branch.",
 		SilenceUsage:  true,
@@ -352,26 +351,15 @@ func newDoctorCmd(a *app) *cobra.Command {
 					fmt.Fprintln(a.out, msg)
 				}
 			}
-			if global, err := exec.LookPath("wtc"); err == nil {
-				fmt.Fprintf(a.out, "wtc global %s%s\n", global, versionSuffix(wtc.Client{Bin: global}))
-			} else {
-				fmt.Fprintln(a.out, "wtc global missing (`npm install -g worktree-compose` to cover non-Node projects)")
-			}
 			if len(a.cfg.Projects) == 0 {
-				return nil
+				return a.reportPorts()
 			}
 			fmt.Fprintln(a.out)
 			w := tabwriter.NewWriter(a.out, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "PROJECT\tWTC\tORIGIN\tVERSION")
+			fmt.Fprintln(w, "PROJECT\tDIRECTORY\tPORT STRIDE")
 			for _, name := range a.cfg.Names() {
 				p := a.cfg.Projects[name]
-				c := wtc.Client{Runner: a.runner, Dir: p.Dir, Out: a.out, Bin: p.WtcBin}
-				r, err := c.Locate()
-				if err != nil {
-					fmt.Fprintf(w, "%s\tnot found\t\t\n", name)
-					continue
-				}
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", name, r.Path, r.Origin, orUnknown(r.Version))
+				fmt.Fprintf(w, "%s\t%s\t%d\n", name, p.Dir, stack.Stride(p.Dir))
 			}
 			if err := w.Flush(); err != nil {
 				return err
@@ -402,21 +390,6 @@ func (a *app) reportPorts() error {
 		fmt.Fprintln(a.out, "  Turn them into \"${PORT_NAME:-default}:target\" in this file (an override is not enough, wtc does not read it).")
 	}
 	return nil
-}
-
-func versionSuffix(c wtc.Client) string {
-	r, err := c.Locate()
-	if err != nil || r.Version == "" {
-		return ""
-	}
-	return " (" + r.Version + ")"
-}
-
-func orUnknown(v string) string {
-	if v == "" {
-		return "unknown"
-	}
-	return v
 }
 
 func newRunCmd(a *app) *cobra.Command {

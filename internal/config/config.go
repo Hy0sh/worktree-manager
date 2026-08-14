@@ -28,11 +28,8 @@ type Project struct {
 	// GitContainer creates the .git-container symlinks. Opt-in: it only helps
 	// projects whose compose bind-mounts the git directory into a container
 	// (macOS/VirtioFS cannot mount the pointer file a linked worktree uses).
-	GitContainer bool `json:"git_container,omitempty"`
-	// WtcBin overrides where worktree-compose lives. Left empty, the project's
-	// own devDependency is used when present, otherwise a global install.
-	WtcBin string  `json:"wtc_bin,omitempty"`
-	Backup *Backup `json:"backup,omitempty"`
+	GitContainer bool    `json:"git_container,omitempty"`
+	Backup       *Backup `json:"backup,omitempty"`
 }
 
 // Defaults for the most common docker compose layout.

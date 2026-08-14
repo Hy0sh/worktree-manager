@@ -11,7 +11,7 @@ import (
 
 	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
-	"github.com/Hy0sh/worktree-manager/internal/wtc"
+	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
 
 // fixture builds a fake project repo plus a fake runner whose `git worktree
@@ -27,6 +27,15 @@ type fixture struct {
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
 	f := &fixture{root: t.TempDir(), backups: t.TempDir()}
+	mustWrite(t, filepath.Join(f.root, "compose.yaml"), `services:
+  db:
+    ports:
+      - "${DB_PORT:-5432}:5432"
+  backend:
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+`)
+	mustWrite(t, filepath.Join(f.root, ".wtcrc.json"), `{"portStride": 7}`)
 	f.fake = &execx.Fake{Handler: func(c execx.Cmd) (execx.Result, error) {
 		line := c.String()
 		switch {
@@ -65,18 +74,7 @@ func (f *fixture) opts(branch string) Options {
 		BackupsDir: f.backups,
 		Runner:     f.fake,
 		Out:        io.Discard,
-		Wtc:        &wtc.Client{Runner: f.fake, Dir: f.root, Out: io.Discard},
-	}
-}
-
-func installWtc(t *testing.T, root string) {
-	t.Helper()
-	binDir := filepath.Join(root, "node_modules", ".bin")
-	if err := os.MkdirAll(binDir, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(filepath.Join(binDir, "wtc"), []byte("#!/bin/sh\n"), 0o755); err != nil {
-		t.Fatal(err)
+		Stack:      &stack.Client{Runner: f.fake, Dir: f.root, Out: io.Discard},
 	}
 }
 
@@ -258,13 +256,12 @@ func TestCreateWithoutDumpLeavesNoSnapshotLink(t *testing.T) {
 
 func TestCreateStartsStackUnlessNoStart(t *testing.T) {
 	f := newFixture(t)
-	installWtc(t, f.root)
 	if err := Create(context.Background(), f.opts("feat/x")); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	var started bool
 	for _, l := range f.fake.Lines() {
-		if strings.HasSuffix(l, "wtc start 1") {
+		if strings.Contains(l, "up -d --build") {
 			started = true
 		}
 	}
@@ -277,7 +274,6 @@ func TestCreateStartsStackUnlessNoStart(t *testing.T) {
 // where to point a browser. Pair each service with its allocated port instead.
 func TestCreateListsServiceEndpointsAfterStart(t *testing.T) {
 	f := newFixture(t)
-	installWtc(t, f.root)
 	mustWrite(t, filepath.Join(f.root, "compose.yaml"), `services:
   backend:
     ports:
@@ -319,34 +315,32 @@ func TestCreateNoStartSkipsWtcEntirely(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 	for _, l := range f.fake.Lines() {
-		if strings.Contains(l, "wtc") {
-			t.Fatalf("--no-start must not invoke wtc, got %q", l)
+		if strings.Contains(l, "docker") {
+			t.Fatalf("--no-start must not touch docker, got %q", l)
 		}
 	}
 }
 
 func TestStopUsesResolvedIndex(t *testing.T) {
 	f := newFixture(t)
-	installWtc(t, f.root)
 	if err := Stop(context.Background(), f.opts("feat/x")); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
 	last := f.fake.Lines()[len(f.fake.Lines())-1]
-	if !strings.HasSuffix(last, "wtc stop 1") {
+	if !strings.Contains(last, "compose -p "+wantProject(f)+" down") {
 		t.Fatalf("last call = %q", last)
 	}
 }
 
 func TestRemoveStopsThenRemovesWorktree(t *testing.T) {
 	f := newFixture(t)
-	installWtc(t, f.root)
 	if err := Remove(context.Background(), f.opts("feat/x")); err != nil {
 		t.Fatalf("Remove: %v", err)
 	}
 	lines := f.fake.Lines()
 	var stopAt, removeAt = -1, -1
 	for i, l := range lines {
-		if strings.HasSuffix(l, "wtc stop 1") {
+		if strings.Contains(l, "down") && strings.Contains(l, "compose") {
 			stopAt = i
 		}
 		if strings.Contains(l, "worktree remove") {
@@ -363,7 +357,6 @@ func TestRemoveStopsThenRemovesWorktree(t *testing.T) {
 // delete. Only tracked changes are worth protecting.
 func TestRemoveForcesWhenOnlyUntrackedArtifactsRemain(t *testing.T) {
 	f := newFixture(t)
-	installWtc(t, f.root)
 	if err := Remove(context.Background(), f.opts("feat/x")); err != nil {
 		t.Fatalf("Remove: %v", err)
 	}
@@ -380,7 +373,6 @@ func TestRemoveForcesWhenOnlyUntrackedArtifactsRemain(t *testing.T) {
 
 func TestRemoveRefusesWhenTrackedFilesAreModified(t *testing.T) {
 	f := newFixture(t)
-	installWtc(t, f.root)
 	inner := f.fake.Handler
 	f.fake.Handler = func(c execx.Cmd) (execx.Result, error) {
 		if strings.Contains(c.String(), "status --porcelain") {
@@ -404,7 +396,6 @@ func TestRemoveRefusesWhenTrackedFilesAreModified(t *testing.T) {
 
 func TestRemoveWithForceIgnoresTrackedChanges(t *testing.T) {
 	f := newFixture(t)
-	installWtc(t, f.root)
 	inner := f.fake.Handler
 	f.fake.Handler = func(c execx.Cmd) (execx.Result, error) {
 		if strings.Contains(c.String(), "status --porcelain") {
@@ -432,7 +423,6 @@ func TestRemoveWithForceIgnoresTrackedChanges(t *testing.T) {
 // that directory behind empty once the worktree is gone.
 func TestRemovePrunesEmptyParentDirectories(t *testing.T) {
 	f := newFixture(t)
-	installWtc(t, f.root)
 	o := f.opts("feat/x")
 	o.NoStart = true
 	if err := Create(context.Background(), o); err != nil {
@@ -451,7 +441,6 @@ func TestRemovePrunesEmptyParentDirectories(t *testing.T) {
 
 func TestRemovePropagatesGitFailure(t *testing.T) {
 	f := newFixture(t)
-	installWtc(t, f.root)
 	inner := f.fake.Handler
 	f.fake.Handler = func(c execx.Cmd) (execx.Result, error) {
 		if strings.Contains(c.String(), "worktree remove") {
@@ -507,32 +496,30 @@ func TestCreateShipsItsOwnRestoreMechanism(t *testing.T) {
 	}
 }
 
+// The generated snapshot file is now handed to docker compose directly, as an
+// extra -f, instead of being smuggled in through COMPOSE_FILE.
 func TestStartPassesTheGeneratedComposeFileToDocker(t *testing.T) {
 	f := newFixture(t)
-	installWtc(t, f.root)
-	mustWrite(t, filepath.Join(f.root, "compose.yaml"), "services:\n  db: {}\n")
 	o := f.opts("feat/x")
 	o.Project.Dump = true
 	if err := Create(context.Background(), o); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	var env []string
-	for _, c := range f.fake.Calls {
-		if strings.HasSuffix(c.Name, "wtc") {
-			env = c.Env
+	var up string
+	for _, l := range f.fake.Lines() {
+		if strings.Contains(l, "up -d --build") {
+			up = l
 		}
 	}
-	var found string
-	for _, e := range env {
-		if strings.HasPrefix(e, "COMPOSE_FILE=") {
-			found = e
+	dest := filepath.Join(f.root, ".worktrees", "feat", "x")
+	for _, want := range []string{
+		"-f " + filepath.Join(dest, "compose.yaml"),
+		"-f " + filepath.Join(dest, ".wtm-snapshot.yaml"),
+		"--project-directory " + dest,
+	} {
+		if !strings.Contains(up, want) {
+			t.Fatalf("up call should contain %q:\n%s", want, up)
 		}
-	}
-	if found == "" {
-		t.Fatalf("wtc must receive COMPOSE_FILE so docker picks up the snapshot file, env = %v", env)
-	}
-	if !strings.Contains(found, ".wtm-snapshot.yaml") || !strings.Contains(found, "compose.yaml") {
-		t.Fatalf("COMPOSE_FILE should list the project files and ours, got %q", found)
 	}
 }
 
@@ -540,7 +527,6 @@ func TestStartPassesTheGeneratedComposeFileToDocker(t *testing.T) {
 // `docker compose down` keeps volumes.
 func TestRemoveDropsTheStackVolumes(t *testing.T) {
 	f := newFixture(t)
-	installWtc(t, f.root)
 	inner := f.fake.Handler
 	f.fake.Handler = func(c execx.Cmd) (execx.Result, error) {
 		if strings.Contains(c.String(), "volume ls") {
@@ -572,7 +558,7 @@ func TestExecTargetsTheWorktreeStack(t *testing.T) {
 		t.Fatalf("Exec: %v", err)
 	}
 	last := f.fake.Lines()[len(f.fake.Lines())-1]
-	want := "docker compose -p " + wtc.ProjectName(filepath.Base(f.root), 1, "feat/x") +
+	want := "docker compose -p " + stack.ProjectName(filepath.Base(f.root), 1, "feat/x") +
 		" exec backend python manage.py seed_data"
 	if last != want {
 		t.Fatalf("exec call =\n  %q\nwant\n  %q", last, want)
@@ -611,7 +597,6 @@ func TestExecWithoutAnyKnownServiceIsActionable(t *testing.T) {
 // calling wtc with the index it derives.
 func TestStartBringsAnExistingWorktreeBackUp(t *testing.T) {
 	f := newFixture(t)
-	installWtc(t, f.root)
 	mustWrite(t, filepath.Join(f.root, "compose.yaml"), "services:\n  db: {}\n")
 	o := f.opts("feat/x")
 	o.NoStart = true
@@ -625,7 +610,7 @@ func TestStartBringsAnExistingWorktreeBackUp(t *testing.T) {
 	}
 	var started bool
 	for _, l := range f.fake.Lines() {
-		if strings.HasSuffix(l, "wtc start 1") {
+		if strings.Contains(l, "up -d --build") {
 			started = true
 		}
 	}
@@ -637,7 +622,6 @@ func TestStartBringsAnExistingWorktreeBackUp(t *testing.T) {
 // A worktree created before the restore existed must pick it up on start.
 func TestStartRegeneratesTheSnapshotAssets(t *testing.T) {
 	f := newFixture(t)
-	installWtc(t, f.root)
 	mustWrite(t, filepath.Join(f.root, "compose.yaml"), "services:\n  db: {}\n")
 	o := f.opts("feat/x")
 	o.NoStart = true
@@ -694,7 +678,7 @@ func TestRunExecutesOnTheHostFromTheWorktree(t *testing.T) {
 func TestListReportsStackStatus(t *testing.T) {
 	f := newFixture(t)
 	inner := f.fake.Handler
-	up := wtc.ProjectName(filepath.Base(f.root), 1, "feat/x")
+	up := stack.ProjectName(filepath.Base(f.root), 1, "feat/x")
 	f.fake.Handler = func(c execx.Cmd) (execx.Result, error) {
 		if strings.Contains(c.String(), "docker ps") {
 			return execx.Result{Stdout: up + "\nsome-other-project\n"}, nil
@@ -749,4 +733,9 @@ func TestListSurvivesAnUnreachableDocker(t *testing.T) {
 	if entries[0].Status != StatusUnknown {
 		t.Fatalf("status = %q, want %q", entries[0].Status, StatusUnknown)
 	}
+}
+
+// wantProject is the compose project the fixture's worktree gets.
+func wantProject(f *fixture) string {
+	return stack.ProjectName(filepath.Base(f.root), 1, "feat/x")
 }

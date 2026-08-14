@@ -4,10 +4,12 @@ Go CLI that creates a ready-to-use git worktree and manages its full
 lifecycle: creation, stack startup, stop, removal, plus a pre-migrated
 Postgres backup that makes bootstrapping a database fast.
 
-Port allocation and docker compose aren't reimplemented: they're delegated
-to [`wtc`](https://github.com/mostafasudo/worktree-compose)
-(worktree-compose), invoked as a subprocess. `wtm` remains the sole
-user-facing entry point.
+It has no runtime dependency beyond `git` and `docker`: port allocation,
+compose project naming and the stack lifecycle are all handled directly.
+Port assignments follow the same formula
+[worktree-compose](https://github.com/mostafasudo/worktree-compose) used, and
+the same `.env` markers, so a worktree created with that tool keeps the ports
+it already had.
 
 ## Installation
 
@@ -61,11 +63,10 @@ wtm backup refresh <TAB>     # registered project names
 ## Prerequisites
 
 - `git`, `docker` / `docker compose` on PATH.
-- On the target project's side: Node >= 18 and `worktree-compose` as a
-  devDependency (`node_modules/.bin/wtc`). Without it, only
-  `--no-start` creation works.
+- Nothing to install on the target project's side.
 - Host ports in the project's `compose.yaml` parameterized as `${VAR:-default}`,
-  otherwise wtc can't isolate them.
+  otherwise they cannot be rebased and would collide with the main stack.
+  A port stride can be set in `.wtcrc.json` or under `wtc` in `package.json`.
 - For `dump: true`: nothing on the project's side. wtm generates the compose
   file that mounts the dump and ships the restore script itself, so the
   behaviour never depends on the branch a worktree was cut from.
@@ -155,9 +156,9 @@ be reviewed and tweaked directly in `config.json`.
 
 Two things worth flagging. `--git-container` is only useful for projects
 whose compose bind-mounts the git-dir into a container; left off, it
-creates nothing. And wtc can only isolate ports if the compose file
-expresses them as `${VAR:-default}`: a project with hardcoded ports will
-need adapting before automatic worktree startup makes sense.
+creates nothing. And ports can only be rebased if the compose file expresses
+them as `${VAR:-default}`: a project with hardcoded ports will need adapting
+before automatic worktree startup makes sense.
 
 ## Diagnostics
 
@@ -166,12 +167,8 @@ wtm doctor
 ```
 
 Shows the config and backups paths, the memory actually used by the Docker
-VM, and above all **which wtc binary will run** for each project. That last
-piece of information stops being obvious once wtc can come from three
-places: an explicit `wtc_bin` path, the project's devDependency, or a
-global install. Priority is exactly in that order. The version shown is
-read from the package's `package.json`, since `wtc --version` reports
-`0.1.0` even on 0.2.0.
+VM, the port stride of each registered project, and any compose file whose
+ports are hardcoded and therefore cannot be isolated.
 
 Before starting a stack, the tool compares the Docker VM's measured usage
 against its capacity and warns (without blocking) if one more stack risks
@@ -198,7 +195,7 @@ to the branch the worktree was cut from, since that file is versioned.
 
 The dump carries the schema and the migration table, never data, so a fresh
 worktree still needs its own seed. `wtm exec` is the way in: reaching the
-container by hand means knowing the compose project name wtc derives from the
+container by hand means knowing the compose project name derived from the
 repository, the index and the branch, which is internal knowledge.
 
 Postgres only runs `docker-entrypoint-initdb.d` on an empty data directory,
@@ -231,7 +228,7 @@ a real project (my-app):
 
 1. `wtm create <project> <branch> --no-start` -> the worktree contains the
    `*.env` files, the `.git-container` and `.db-snapshot` symlinks.
-2. Without `--no-start` -> `wtc start` runs and the allocated ports are
+2. Without `--no-start` -> the stack starts and the allocated ports are
    displayed.
 3. `wtm backup refresh <project>` with the stack stopped -> it starts on
    its own, the dump shows up in `backup list`.
