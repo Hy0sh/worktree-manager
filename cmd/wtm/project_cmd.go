@@ -37,6 +37,17 @@ func newProjectCmd(a *app) *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := config.ValidateIdentifier("project name", args[0]); err != nil {
+				return err
+			}
+			for kind, value := range map[string]string{"database service": dbService, "application service": appService} {
+				if value == "" {
+					continue
+				}
+				if err := config.ValidateIdentifier(kind, value); err != nil {
+					return err
+				}
+			}
 			abs, err := filepath.Abs(dir)
 			if err != nil {
 				return err

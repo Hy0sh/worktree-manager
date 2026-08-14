@@ -173,14 +173,16 @@ func Load(path string) (*Config, error) {
 
 // Save writes the registry, creating the directory when needed.
 func (c *Config) Save(path string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+	// The registry can hold a DATABASE_URL with its password, so it is kept
+	// readable by its owner alone.
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return fmt.Errorf("creating %s: %w", filepath.Dir(path), err)
 	}
 	data, err := json.MarshalIndent(c, "", "  ")
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(data, '\n'), 0o644)
+	return os.WriteFile(path, append(data, '\n'), 0o600)
 }
 
 // NextPortOffset returns a free offset for a new project, in steps of 1000.
