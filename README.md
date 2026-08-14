@@ -14,9 +14,15 @@ it already had.
 ## Installation
 
 ```sh
-# global install into a directory already on PATH
+# from the published module
+GOBIN=$HOME/.local/bin go install github.com/Hy0sh/worktree-manager/cmd/wtm@latest
+
+# or from a clone
 GOBIN=$HOME/.local/bin go install ./cmd/wtm
 ```
+
+`wtm --version` reports the tag it was installed from, or the commit when built
+from a working copy.
 
 Without `GOBIN`, `go install` drops the binary in `$(go env GOPATH)/bin`
 (`~/go/bin`), which isn't always on PATH. To build without installing:
@@ -269,3 +275,17 @@ a real project (my-app):
    its own, the dump shows up in `backup list`.
 4. `wtm stop` then `remove` -> stack stopped, worktree removed, local
    branch still present.
+
+## Contributing
+
+Pull requests are welcome. `main` is the only long-lived branch: branch off it,
+keep the branch short, open a PR. CI runs `go test -race`, `go vet`, `gofmt`
+and a build, and has to be green to merge.
+
+The test suite needs neither git, docker nor node: every external command goes
+through an injectable runner, which keeps it fast and hermetic. Please keep it
+that way.
+
+## License
+
+MIT, see [LICENSE](LICENSE).
