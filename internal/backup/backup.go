@@ -63,8 +63,10 @@ func (m *Manager) logf(format string, args ...any) {
 	}
 }
 
-// Refresh regenerates the dump: it starts db and backend if needed, migrates a
-// throwaway database and dumps its schema. No seed data ever lands in there.
+// Refresh regenerates the dump: it starts the database if needed, migrates a
+// throwaway one and dumps it as migrate left it, data included. Everything the
+// migrations create is therefore captured, permissions and reference data
+// among them; only what they did not create, seed data first of all, is out.
 func (m *Manager) Refresh(ctx context.Context, name string, p config.Project) error {
 	cfg := p.BackupConfig()
 	if err := cfg.Validate(); err != nil {
