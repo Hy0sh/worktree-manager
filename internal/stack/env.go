@@ -31,6 +31,9 @@ func WriteEnvOverrides(worktreeDir string, allocations []Allocation) error {
 	}
 	b.WriteString(blockStart + "\n")
 	for _, a := range allocations {
+		if a.Var == "" {
+			continue // a literal port is rebased through the generated compose file
+		}
 		fmt.Fprintf(&b, "%s=%d\n", a.Var, a.Port)
 	}
 	b.WriteString(blockEnd + "\n")

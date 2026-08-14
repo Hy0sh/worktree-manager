@@ -98,3 +98,36 @@ func PortLabel(s ServicePort) string {
 	}
 	return strings.ReplaceAll(name, "_", "-")
 }
+
+// MergedServicePorts reads the base file then lets the project's own override
+// win, service by service. A project that already remaps its ports on purpose
+// (to avoid a clash on the machine) must keep that mapping as the reference,
+// otherwise rebasing from the base file would silently undo it.
+func MergedServicePorts(dir string) ([]ServicePort, error) {
+	files, err := Files(dir)
+	if err != nil {
+		return nil, err
+	}
+	var merged []ServicePort
+	overridden := map[string]bool{}
+	for i := len(files) - 1; i >= 0; i-- {
+		ports, err := ServicePorts(files[i])
+		if err != nil {
+			return nil, err
+		}
+		// Compose replaces the whole `ports` list of a service when an override
+		// declares one, so the first file that mentions a service wins here.
+		seenHere := map[string]bool{}
+		for _, sp := range ports {
+			if overridden[sp.Service] && !seenHere[sp.Service] {
+				continue
+			}
+			seenHere[sp.Service] = true
+			merged = append(merged, sp)
+		}
+		for service := range seenHere {
+			overridden[service] = true
+		}
+	}
+	return merged, nil
+}
