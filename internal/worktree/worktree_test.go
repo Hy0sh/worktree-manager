@@ -659,3 +659,94 @@ func TestStartRegeneratesTheSnapshotAssets(t *testing.T) {
 		t.Fatalf("start should have rewritten the snapshot file: %v", err)
 	}
 }
+
+func TestPathReturnsTheWorktreeDirectory(t *testing.T) {
+	f := newFixture(t)
+	got, err := Path(context.Background(), f.opts("feat/x"))
+	if err != nil {
+		t.Fatalf("Path: %v", err)
+	}
+	if want := filepath.Join(f.root, ".worktrees", "feat", "x"); got != want {
+		t.Fatalf("Path = %q, want %q", got, want)
+	}
+}
+
+// Run stays on the host, unlike Exec which enters the container.
+func TestRunExecutesOnTheHostFromTheWorktree(t *testing.T) {
+	f := newFixture(t)
+	if err := Run(context.Background(), f.opts("feat/x"), []string{"claude", "--version"}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	last := f.fake.Calls[len(f.fake.Calls)-1]
+	if last.Name != "claude" || strings.Join(last.Args, " ") != "--version" {
+		t.Fatalf("command = %q %v", last.Name, last.Args)
+	}
+	if want := filepath.Join(f.root, ".worktrees", "feat", "x"); last.Dir != want {
+		t.Fatalf("working directory = %q, want the worktree %q", last.Dir, want)
+	}
+	for _, l := range f.fake.Lines() {
+		if strings.Contains(l, "docker") {
+			t.Fatalf("Run must not go through docker, got %q", l)
+		}
+	}
+}
+
+func TestListReportsStackStatus(t *testing.T) {
+	f := newFixture(t)
+	inner := f.fake.Handler
+	up := wtc.ProjectName(filepath.Base(f.root), 1, "feat/x")
+	f.fake.Handler = func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(c.String(), "docker ps") {
+			return execx.Result{Stdout: up + "\nsome-other-project\n"}, nil
+		}
+		return inner(c)
+	}
+	entries, err := List(context.Background(), f.opts(""))
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(entries) != 1 {
+		t.Fatalf("expected 1 worktree, got %d", len(entries))
+	}
+	if entries[0].Status != "up" || entries[0].Branch != "feat/x" {
+		t.Fatalf("entry = %+v", entries[0])
+	}
+}
+
+func TestListReportsDownWhenNoContainerRuns(t *testing.T) {
+	f := newFixture(t)
+	inner := f.fake.Handler
+	f.fake.Handler = func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(c.String(), "docker ps") {
+			return execx.Result{Stdout: "\n"}, nil
+		}
+		return inner(c)
+	}
+	entries, err := List(context.Background(), f.opts(""))
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if entries[0].Status != "down" {
+		t.Fatalf("status = %q, want down", entries[0].Status)
+	}
+}
+
+// A listing is a question about git: an unresponsive daemon must degrade the
+// status column, never make the command fail or hang.
+func TestListSurvivesAnUnreachableDocker(t *testing.T) {
+	f := newFixture(t)
+	inner := f.fake.Handler
+	f.fake.Handler = func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(c.String(), "docker ps") {
+			return execx.Result{}, errors.New("Cannot connect to the Docker daemon")
+		}
+		return inner(c)
+	}
+	entries, err := List(context.Background(), f.opts(""))
+	if err != nil {
+		t.Fatalf("List must not fail when docker is down: %v", err)
+	}
+	if entries[0].Status != StatusUnknown {
+		t.Fatalf("status = %q, want %q", entries[0].Status, StatusUnknown)
+	}
+}

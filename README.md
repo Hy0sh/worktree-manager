@@ -90,10 +90,15 @@ wtm stop feat/my-branch
 wtm remove feat/my-branch                   # local branch kept
 wtm remove feat/my-branch --force           # despite modified tracked files
 
-# run anything in the worktree's own containers
+# inside the worktree's containers
 wtm exec feat/my-branch -- python manage.py seed_data
 wtm exec feat/my-branch -- bash
 wtm exec feat/my-branch --service db -- psql -U postgres
+
+# on your machine, from the worktree directory
+wtm run feat/my-branch -- claude
+wtm run feat/my-branch -- git status
+cd $(wtm path feat/my-branch)
 
 # Postgres backup
 wtm backup refresh my-app            # starts db+backend if needed
@@ -103,6 +108,12 @@ wtm backup remove my-app
 
 If the first argument is a registered project, it's treated as such;
 otherwise it's a branch of the current directory's project.
+
+`exec` and `run` are deliberately distinct: `exec` enters the stack's
+container, `run` stays on your machine with the worktree as working
+directory, which is what an editor or a coding agent needs. `wtm list`
+reports whether each stack is up, and falls back to `-` rather than hanging
+when docker is slow or down.
 
 Creation deliberately sits behind the `create` verb. It used to be the bare
 form, `wtm <branch>`, until a mistyped `wtm list` created a branch called
