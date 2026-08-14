@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"github.com/Hy0sh/worktree-manager/internal/execx"
@@ -34,6 +35,30 @@ type Client struct {
 	Dir    string // project repository root
 	Out    io.Writer
 	Bin    string // explicit path from the config, optional
+	// Env is passed to wtc, which spreads its own environment into the
+	// docker compose calls it makes. That is how an extra compose file is
+	// injected without wtc knowing about it.
+	Env []string
+}
+
+// ProjectName is the compose project wtc gives a worktree. Mirrors its
+// composeProjectName/sanitize pair, which is the only way to address that
+// stack's containers and volumes from the outside.
+func ProjectName(repoName string, index int, branch string) string {
+	return sanitize(fmt.Sprintf("%s-wt-%d-%s", repoName, index, branch))
+}
+
+func sanitize(input string) string {
+	var b strings.Builder
+	for _, r := range strings.ToLower(input) {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '-' {
+			b.WriteRune(r)
+		} else {
+			b.WriteRune('-')
+		}
+	}
+	collapsed := regexp.MustCompile(`-+`).ReplaceAllString(b.String(), "-")
+	return strings.Trim(collapsed, "-")
 }
 
 // localBin is where a devDependency install puts the binary.
@@ -200,6 +225,7 @@ func (c *Client) run(ctx context.Context, args ...string) error {
 		Name: bin,
 		Args: args,
 		Dir:  c.Dir,
+		Env:  c.Env,
 		Live: true,
 	})
 	return err

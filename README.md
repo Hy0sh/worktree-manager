@@ -66,9 +66,9 @@ wtm backup refresh <TAB>     # registered project names
   `--no-start` creation works.
 - Host ports in the project's `compose.yaml` parameterized as `${VAR:-default}`,
   otherwise wtc can't isolate them.
-- For `dump: true`: the project must mount `./.db-snapshot` and a restore
-  script under `docker-entrypoint-initdb.d`, and that script must target
-  `<project>.dump`.
+- For `dump: true`: nothing on the project's side. wtm generates the compose
+  file that mounts the dump and ships the restore script itself, so the
+  behaviour never depends on the branch a worktree was cut from.
 
 ## Usage
 
@@ -158,6 +158,27 @@ saturating it. The estimate is based on the average observed consumption of
 running stacks, never on declared `mem_limit`s: one stack here declares
 over 13 GB of cumulative caps while actually running in 2 GB. Ephemeral
 `compose run` containers are excluded from that average.
+
+## How the database restore works
+
+A worktree starting from an empty database replays the entire migration
+history, which on a large project means tens of minutes and a memory peak
+that can get the container OOM-killed. `backup refresh` records that work
+once, as a schema-only dump; every worktree then restores it in seconds.
+
+Nothing is asked of the project. On creation, wtm links `.db-snapshot` to
+the central backup directory, writes a restore script next to the dump, and
+generates a `.wtm-snapshot.yaml` in the worktree that mounts both into the
+database service. That file is handed to docker through `COMPOSE_FILE` when
+the stack starts, on top of the project's own compose files.
+
+Putting the mount in the project's compose instead would tie the behaviour
+to the branch the worktree was cut from, since that file is versioned.
+
+Postgres only runs `docker-entrypoint-initdb.d` on an empty data directory,
+which gives the right semantics for free: a fresh worktree restores, an
+existing one is untouched, and no race with the application's own migrations
+is possible since the database reports healthy only once the restore is done.
 
 ## Storage
 

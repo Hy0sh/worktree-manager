@@ -76,6 +76,12 @@ func Create(ctx context.Context, o Options) error {
 		if err := linkSnapshotDir(o, dest); err != nil {
 			return fmt.Errorf("linking to the backup: %w", err)
 		}
+		if err := writeRestoreScript(o.BackupsDir, o.Name); err != nil {
+			return fmt.Errorf("writing the restore script: %w", err)
+		}
+		if err := writeSnapshotOverride(dest, o.Project.BackupConfig().DBService); err != nil {
+			return fmt.Errorf("writing the snapshot compose file: %w", err)
+		}
 	}
 	o.logf("worktree ready: %s", dest)
 
@@ -135,7 +141,34 @@ func Remove(ctx context.Context, o Options) error {
 	}
 	pruneEmptyParents(wt.Path, filepath.Join(o.Project.Dir, ".worktrees"))
 	o.logf("worktree removed: %s (branch %s kept)", wt.Path, o.Branch)
+	removeVolumes(ctx, o, wt)
 	return nil
+}
+
+// removeVolumes drops the stack's volumes once the worktree is gone. `docker
+// compose down`, which wtc runs on stop, deliberately keeps them: without this
+// every removed worktree leaves its database behind forever.
+func removeVolumes(ctx context.Context, o Options, wt wtc.Worktree) {
+	project := wtc.ProjectName(filepath.Base(o.Project.Dir), wt.Index, wt.Branch)
+	res, err := o.Runner.Run(ctx, execx.Cmd{
+		Name: "docker",
+		Args: []string{"volume", "ls", "-q", "--filter", "label=com.docker.compose.project=" + project},
+	})
+	if err != nil {
+		return
+	}
+	volumes := strings.Fields(res.Stdout)
+	if len(volumes) == 0 {
+		return
+	}
+	if _, err := o.Runner.Run(ctx, execx.Cmd{
+		Name: "docker",
+		Args: append([]string{"volume", "rm"}, volumes...),
+	}); err != nil {
+		o.logf("warning: %d volume(s) of %s could not be removed: %v", len(volumes), project, err)
+		return
+	}
+	o.logf("%d volume(s) removed (%s)", len(volumes), project)
 }
 
 // pruneEmptyParents drops the directories a slashed branch name created
@@ -240,6 +273,14 @@ func start(ctx context.Context, o Options, dest string) error {
 	if err != nil {
 		return err
 	}
+	// Hand docker the generated snapshot file on top of the project's own.
+	if o.Project.Dump {
+		env, err := composeFileEnv(o.Project.Dir, dest)
+		if err != nil {
+			return err
+		}
+		o.Wtc.Env = append(o.Wtc.Env, env)
+	}
 	if err := o.Wtc.Start(ctx, wt.Index); err != nil {
 		return fmt.Errorf("starting the stack: %w", err)
 	}
@@ -267,23 +308,38 @@ func endpoints(projectDir, worktreeDir string) []string {
 		return nil
 	}
 
-	width := 0
+	// A service can publish several ports (mailhog exposes SMTP and a web UI),
+	// and repeating its bare name would leave no way to tell them apart. The
+	// variable name carries the distinction, so use it as a suffix.
+	count := map[string]int{}
 	for _, s := range services {
-		if s.Var != "" && allocated[s.Var] != "" && len(s.Service) > width {
-			width = len(s.Service)
-		}
+		count[s.Service]++
 	}
-	var out []string
+
+	type entry struct{ label, address string }
+	var entries []entry
+	width := 0
 	for _, s := range services {
 		port := allocated[s.Var]
 		if s.Var == "" || port == "" {
 			continue // hardcoded port: wtc could not isolate it, doctor says so
 		}
+		label := s.Service
+		if count[s.Service] > 1 {
+			label += "/" + compose.PortLabel(s)
+		}
 		address := "localhost:" + port
 		if s.IsWeb() {
 			address = "http://" + address
 		}
-		out = append(out, fmt.Sprintf("%-*s  %s", width, s.Service, address))
+		if len(label) > width {
+			width = len(label)
+		}
+		entries = append(entries, entry{label, address})
+	}
+	out := make([]string, 0, len(entries))
+	for _, e := range entries {
+		out = append(out, fmt.Sprintf("%-*s  %s", width, e.label, e.address))
 	}
 	return out
 }

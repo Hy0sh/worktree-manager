@@ -86,3 +86,15 @@ func parseEntry(service, raw string) (ServicePort, bool) {
 	}
 	return ServicePort{}, false
 }
+
+// PortLabel distinguishes the several ports of one service, using the part of
+// the variable name that is not the service name: MAILHOG_WEB_PORT on service
+// mailhog becomes "web".
+func PortLabel(s ServicePort) string {
+	name := strings.TrimSuffix(strings.ToLower(s.Var), "_port")
+	name = strings.TrimPrefix(name, strings.ToLower(strings.ReplaceAll(s.Service, "-", "_"))+"_")
+	if name == "" || strings.EqualFold(name, s.Service) {
+		return s.Container
+	}
+	return strings.ReplaceAll(name, "_", "-")
+}
