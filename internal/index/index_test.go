@@ -1,0 +1,179 @@
+package index
+
+import (
+	"context"
+	"errors"
+	"io"
+	"path/filepath"
+	"strings"
+	"testing"
+
+	"github.com/Hy0sh/worktree-manager/internal/config"
+	"github.com/Hy0sh/worktree-manager/internal/execx"
+)
+
+// newResolver seeds a registry holding one project and returns a resolver on
+// it. dockerLabels drives what the fake docker reports: nil means docker is
+// unreachable, an empty slice means reachable but empty.
+func newResolver(t *testing.T, indices map[string]int, dockerLabels []string) (*Resolver, string, *execx.Fake) {
+	t.Helper()
+	path := filepath.Join(t.TempDir(), "config.json")
+	if err := config.WithLock(path, func(c *config.Config) error {
+		c.Projects["myapp"] = config.Project{Dir: "/repo/my-app", WorktreeIndices: indices}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	fake := &execx.Fake{Handler: func(c execx.Cmd) (execx.Result, error) {
+		if dockerLabels == nil {
+			return execx.Result{ExitCode: 1}, errors.New("docker is down")
+		}
+		line := c.String()
+		switch {
+		case strings.Contains(line, "ps -a"):
+			return execx.Result{Stdout: strings.Join(dockerLabels, "\n") + "\n"}, nil
+		case strings.Contains(line, "volume ls"):
+			// Volumes carry the same projects as k=v label lists.
+			out := make([]string, 0, len(dockerLabels))
+			for _, l := range dockerLabels {
+				out = append(out, "com.docker.compose.version=5.1.0,com.docker.compose.project="+l)
+			}
+			return execx.Result{Stdout: strings.Join(out, "\n") + "\n"}, nil
+		}
+		return execx.Result{}, nil
+	}}
+	return &Resolver{ConfigPath: path, Runner: fake, Name: "myapp", RepoName: "my-app", Out: io.Discard}, path, fake
+}
+
+func recorded(t *testing.T, path, branch string) int {
+	t.Helper()
+	cfg, err := config.Load(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return cfg.Projects["myapp"].WorktreeIndices[branch]
+}
+
+func TestResolveReturnsTheRecordedIndexWithoutTouchingDocker(t *testing.T) {
+	r, _, fake := newResolver(t, map[string]int{"feat/x": 7}, nil)
+	got, err := r.Resolve(context.Background(), "feat/x", 1, MustExist)
+	if err != nil || got != 7 {
+		t.Fatalf("got %d, %v", got, err)
+	}
+	if len(fake.Calls) != 0 {
+		t.Fatalf("the nominal path must not shell out, ran: %v", fake.Lines())
+	}
+}
+
+func TestResolveBackfillsFromAContainerLabel(t *testing.T) {
+	r, path, _ := newResolver(t, nil, []string{"my-app-wt-3-review-gal-1020", "other-project"})
+	got, err := r.Resolve(context.Background(), "review-gal-1020", 1, MustExist)
+	if err != nil || got != 3 {
+		t.Fatalf("got %d, %v", got, err)
+	}
+	if recorded(t, path, "review-gal-1020") != 3 {
+		t.Fatal("backfill must persist what docker reported")
+	}
+}
+
+func TestResolveBackfillMatchesTheSanitizedBranch(t *testing.T) {
+	r, _, _ := newResolver(t, nil, []string{"my-app-wt-2-feat-gal-667"})
+	got, err := r.Resolve(context.Background(), "feat/gal-667", 9, MustExist)
+	if err != nil || got != 2 {
+		t.Fatalf("a slashed branch must match its sanitized label, got %d, %v", got, err)
+	}
+}
+
+func TestResolveBackfillCollisionIsAnActionableError(t *testing.T) {
+	r, _, _ := newResolver(t, map[string]int{"review-gal-1020": 3}, []string{"my-app-wt-3-fix-allow"})
+	_, err := r.Resolve(context.Background(), "fix-allow", 2, MayAllocate)
+	if err == nil {
+		t.Fatal("two branches on the same index is a broken state, not something to paper over")
+	}
+	for _, want := range []string{"docker compose -p my-app-wt-3-fix-allow down", "review-gal-1020", "wtm start"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q must mention %q", err, want)
+		}
+	}
+}
+
+func TestResolveFallsBackToTheGitPositionWhenClean(t *testing.T) {
+	r, path, _ := newResolver(t, nil, []string{})
+	got, err := r.Resolve(context.Background(), "feat/old", 2, MustExist)
+	if err != nil || got != 2 {
+		t.Fatalf("got %d, %v", got, err)
+	}
+	if recorded(t, path, "feat/old") != 2 {
+		t.Fatal("the fallback must persist too")
+	}
+}
+
+func TestResolveGitPositionIsSkippedWhenAnotherBranchLeftDebris(t *testing.T) {
+	r, _, _ := newResolver(t, nil, []string{"my-app-wt-2-dead-branch"})
+	got, err := r.Resolve(context.Background(), "feat/new", 2, MayAllocate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got == 2 {
+		t.Fatal("index 2 still has another branch's containers or volumes; reusing it would inherit them")
+	}
+	if got != 1 {
+		t.Fatalf("expected the first clean free index (1), got %d", got)
+	}
+}
+
+func TestResolveAllocatesSkippingRecordedAndDirtyIndices(t *testing.T) {
+	r, path, _ := newResolver(t, map[string]int{"a": 1, "b": 2}, []string{"my-app-wt-3-dead"})
+	got, err := r.Resolve(context.Background(), "c", 0, MayAllocate)
+	if err != nil || got != 4 {
+		t.Fatalf("1 and 2 are recorded, 3 has debris: expected 4, got %d, %v", got, err)
+	}
+	if recorded(t, path, "c") != 4 {
+		t.Fatal("allocation must persist")
+	}
+}
+
+func TestResolveMustExistNeverInvents(t *testing.T) {
+	r, path, _ := newResolver(t, nil, []string{})
+	_, err := r.Resolve(context.Background(), "ghost", 0, MustExist)
+	if !errors.Is(err, ErrNoIndex) {
+		t.Fatalf("expected ErrNoIndex, got %v", err)
+	}
+	if recorded(t, path, "ghost") != 0 {
+		t.Fatal("MustExist must not write anything")
+	}
+}
+
+func TestResolveSurvivesAnUnreachableDocker(t *testing.T) {
+	r, _, _ := newResolver(t, nil, nil)
+	got, err := r.Resolve(context.Background(), "feat/x", 0, MayAllocate)
+	if err != nil || got != 1 {
+		t.Fatalf("docker being down must degrade to config-only allocation, got %d, %v", got, err)
+	}
+}
+
+func TestReleaseForgetsTheBranch(t *testing.T) {
+	r, path, _ := newResolver(t, map[string]int{"feat/x": 5}, []string{})
+	if err := r.Release("feat/x"); err != nil {
+		t.Fatal(err)
+	}
+	if recorded(t, path, "feat/x") != 0 {
+		t.Fatal("release must delete the entry")
+	}
+	// The freed index is reusable once nothing in docker carries it.
+	got, err := r.Resolve(context.Background(), "feat/y", 0, MayAllocate)
+	if err != nil || got != 1 {
+		t.Fatalf("got %d, %v", got, err)
+	}
+}
+
+func TestMatchBranch(t *testing.T) {
+	labels := []string{"noise", "my-app-wt-12-feat-x", "my-app-wt-3-feat-xy"}
+	n, label, ok := MatchBranch(labels, "my-app", "feat/x")
+	if !ok || n != 12 || label != "my-app-wt-12-feat-x" {
+		t.Fatalf("got %d %q %v", n, label, ok)
+	}
+	if _, _, ok := MatchBranch(labels, "my-app", "feat/z"); ok {
+		t.Fatal("no label carries feat/z")
+	}
+}
