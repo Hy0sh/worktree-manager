@@ -260,6 +260,14 @@ otherwise fail deep inside docker on a raw mount error. What the worktree
 already holds is left as it is, an env file tweaked for the task at hand being
 its own state and not a stale copy.
 
+None of it belongs in a commit, and a project's `.gitignore` knows nothing
+about names wtm invented, so wtm records them in the repository's
+`.git/info/exclude`: not versioned, hence nothing to leak into the project's
+history, and read from the common git-dir, so the same block covers every
+worktree plus the `.worktrees` directory and the `.git-container` link left in
+the main checkout. A repository that refuses that write still gets its stack,
+with a warning.
+
 Putting the mount in the project's compose instead would tie the behaviour
 to the branch the worktree was cut from, since that file is versioned.
 

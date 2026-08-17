@@ -98,7 +98,8 @@ func newFixture(t *testing.T) *fixture {
 			return execx.Result{}, nil
 		case strings.Contains(line, "worktree remove"):
 			return execx.Result{}, os.RemoveAll(c.Args[len(c.Args)-1])
-		case strings.Contains(line, "rev-parse --absolute-git-dir"):
+		case strings.Contains(line, "rev-parse --absolute-git-dir"),
+			strings.Contains(line, "rev-parse --git-common-dir"):
 			return execx.Result{Stdout: filepath.Join(f.root, ".git") + "\n"}, nil
 		case strings.Contains(line, "worktree list --porcelain"):
 			return execx.Result{Stdout: "worktree " + f.root + "\nbranch refs/heads/develop\n\n" +
