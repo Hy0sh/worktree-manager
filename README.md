@@ -336,8 +336,9 @@ a real project (my-app):
 ## Contributing
 
 Pull requests are welcome. `main` is the only long-lived branch: branch off it,
-keep the branch short, open a PR. CI runs `go test -race`, `go vet`, `gofmt`
-and a build, and has to be green to merge.
+keep the branch short, open a PR. CI runs `go test -race`, `go vet`, `gofmt`,
+staticcheck and a build, and has to be green to merge. What changed between
+published versions is in [CHANGELOG.md](CHANGELOG.md).
 
 The test suite needs neither git, docker nor node: every external command goes
 through an injectable runner, which keeps it fast and hermetic. Please keep it
