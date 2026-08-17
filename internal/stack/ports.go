@@ -29,6 +29,9 @@ type Allocation struct {
 
 // AllocatePort rebases a default port for a worktree index.
 func AllocatePort(defaultPort, index, stride, projectOffset int) (int, error) {
+	if index < 1 {
+		return 0, fmt.Errorf("worktree index %d was never allocated (wtm bug: the index resolver must run before ports are computed)", index)
+	}
 	port := baseOffset + projectOffset + defaultPort + index*stride
 	if port > 65535 {
 		port = defaultPort + 100*index
