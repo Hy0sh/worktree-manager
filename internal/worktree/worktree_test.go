@@ -11,6 +11,7 @@ import (
 
 	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
+	"github.com/Hy0sh/worktree-manager/internal/index"
 	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
 
@@ -18,14 +19,16 @@ import (
 // add` actually creates the destination, so the file-copy steps have somewhere
 // to write.
 type fixture struct {
-	root       string
-	backups    string
-	fake       *execx.Fake
-	branchHead bool     // whether refs/heads/<branch> already exists
-	remotes    []string // remotes the fake repository has
-	pushedOn   []string // remotes that carry the branch
-	needsFetch bool     // those remotes only reveal it once fetched
-	fetched    bool     // set when the fake handled a fetch
+	root         string
+	backups      string
+	cfgPath      string
+	fake         *execx.Fake
+	branchHead   bool     // whether refs/heads/<branch> already exists
+	remotes      []string // remotes the fake repository has
+	pushedOn     []string // remotes that carry the branch
+	needsFetch   bool     // those remotes only reveal it once fetched
+	fetched      bool     // set when the fake handled a fetch
+	dockerLabels []string // compose project labels `docker ps -a` reports
 }
 
 // hasTrackingRef answers `rev-parse refs/remotes/<remote>/<branch>` for the
@@ -41,7 +44,14 @@ func (f *fixture) hasTrackingRef(line string) bool {
 
 func newFixture(t *testing.T) *fixture {
 	t.Helper()
-	f := &fixture{root: t.TempDir(), backups: t.TempDir()}
+	f := &fixture{root: t.TempDir(), backups: t.TempDir(),
+		cfgPath: filepath.Join(t.TempDir(), "config.json")}
+	if err := config.WithLock(f.cfgPath, func(c *config.Config) error {
+		c.Projects["myapp"] = config.Project{Dir: f.root}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 	mustWrite(t, filepath.Join(f.root, "compose.yaml"), `services:
   db:
     ports:
@@ -84,6 +94,10 @@ func newFixture(t *testing.T) *fixture {
 		case strings.Contains(line, "worktree list --porcelain"):
 			return execx.Result{Stdout: "worktree " + f.root + "\nbranch refs/heads/develop\n\n" +
 				"worktree " + filepath.Join(f.root, ".worktrees", "feat", "x") + "\nbranch refs/heads/feat/x\n"}, nil
+		case strings.Contains(line, "ps -a"):
+			return execx.Result{Stdout: strings.Join(f.dockerLabels, "\n") + "\n"}, nil
+		case strings.Contains(line, "volume ls"):
+			return execx.Result{}, nil
 		}
 		return execx.Result{}, nil
 	}}
@@ -100,6 +114,8 @@ func (f *fixture) opts(branch string) Options {
 		Runner:     f.fake,
 		Out:        io.Discard,
 		Stack:      &stack.Client{Runner: f.fake, Dir: f.root, Out: io.Discard},
+		Resolver: &index.Resolver{ConfigPath: f.cfgPath, Runner: f.fake,
+			Name: "myapp", RepoName: filepath.Base(f.root), Out: io.Discard},
 	}
 }
 
@@ -441,14 +457,74 @@ func TestCreateNoStartSkipsWtcEntirely(t *testing.T) {
 	}
 }
 
+// Stop must use the index the registry recorded, not the position git
+// happens to list the worktree at, or a stack started at one index would be
+// addressed at another once other worktrees come and go.
 func TestStopUsesResolvedIndex(t *testing.T) {
 	f := newFixture(t)
+	if err := config.WithLock(f.cfgPath, func(c *config.Config) error {
+		p := c.Projects["myapp"]
+		p.WorktreeIndices = map[string]int{"feat/x": 7}
+		c.Projects["myapp"] = p
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
 	if err := Stop(context.Background(), f.opts("feat/x")); err != nil {
 		t.Fatalf("Stop: %v", err)
 	}
 	last := f.fake.Lines()[len(f.fake.Lines())-1]
-	if !strings.Contains(last, "compose -p "+wantProject(f)+" down") {
+	want := stack.ProjectName(filepath.Base(f.root), 7, "feat/x")
+	if !strings.Contains(last, "compose -p "+want+" down") {
 		t.Fatalf("last call = %q", last)
+	}
+}
+
+func TestStopWithoutAnyRecordedStackIsANoOp(t *testing.T) {
+	f := newFixture(t)
+	// The branch exists as a worktree but never started a stack and docker
+	// has no trace of it — and its git position is squatted by another
+	// branch's debris, so the fallback must not fire either. The label is
+	// built with the real naming function because the fixture's repo name is
+	// a temp directory, not a fixed string.
+	f.dockerLabels = []string{stack.ProjectName(filepath.Base(f.root), 1, "someone-else")}
+	// feat/x is listed at position 1 by the fixture's porcelain output.
+	if err := Stop(context.Background(), f.opts("feat/x")); err != nil {
+		t.Fatalf("stopping a stack that never existed must be a note, not an error: %v", err)
+	}
+	for _, line := range f.fake.Lines() {
+		if strings.Contains(line, "compose") && strings.Contains(line, "down") {
+			t.Fatalf("nothing should be taken down, ran: %s", line)
+		}
+	}
+}
+
+func TestRemoveReleasesTheIndex(t *testing.T) {
+	f := newFixture(t)
+	if err := Remove(context.Background(), f.opts("feat/x")); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(f.cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, held := cfg.Projects["myapp"].WorktreeIndices["feat/x"]; held {
+		t.Fatal("remove must release the branch's index")
+	}
+}
+
+func TestCreateRecordsTheAllocatedIndex(t *testing.T) {
+	f := newFixture(t)
+	f.branchHead = true
+	if err := Create(context.Background(), f.opts("feat/x")); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(f.cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Projects["myapp"].WorktreeIndices["feat/x"]; got < 1 {
+		t.Fatalf("create must persist the index it started the stack with, got %d", got)
 	}
 }
 
@@ -853,11 +929,6 @@ func TestListSurvivesAnUnreachableDocker(t *testing.T) {
 	if entries[0].Status != StatusUnknown {
 		t.Fatalf("status = %q, want %q", entries[0].Status, StatusUnknown)
 	}
-}
-
-// wantProject is the compose project the fixture's worktree gets.
-func wantProject(f *fixture) string {
-	return stack.ProjectName(filepath.Base(f.root), 1, "feat/x")
 }
 
 // Plenty of repositories have no docker stack at all. The worktree is still
