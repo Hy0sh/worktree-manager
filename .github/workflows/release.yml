@@ -2,8 +2,9 @@ name: Release
 
 # A tag is what publishes a version: the module proxy resolves tags, so
 # `go install ...@vX.Y.Z` works the moment it is pushed. This turns that tag
-# into a GitHub release too, with the changelog section as its notes, so the
-# two never drift apart and nobody has to remember the second step.
+# into a GitHub release too, with the changelog section as its notes and a
+# binary per platform attached, so the two never drift apart and nobody has to
+# remember the second step.
 on:
   push:
     tags:
@@ -21,6 +22,8 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-latest
+    env:
+      TAG: ${{ inputs.tag || github.ref_name }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -28,10 +31,14 @@ jobs:
           # one are readable.
           fetch-depth: 0
 
-      - name: Publish
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Create the release
         env:
           GH_TOKEN: ${{ github.token }}
-          TAG: ${{ inputs.tag || github.ref_name }}
         run: |
           set -euo pipefail
 
@@ -40,7 +47,7 @@ jobs:
             exit 1
           fi
           if gh release view "$TAG" >/dev/null 2>&1; then
-            echo "release $TAG already exists, nothing to do"
+            echo "release $TAG already exists, only its assets are refreshed"
             exit 0
           fi
 
@@ -74,3 +81,42 @@ jobs:
           fi
 
           gh release create "$TAG" --title "$title" --notes-file "$notes" --verify-tag --latest
+
+      - name: Build the binaries
+        run: |
+          set -euo pipefail
+
+          # Built through `go install <module>@<tag>` rather than from the
+          # checkout: the toolchain then records the module version, so a
+          # downloaded binary reports `wtm version vX.Y.Z` exactly like one the
+          # user installed themselves. GOPROXY=direct reads the tag from this
+          # repository instead of waiting for the proxy to have seen it.
+          export GOPROXY=direct GOFLAGS=-trimpath CGO_ENABLED=0
+          gopath=$(go env GOPATH)
+          mkdir -p dist
+
+          for platform in darwin/arm64 darwin/amd64 linux/amd64 linux/arm64; do
+            goos=${platform%/*}
+            goarch=${platform#*/}
+            GOOS=$goos GOARCH=$goarch go install "github.com/${{ github.repository }}/cmd/wtm@$TAG"
+
+            # A cross-compiled install lands in a per-platform directory, a
+            # native one straight in bin.
+            binary="$gopath/bin/${goos}_${goarch}/wtm"
+            [ -f "$binary" ] || binary="$gopath/bin/wtm"
+
+            staging=$(mktemp -d)
+            cp "$binary" "$staging/wtm"
+            cp LICENSE README.md "$staging/"
+            tar -czf "dist/wtm_${TAG}_${goos}_${goarch}.tar.gz" -C "$staging" wtm LICENSE README.md
+          done
+
+          ( cd dist && sha256sum *.tar.gz > SHA256SUMS )
+          ls -l dist
+
+      - name: Attach them to the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        # --clobber so replaying a run refreshes the assets instead of failing
+        # on the ones already there.
+        run: gh release upload "$TAG" dist/* --clobber

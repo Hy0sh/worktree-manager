@@ -45,6 +45,19 @@ GOBIN=$HOME/.local/bin go install github.com/Hy0sh/worktree-manager/cmd/wtm@late
 Check it with `wtm --version`, which reports the tag it was installed from, or
 the commit when built from a working copy.
 
+Without Go, take the binary from the
+[latest release](https://github.com/Hy0sh/worktree-manager/releases/latest),
+which carries one per platform (darwin and linux, arm64 and amd64) plus a
+`SHA256SUMS` to check them against:
+
+```sh
+tar -xzf wtm_v0.3.0_darwin_arm64.tar.gz wtm
+mv wtm ~/.local/bin/
+```
+
+Those are built by `go install` from the tag itself, so they report their
+version exactly like an installed one.
+
 From a clone, for hacking on it: `go install ./cmd/wtm`, or `go build -o wtm
 ./cmd/wtm` to build without installing. Rerun it after each change to refresh
 the installed binary.
