@@ -21,7 +21,8 @@ func newCreateCmd(a *app) *cobra.Command {
 		Long: "Creates a worktree for a registered project.\n\n" +
 			"If the first argument names a registered project, it is treated as such;\n" +
 			"otherwise it is a branch of the project of the current directory.\n" +
-			"An existing local branch is reused, and <base> is then ignored.",
+			"An existing branch is reused, local or on a remote (tracked, fetched if\n" +
+			"needed), and <base> is then ignored.",
 		Args:              cobra.RangeArgs(1, 3),
 		ValidArgsFunction: a.completeProjects,
 		SilenceUsage:      true,

@@ -247,6 +247,9 @@ func trackedChanges(ctx context.Context, o Options, wtPath string) (string, erro
 	return strings.TrimSpace(res.Stdout), nil
 }
 
+// addWorktree checks the branch out into dest: an existing local branch is
+// reused, a branch that only exists on a remote is checked out tracking it, and
+// an unknown branch is cut from base.
 func addWorktree(ctx context.Context, o Options, dest string) error {
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return fmt.Errorf("creating %s: %w", filepath.Dir(dest), err)
@@ -256,7 +259,17 @@ func addWorktree(ctx context.Context, o Options, dest string) error {
 		o.logf("branch %s already exists locally: reused as-is, base %q ignored", o.Branch, o.Base)
 		args = append(args, dest, o.Branch)
 	} else {
-		args = append(args, "-b", o.Branch, dest, o.Base)
+		remote, err := remoteBranch(ctx, o)
+		if err != nil {
+			return err
+		}
+		if remote == "" {
+			args = append(args, "-b", o.Branch, dest, o.Base)
+		} else {
+			o.logf("branch %s only exists on %s: checked out from %s/%s with its upstream set, base %q ignored",
+				o.Branch, remote, remote, o.Branch, o.Base)
+			args = append(args, "--track", "-b", o.Branch, dest, remote+"/"+o.Branch)
+		}
 	}
 	if _, err := o.Runner.Run(ctx, execx.Cmd{Name: "git", Args: args, Live: true}); err != nil {
 		return fmt.Errorf("creating the worktree: %w", err)
@@ -264,10 +277,70 @@ func addWorktree(ctx context.Context, o Options, dest string) error {
 	return nil
 }
 
+// remoteBranch returns the single remote that carries o.Branch, or "" when none
+// does. Without this, a branch that exists only on the remote gets cut from
+// base instead: same name, none of its commits, no upstream, and a divergence
+// to sort out at the first push.
+func remoteBranch(ctx context.Context, o Options) (string, error) {
+	all := remotes(ctx, o)
+	carriers := trackingRefs(ctx, o, all)
+	if len(carriers) == 0 {
+		// The branch may have been pushed since the last fetch, and only the
+		// tracking ref can tell. A branch that exists nowhere makes this fail,
+		// which is the ordinary case of creating one, hence the silence.
+		for _, r := range all {
+			_, _ = o.Runner.Run(ctx, execx.Cmd{
+				Name: "git",
+				Args: []string{"-C", o.Project.Dir, "fetch", "--quiet", r, o.Branch},
+			})
+		}
+		carriers = trackingRefs(ctx, o, all)
+	}
+	switch len(carriers) {
+	case 0:
+		return "", nil
+	case 1:
+		return carriers[0], nil
+	default:
+		// This is git's own rule for the same situation: guessing which remote
+		// was meant is worse than asking.
+		return "", fmt.Errorf("branch %s exists on several remotes (%s): pick one yourself with "+
+			"`git branch %s <remote>/%s`, then rerun",
+			o.Branch, strings.Join(carriers, ", "), o.Branch, o.Branch)
+	}
+}
+
+// trackingRefs lists the remotes whose tracking ref for o.Branch is present.
+func trackingRefs(ctx context.Context, o Options, all []string) []string {
+	var carriers []string
+	for _, r := range all {
+		if refExists(ctx, o, "refs/remotes/"+r+"/"+o.Branch) {
+			carriers = append(carriers, r)
+		}
+	}
+	return carriers
+}
+
+// remotes lists the repository's remotes, in git's order.
+func remotes(ctx context.Context, o Options) []string {
+	res, err := o.Runner.Run(ctx, execx.Cmd{
+		Name: "git",
+		Args: []string{"-C", o.Project.Dir, "remote"},
+	})
+	if err != nil {
+		return nil
+	}
+	return strings.Fields(res.Stdout)
+}
+
 func branchExists(ctx context.Context, o Options) bool {
+	return refExists(ctx, o, "refs/heads/"+o.Branch)
+}
+
+func refExists(ctx context.Context, o Options, ref string) bool {
 	_, err := o.Runner.Run(ctx, execx.Cmd{
 		Name: "git",
-		Args: []string{"-C", o.Project.Dir, "rev-parse", "--verify", "--quiet", "refs/heads/" + o.Branch},
+		Args: []string{"-C", o.Project.Dir, "rev-parse", "--verify", "--quiet", ref},
 	})
 	return err == nil
 }

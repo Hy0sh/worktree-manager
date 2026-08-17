@@ -123,6 +123,13 @@ wtm backup remove my-app
 If the first argument is a registered project, it's treated as such;
 otherwise it's a branch of the current directory's project.
 
+`create` picks up an existing branch rather than shadowing it. A local
+branch is checked out as-is; a branch that only exists on a remote is
+checked out tracking it, fetching first in case it was pushed since your
+last fetch. `<base>` is ignored in both cases, and only used for a branch
+that exists nowhere yet. Should two remotes carry the same branch name, wtm
+refuses to guess, as git does.
+
 `exec` and `run` are deliberately distinct: `exec` enters the stack's
 container, `run` stays on your machine with the worktree as working
 directory, which is what an editor or a coding agent needs. `wtm list`

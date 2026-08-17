@@ -21,7 +21,22 @@ type fixture struct {
 	root       string
 	backups    string
 	fake       *execx.Fake
-	branchHead bool // whether refs/heads/<branch> already exists
+	branchHead bool     // whether refs/heads/<branch> already exists
+	remotes    []string // remotes the fake repository has
+	pushedOn   []string // remotes that carry the branch
+	needsFetch bool     // those remotes only reveal it once fetched
+	fetched    bool     // set when the fake handled a fetch
+}
+
+// hasTrackingRef answers `rev-parse refs/remotes/<remote>/<branch>` for the
+// fake, which is what tells wtm a branch exists on a remote.
+func (f *fixture) hasTrackingRef(line string) bool {
+	for _, r := range f.pushedOn {
+		if strings.Contains(line, "refs/remotes/"+r+"/") {
+			return !f.needsFetch || f.fetched
+		}
+	}
+	return false
 }
 
 func newFixture(t *testing.T) *fixture {
@@ -40,10 +55,20 @@ func newFixture(t *testing.T) *fixture {
 		line := c.String()
 		switch {
 		case strings.Contains(line, "rev-parse --verify"):
-			if f.branchHead {
+			if strings.Contains(line, "refs/heads/") && f.branchHead || f.hasTrackingRef(line) {
 				return execx.Result{Stdout: "abc123\n"}, nil
 			}
 			return execx.Result{ExitCode: 1}, errors.New("unknown revision")
+		case strings.HasSuffix(line, " remote"):
+			return execx.Result{Stdout: strings.Join(f.remotes, "\n") + "\n"}, nil
+		case strings.Contains(line, "fetch --quiet"):
+			f.fetched = true
+			for _, r := range f.pushedOn {
+				if strings.Contains(line, "fetch --quiet "+r+" ") {
+					return execx.Result{}, nil
+				}
+			}
+			return execx.Result{ExitCode: 128}, errors.New("couldn't find remote ref")
 		case strings.Contains(line, "worktree add"):
 			// `worktree add -b <branch> <dest> <base>` and
 			// `worktree add <dest> <branch>` both put dest second to last.
@@ -129,6 +154,99 @@ func TestCreateExistingBranchIgnoresBase(t *testing.T) {
 	if !strings.Contains(out.String(), "already exists") {
 		t.Fatalf("an info message about the existing branch was expected, got %q", out.String())
 	}
+}
+
+// A branch that exists only on the remote used to be cut from base: same name,
+// none of its commits, no upstream, and a divergence at the first push.
+func TestCreateTracksABranchThatOnlyExistsOnARemote(t *testing.T) {
+	f := newFixture(t)
+	f.remotes = []string{"origin"}
+	f.pushedOn = []string{"origin"}
+	var out strings.Builder
+	o := f.opts("feat/x")
+	o.NoStart = true
+	o.Out = &out
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	addLine := lastCall(f, "worktree add")
+	dest := filepath.Join(f.root, ".worktrees", "feat/x")
+	if !strings.Contains(addLine, "--track -b feat/x "+dest+" origin/feat/x") {
+		t.Fatalf("worktree add line = %q", addLine)
+	}
+	if strings.Contains(addLine, "develop") {
+		t.Fatalf("base must be ignored when the remote branch wins, got %q", addLine)
+	}
+	if !strings.Contains(out.String(), "upstream") {
+		t.Fatalf("the reuse of the remote branch should be stated, got %q", out.String())
+	}
+}
+
+// A branch pushed since the last fetch has no tracking ref yet, so only a fetch
+// can tell it apart from a branch that exists nowhere.
+func TestCreateFetchesBeforeConcludingTheBranchIsNew(t *testing.T) {
+	f := newFixture(t)
+	f.remotes = []string{"origin"}
+	f.pushedOn = []string{"origin"}
+	f.needsFetch = true
+	o := f.opts("feat/x")
+	o.NoStart = true
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if fetch := lastCall(f, "fetch --quiet"); !strings.HasSuffix(fetch, "fetch --quiet origin feat/x") {
+		t.Fatalf("fetch call = %q", fetch)
+	}
+	if addLine := lastCall(f, "worktree add"); !strings.Contains(addLine, "--track -b feat/x") {
+		t.Fatalf("the freshly fetched branch should be tracked, got %q", addLine)
+	}
+}
+
+func TestCreateCutsFromBaseWhenNoRemoteHasTheBranch(t *testing.T) {
+	f := newFixture(t)
+	f.remotes = []string{"origin"}
+	o := f.opts("feat/x")
+	o.NoStart = true
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	dest := filepath.Join(f.root, ".worktrees", "feat/x")
+	if addLine := lastCall(f, "worktree add"); !strings.HasSuffix(addLine, "-b feat/x "+dest+" develop") {
+		t.Fatalf("worktree add line = %q", addLine)
+	}
+}
+
+// git refuses to guess in the same situation, and so does wtm: two remotes
+// carrying feat/x are two different branches.
+func TestCreateRefusesAnAmbiguousRemoteBranch(t *testing.T) {
+	f := newFixture(t)
+	f.remotes = []string{"origin", "upstream"}
+	f.pushedOn = []string{"origin", "upstream"}
+	o := f.opts("feat/x")
+	o.NoStart = true
+	err := Create(context.Background(), o)
+	if err == nil {
+		t.Fatal("expected a refusal")
+	}
+	for _, want := range []string{"origin", "upstream", "git branch feat/x"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("error %q should mention %q", err.Error(), want)
+		}
+	}
+	if line := lastCall(f, "worktree add"); line != "" {
+		t.Fatalf("no worktree should be added, got %q", line)
+	}
+}
+
+// lastCall returns the last recorded command containing want, or "".
+func lastCall(f *fixture, want string) string {
+	var found string
+	for _, l := range f.fake.Lines() {
+		if strings.Contains(l, want) {
+			found = l
+		}
+	}
+	return found
 }
 
 func TestCreateAbortsWhenDestinationExists(t *testing.T) {
