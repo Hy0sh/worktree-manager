@@ -250,8 +250,8 @@ the twenty minutes the migration history costs.
 Nothing is asked of the project. wtm links `.db-snapshot` to the central
 backup directory, writes a restore script next to the dump, and generates a
 `.wtm-snapshot.yaml` in the worktree that mounts both into the database
-service. That file is handed to docker through `COMPOSE_FILE` when the stack
-starts, on top of the project's own compose files.
+service. That file is passed to docker as an extra `-f` when the stack starts,
+after the project's own compose files.
 
 Creation lays those down and so does every `start`, links, `*.env` copies and
 compose overrides alike: they belong to the stack rather than to the checkout,
