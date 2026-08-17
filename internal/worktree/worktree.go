@@ -80,21 +80,8 @@ func Create(ctx context.Context, o Options) error {
 	if err := addWorktree(ctx, o, dest); err != nil {
 		return err
 	}
-	if o.Project.GitContainer {
-		if err := linkGitContainer(ctx, o, dest); err != nil {
-			return err
-		}
-	}
-	if err := copyEnvFiles(o.Project.Dir, dest); err != nil {
-		return fmt.Errorf("copying .env files: %w", err)
-	}
-	if err := copyComposeOverrides(o.Project.Dir, dest); err != nil {
-		return fmt.Errorf("copying compose overrides: %w", err)
-	}
-	if o.Project.Dump {
-		if err := linkSnapshotDir(o, dest); err != nil {
-			return fmt.Errorf("linking to the backup: %w", err)
-		}
+	if err := provision(ctx, o, dest, overwriteCopies); err != nil {
+		return err
 	}
 	if err := ensureSnapshotAssets(o, dest); err != nil {
 		return err
@@ -117,6 +104,39 @@ func Start(ctx context.Context, o Options) error {
 		return err
 	}
 	return start(ctx, o, wt.Path)
+}
+
+// provisionMode says what to do with a file the worktree already has. Create
+// works on a fresh checkout and takes the main repository as the reference;
+// start must not clobber an edit made in the worktree since.
+type provisionMode int
+
+const (
+	overwriteCopies provisionMode = iota
+	keepWorktreeCopies
+)
+
+// provision lays down what the stack needs beside the checkout: the git-dir
+// link, the .env and compose override copies, the link to the central backup.
+// The two symlinks are always rewritten, they carry no local state.
+func provision(ctx context.Context, o Options, dest string, mode provisionMode) error {
+	if o.Project.GitContainer {
+		if err := linkGitContainer(ctx, o, dest); err != nil {
+			return err
+		}
+	}
+	if err := copyEnvFiles(o.Project.Dir, dest, mode); err != nil {
+		return fmt.Errorf("copying .env files: %w", err)
+	}
+	if err := copyComposeOverrides(o.Project.Dir, dest, mode); err != nil {
+		return fmt.Errorf("copying compose overrides: %w", err)
+	}
+	if o.Project.Dump {
+		if err := linkSnapshotDir(o, dest); err != nil {
+			return fmt.Errorf("linking to the backup: %w", err)
+		}
+	}
+	return nil
 }
 
 // ensureSnapshotAssets writes the restore script and the generated compose
@@ -428,6 +448,12 @@ func start(ctx context.Context, o Options, dest string) error {
 	if err := o.resolveIndex(ctx, &wt, index.MayAllocate); err != nil {
 		return err
 	}
+	// A worktree can have lost these since it was created, by an earlier wtm
+	// that did not write them or by a manual cleanup, and docker then fails on a
+	// raw mount error instead of a diagnosis.
+	if err := provision(ctx, o, dest, keepWorktreeCopies); err != nil {
+		return err
+	}
 	if err := ensureSnapshotAssets(o, dest); err != nil {
 		return err
 	}
@@ -588,9 +614,12 @@ func endpoints(o Options, wt stack.Worktree) []string {
 	return out
 }
 
-// forceSymlink is `ln -sfn`: replace whatever is there.
+// forceSymlink is `ln -sfn`: replace whatever is there. Docker materialises a
+// directory at the source of a bind-mount that does not exist, so what has to
+// go can be a non-empty one. RemoveAll does not follow the link it replaces, so
+// a live snapshot directory is never touched through it.
 func forceSymlink(target, link string) error {
-	if err := os.Remove(link); err != nil && !os.IsNotExist(err) {
+	if err := os.RemoveAll(link); err != nil {
 		return fmt.Errorf("replacing %s: %w", link, err)
 	}
 	if err := os.Symlink(target, link); err != nil {
@@ -599,7 +628,7 @@ func forceSymlink(target, link string) error {
 	return nil
 }
 
-func copyEnvFiles(root, dest string) error {
+func copyEnvFiles(root, dest string, mode provisionMode) error {
 	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -618,24 +647,29 @@ func copyEnvFiles(root, dest string) error {
 		if depth > envMaxDepth || !strings.HasSuffix(d.Name(), ".env") {
 			return nil
 		}
-		return copyFile(path, filepath.Join(dest, rel))
+		return copyFile(path, filepath.Join(dest, rel), mode)
 	})
 }
 
-func copyComposeOverrides(root, dest string) error {
+func copyComposeOverrides(root, dest string, mode provisionMode) error {
 	for _, name := range composeOverrides {
 		src := filepath.Join(root, name)
 		if _, err := os.Stat(src); err != nil {
 			continue
 		}
-		if err := copyFile(src, filepath.Join(dest, name)); err != nil {
+		if err := copyFile(src, filepath.Join(dest, name), mode); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func copyFile(src, dst string) error {
+func copyFile(src, dst string, mode provisionMode) error {
+	if mode == keepWorktreeCopies {
+		if _, err := os.Lstat(dst); err == nil {
+			return nil
+		}
+	}
 	info, err := os.Stat(src)
 	if err != nil {
 		return err

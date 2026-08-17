@@ -23,12 +23,13 @@ type fixture struct {
 	backups      string
 	cfgPath      string
 	fake         *execx.Fake
-	branchHead   bool     // whether refs/heads/<branch> already exists
-	remotes      []string // remotes the fake repository has
-	pushedOn     []string // remotes that carry the branch
-	needsFetch   bool     // those remotes only reveal it once fetched
-	fetched      bool     // set when the fake handled a fetch
-	dockerLabels []string // compose project labels `docker ps -a` reports
+	branchHead   bool              // whether refs/heads/<branch> already exists
+	remotes      []string          // remotes the fake repository has
+	pushedOn     []string          // remotes that carry the branch
+	needsFetch   bool              // those remotes only reveal it once fetched
+	fetched      bool              // set when the fake handled a fetch
+	dockerLabels []string          // compose project labels `docker ps -a` reports
+	tracked      map[string]string // files the checkout carries, written by `worktree add`
 }
 
 // hasTrackingRef answers `rev-parse refs/remotes/<remote>/<branch>` for the
@@ -85,6 +86,15 @@ func newFixture(t *testing.T) *fixture {
 			dest := c.Args[len(c.Args)-2]
 			if err := os.MkdirAll(dest, 0o755); err != nil {
 				return execx.Result{}, err
+			}
+			for rel, body := range f.tracked {
+				p := filepath.Join(dest, rel)
+				if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+					return execx.Result{}, err
+				}
+				if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+					return execx.Result{}, err
+				}
 			}
 			return execx.Result{}, nil
 		case strings.Contains(line, "worktree remove"):
@@ -837,6 +847,119 @@ func TestStartRegeneratesTheSnapshotAssets(t *testing.T) {
 	}
 	if _, err := os.Stat(generated); err != nil {
 		t.Fatalf("start should have rewritten the snapshot file: %v", err)
+	}
+}
+
+// The copies and links belong to the stack, not to the checkout. A worktree
+// that lost them, created before they existed or cleaned up by hand, has to
+// get them back on start instead of failing inside docker.
+func TestStartRestoresTheMissingProvisionedArtifacts(t *testing.T) {
+	f := newFixture(t)
+	mustWrite(t, filepath.Join(f.root, ".env"), "ROOT=1")
+	mustWrite(t, filepath.Join(f.root, "compose.override.yaml"), "services: {}")
+	o := f.opts("feat/x")
+	o.NoStart = true
+	o.Project.Dump = true
+	o.Project.GitContainer = true
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	dest := filepath.Join(f.root, ".worktrees", "feat", "x")
+	for _, rel := range []string{".env", "compose.override.yaml", ".git-container", ".db-snapshot"} {
+		if err := os.RemoveAll(filepath.Join(dest, rel)); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	start := f.opts("feat/x")
+	start.Project.Dump = true
+	start.Project.GitContainer = true
+	if err := Start(context.Background(), start); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	for _, rel := range []string{".env", "compose.override.yaml"} {
+		if _, err := os.Stat(filepath.Join(dest, rel)); err != nil {
+			t.Fatalf("%s should have been copied again: %v", rel, err)
+		}
+	}
+	for _, rel := range []string{".git-container", ".db-snapshot"} {
+		if _, err := os.Readlink(filepath.Join(dest, rel)); err != nil {
+			t.Fatalf("%s should be a symlink again: %v", rel, err)
+		}
+	}
+}
+
+// A .env tracked by git is already in the fresh checkout, and create still
+// takes the main repository's copy as the reference, which is what carries the
+// developer's local values. Only start defers to what the worktree holds.
+func TestCreateOverwritesAnEnvFileTheCheckoutAlreadyCarries(t *testing.T) {
+	f := newFixture(t)
+	f.tracked = map[string]string{".env": "ROOT=from-the-branch"}
+	mustWrite(t, filepath.Join(f.root, ".env"), "ROOT=from-the-main-repo")
+	o := f.opts("feat/x")
+	o.NoStart = true
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(f.root, ".worktrees", "feat", "x", ".env"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "ROOT=from-the-main-repo" {
+		t.Fatalf(".env = %q, create should have carried the main repository's copy over", got)
+	}
+}
+
+// start fills the gaps and stops there: an env file adjusted for the task at
+// hand is the worktree's own state, not a stale copy to refresh.
+func TestStartKeepsAnEnvFileEditedInTheWorktree(t *testing.T) {
+	f := newFixture(t)
+	mustWrite(t, filepath.Join(f.root, ".env"), "ROOT=1")
+	o := f.opts("feat/x")
+	o.NoStart = true
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	dest := filepath.Join(f.root, ".worktrees", "feat", "x")
+	mustWrite(t, filepath.Join(dest, ".env"), "ROOT=edited")
+
+	if err := Start(context.Background(), f.opts("feat/x")); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(dest, ".env"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != "ROOT=edited" {
+		t.Fatalf(".env = %q, start overwrote a worktree edit", got)
+	}
+}
+
+// Docker materialises a directory at the source of a bind-mount that does not
+// exist, so what start has to replace by the link can be a non-empty directory.
+func TestStartReplacesTheDirectoryDockerLeftInsteadOfTheSnapshotLink(t *testing.T) {
+	f := newFixture(t)
+	o := f.opts("feat/x")
+	o.NoStart = true
+	o.Project.Dump = true
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	link := filepath.Join(f.root, ".worktrees", "feat", "x", ".db-snapshot")
+	if err := os.Remove(link); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(filepath.Join(link, "restore-snapshot.sh"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	start := f.opts("feat/x")
+	start.Project.Dump = true
+	if err := Start(context.Background(), start); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	if _, err := os.Readlink(link); err != nil {
+		t.Fatalf(".db-snapshot should be a symlink again: %v", err)
 	}
 }
 
