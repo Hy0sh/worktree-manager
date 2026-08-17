@@ -199,8 +199,9 @@ worktrees whenever a new one sorted before them, handing a new stack the very
 ports of a running neighbour. A worktree created before indices were recorded
 is backfilled from the compose project label its containers and volumes still
 carry, or from its listing position when docker holds no trace. A freed index
-is only reused once docker no longer holds any container or volume of a
-previous worktree there.
+is only reused once docker — when it can be asked — no longer holds any
+container or volume of a previous worktree there; while docker is
+unreachable, wtm resolves indices in memory and records nothing.
 
 Three details earned their place the hard way. The reference is the project's
 *merged* compose configuration, not just the base file: a project already

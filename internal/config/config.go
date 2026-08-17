@@ -187,7 +187,15 @@ func (c *Config) Save(path string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, append(data, '\n'), 0o600)
+	// Readers (Load) run outside the lock. Writing in place would let one see
+	// a truncated file mid-write; writing to a sibling temp file and renaming
+	// it over path is atomic, so a reader only ever sees the old or the new
+	// content, never a partial one.
+	tmp := path + ".tmp"
+	if err := os.WriteFile(tmp, append(data, '\n'), 0o600); err != nil {
+		return err
+	}
+	return os.Rename(tmp, path)
 }
 
 // NextPortOffset returns a free offset for a new project, in steps of 1000.
