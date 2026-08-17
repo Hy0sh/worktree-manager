@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/Hy0sh/worktree-manager/internal/compose"
 	"github.com/Hy0sh/worktree-manager/internal/config"
 )
 
@@ -87,37 +86,4 @@ services:
       - ./.db-snapshot/restore-snapshot.sh:/docker-entrypoint-initdb.d/10-wtm-restore.sh:ro
 `, dbService)
 	return os.WriteFile(filepath.Join(dest, snapshotOverride), []byte(body), 0o644)
-}
-
-// composeFileEnv builds the COMPOSE_FILE value that adds the generated file to
-// the ones docker compose would have picked on its own. wtc spreads its own
-// environment into the compose commands it runs, so this reaches docker
-// without wtc needing to know about it.
-//
-// The names come from the project, not from the worktree: wtc copies the
-// compose file in as part of `start`, so on a first start it does not exist
-// yet when this runs, only by the time docker is invoked.
-func composeFileEnv(projectDir, dest string) (string, error) {
-	files, err := compose.Files(projectDir)
-	if err != nil {
-		return "", err
-	}
-	inWorktree := make([]string, 0, len(files)+1)
-	for _, f := range files {
-		inWorktree = append(inWorktree, filepath.Join(dest, filepath.Base(f)))
-	}
-	inWorktree = append(inWorktree, filepath.Join(dest, snapshotOverride))
-	return "COMPOSE_FILE=" + joinComposeFiles(inWorktree), nil
-}
-
-// joinComposeFiles uses the separator docker compose expects on this platform.
-func joinComposeFiles(files []string) string {
-	out := ""
-	for i, f := range files {
-		if i > 0 {
-			out += string(os.PathListSeparator)
-		}
-		out += f
-	}
-	return out
 }

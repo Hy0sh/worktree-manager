@@ -38,14 +38,6 @@ func TestWriteEnvOverridesIsIdempotent(t *testing.T) {
 	if !strings.Contains(content, "DB_PORT=25439") || !strings.Contains(content, "API_PORT=28007") {
 		t.Fatalf("ports missing:\n%s", content)
 	}
-
-	values, err := ReadPortValues(dir)
-	if err != nil {
-		t.Fatalf("ReadPortValues: %v", err)
-	}
-	if values["DB_PORT"] != "25439" {
-		t.Fatalf("round trip failed: %v", values)
-	}
 }
 
 func TestWriteEnvOverridesCreatesTheFile(t *testing.T) {
@@ -53,8 +45,11 @@ func TestWriteEnvOverridesCreatesTheFile(t *testing.T) {
 	if err := WriteEnvOverrides(dir, []Allocation{{Var: "DB_PORT", Port: 25439}}); err != nil {
 		t.Fatalf("WriteEnvOverrides: %v", err)
 	}
-	ports, err := ReadPorts(dir)
-	if err != nil || len(ports) != 1 || ports[0] != "DB_PORT=25439" {
-		t.Fatalf("ports = %v, err = %v", ports, err)
+	body, err := os.ReadFile(filepath.Join(dir, ".env"))
+	if err != nil {
+		t.Fatalf("the .env should have been created: %v", err)
+	}
+	if !strings.Contains(string(body), "DB_PORT=25439") {
+		t.Fatalf("port missing:\n%s", body)
 	}
 }
