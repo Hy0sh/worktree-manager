@@ -4,6 +4,7 @@ package worktree
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -17,6 +18,7 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/dockermem"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
+	"github.com/Hy0sh/worktree-manager/internal/index"
 	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
 
@@ -41,6 +43,7 @@ type Options struct {
 	Runner     execx.Runner
 	Out        io.Writer
 	Stack      *stack.Client
+	Resolver   *index.Resolver // resolves and records each branch's stable index
 }
 
 // dest is where the worktree goes. A branch name is not a safe path fragment:
@@ -142,6 +145,13 @@ func Stop(ctx context.Context, o Options) error {
 		o.logf("no compose file in this project: no stack to stop")
 		return nil
 	}
+	if err := o.resolveIndex(ctx, &wt, index.MustExist); err != nil {
+		if errors.Is(err, index.ErrNoIndex) {
+			o.logf("no stack was ever started for %s: nothing to stop", o.Branch)
+			return nil
+		}
+		return err
+	}
 	if err := o.Stack.Down(ctx, o.projectName(wt), wt.Path); err != nil {
 		return fmt.Errorf("stopping the stack: %w", err)
 	}
@@ -155,9 +165,18 @@ func Remove(ctx context.Context, o Options) error {
 	if err != nil {
 		return err
 	}
+	stackKnown := false
 	if hasCompose(o.Project.Dir) {
-		if err := o.Stack.Down(ctx, o.projectName(wt), wt.Path); err != nil {
-			return fmt.Errorf("stopping the stack: %w", err)
+		switch err := o.resolveIndex(ctx, &wt, index.MustExist); {
+		case errors.Is(err, index.ErrNoIndex):
+			o.logf("no stack was ever started for %s: removing the worktree alone", o.Branch)
+		case err != nil:
+			return err
+		default:
+			stackKnown = true
+			if err := o.Stack.Down(ctx, o.projectName(wt), wt.Path); err != nil {
+				return fmt.Errorf("stopping the stack: %w", err)
+			}
 		}
 	}
 
@@ -183,7 +202,12 @@ func Remove(ctx context.Context, o Options) error {
 	}
 	pruneEmptyParents(wt.Path, filepath.Join(o.Project.Dir, ".worktrees"))
 	o.logf("worktree removed: %s (branch %s kept)", wt.Path, o.Branch)
-	removeVolumes(ctx, o, wt)
+	if stackKnown {
+		removeVolumes(ctx, o, wt)
+	}
+	if err := o.Resolver.Release(o.Branch); err != nil {
+		o.logf("warning: the index of %s could not be released: %v", o.Branch, err)
+	}
 	return nil
 }
 
@@ -401,6 +425,9 @@ func start(ctx context.Context, o Options, dest string) error {
 	if err != nil {
 		return err
 	}
+	if err := o.resolveIndex(ctx, &wt, index.MayAllocate); err != nil {
+		return err
+	}
 	if err := ensureSnapshotAssets(o, dest); err != nil {
 		return err
 	}
@@ -438,6 +465,17 @@ func hasCompose(projectDir string) bool {
 // containers, network and volumes from the main stack and from one another.
 func (o Options) projectName(wt stack.Worktree) string {
 	return stack.ProjectName(filepath.Base(o.Project.Dir), wt.Index, wt.Branch)
+}
+
+// resolveIndex fills in the branch's stable index. pos is git's listing
+// position, kept only as the resolver's historical fallback.
+func (o Options) resolveIndex(ctx context.Context, wt *stack.Worktree, mode index.Mode) error {
+	n, err := o.Resolver.Resolve(ctx, o.Branch, wt.Pos, mode)
+	if err != nil {
+		return err
+	}
+	wt.Index = n
+	return nil
 }
 
 // allocatePorts rebases every parameterised port of the compose file for this
@@ -620,6 +658,9 @@ func Exec(ctx context.Context, o Options, service string, command []string) erro
 	if err != nil {
 		return err
 	}
+	if err := o.resolveIndex(ctx, &wt, index.MustExist); err != nil {
+		return err
+	}
 	if service == "" {
 		service = o.Project.BackupConfig().AppService
 	}
@@ -691,13 +732,25 @@ func List(ctx context.Context, o Options) ([]Entry, error) {
 	if hasCompose(o.Project.Dir) {
 		running = runningProjects(ctx, o.Runner)
 	}
+	indices := o.Resolver.Recorded()
+	runningLabels := make([]string, 0, len(running))
+	for name := range running {
+		runningLabels = append(runningLabels, name)
+	}
 	entries := make([]Entry, 0, len(worktrees))
 	for _, wt := range worktrees {
+		wt.Index = indices[wt.Branch]
 		status := StatusUnknown
 		if running != nil {
 			status = "down"
-			if running[stack.ProjectName(filepath.Base(o.Project.Dir), wt.Index, wt.Branch)] {
+			if wt.Index > 0 && running[stack.ProjectName(filepath.Base(o.Project.Dir), wt.Index, wt.Branch)] {
 				status = "up"
+			} else if wt.Index == 0 {
+				// Not recorded yet: an old stack may still run under the
+				// index docker gave it; match by branch instead of by name.
+				if _, _, ok := index.MatchBranch(runningLabels, filepath.Base(o.Project.Dir), wt.Branch); ok {
+					status = "up"
+				}
 			}
 		}
 		entries = append(entries, Entry{Worktree: wt, Status: status})

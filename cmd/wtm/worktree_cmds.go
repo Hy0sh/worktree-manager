@@ -5,6 +5,7 @@ package main
 
 import (
 	"fmt"
+	"strconv"
 	"strings"
 	"text/tabwriter"
 
@@ -78,7 +79,11 @@ func newListCmd(a *app) *cobra.Command {
 			w := tabwriter.NewWriter(a.out, 0, 0, 2, ' ', 0)
 			fmt.Fprintln(w, "INDEX\tBRANCH\tSTATUS\tPATH")
 			for _, e := range entries {
-				fmt.Fprintf(w, "%d\t%s\t%s\t%s\n", e.Index, e.Branch, e.Status, e.Path)
+				idx := "-"
+				if e.Index > 0 {
+					idx = strconv.Itoa(e.Index)
+				}
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", idx, e.Branch, e.Status, e.Path)
 			}
 			return w.Flush()
 		},

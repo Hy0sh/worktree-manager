@@ -7,6 +7,7 @@ import (
 	"context"
 	"io"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 	"github.com/Hy0sh/worktree-manager/internal/gitx"
+	"github.com/Hy0sh/worktree-manager/internal/index"
 	"github.com/Hy0sh/worktree-manager/internal/stack"
 	"github.com/Hy0sh/worktree-manager/internal/worktree"
 )
@@ -70,6 +72,13 @@ func (a *app) options(name string, p config.Project, branch string) worktree.Opt
 		Runner:     a.runner,
 		Out:        a.out,
 		Stack:      &stack.Client{Runner: a.runner, Dir: p.Dir, Out: a.out},
+		Resolver: &index.Resolver{
+			ConfigPath: a.cfgPath,
+			Runner:     a.runner,
+			Name:       name,
+			RepoName:   filepath.Base(p.Dir),
+			Out:        a.out,
+		},
 	}
 }
 
