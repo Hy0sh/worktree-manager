@@ -1,5 +1,7 @@
 # worktree-manager
 
+[![Go Reference](https://pkg.go.dev/badge/github.com/Hy0sh/worktree-manager.svg)](https://pkg.go.dev/github.com/Hy0sh/worktree-manager)
+
 Go CLI that creates a ready-to-use git worktree and manages its full
 lifecycle: creation, stack startup, stop, removal, plus a pre-migrated
 Postgres backup that makes bootstrapping a database fast.
