@@ -1,0 +1,76 @@
+name: Release
+
+# A tag is what publishes a version: the module proxy resolves tags, so
+# `go install ...@vX.Y.Z` works the moment it is pushed. This turns that tag
+# into a GitHub release too, with the changelog section as its notes, so the
+# two never drift apart and nobody has to remember the second step.
+on:
+  push:
+    tags:
+      - "v*"
+  # Lets a failed run be replayed without moving the tag.
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag to publish
+        required: true
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # The whole history, so the previous tag and the annotation of this
+          # one are readable.
+          fetch-depth: 0
+
+      - name: Publish
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          if ! git rev-parse -q --verify "refs/tags/$TAG" >/dev/null; then
+            echo "::error::tag $TAG does not exist"
+            exit 1
+          fi
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "release $TAG already exists, nothing to do"
+            exit 0
+          fi
+
+          # The changelog is the source of truth: a version nobody documented
+          # is a version nobody can read about, so this fails rather than
+          # inventing notes from the commit log.
+          version="${TAG#v}"
+          notes=$(mktemp)
+          python3 - "$version" > "$notes" <<'PY'
+          import re, sys
+
+          version = sys.argv[1]
+          text = open("CHANGELOG.md").read()
+          m = re.search(r"\n## \[%s\][^\n]*\n(.*?)(?=\n## |\n\[Unreleased\]:)" % re.escape(version), text, re.S)
+          if not m:
+              sys.exit("no section for %s in CHANGELOG.md" % version)
+          print(m.group(1).strip())
+          PY
+
+          previous=$(git describe --tags --abbrev=0 "$TAG^" 2>/dev/null || true)
+          if [ -n "$previous" ]; then
+            printf '\n**Full diff**: %s/compare/%s...%s\n' \
+              "${{ github.server_url }}/${{ github.repository }}" "$previous" "$TAG" >> "$notes"
+          fi
+
+          # The annotation is the one-line summary written when tagging.
+          subject=$(git tag -l --format='%(contents:subject)' "$TAG")
+          title="$TAG"
+          if [ -n "$subject" ]; then
+            title="$TAG: $subject"
+          fi
+
+          gh release create "$TAG" --title "$title" --notes-file "$notes" --verify-tag --latest

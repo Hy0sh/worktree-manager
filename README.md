@@ -344,6 +344,21 @@ The test suite needs neither git, docker nor node: every external command goes
 through an injectable runner, which keeps it fast and hermetic. Please keep it
 that way.
 
+Publishing a version is a changelog entry and a tag:
+
+```sh
+# CHANGELOG.md: turn Unreleased into the version being cut, then commit it
+git tag -a v0.4.0 -m "One line on what this version brings"
+git push origin v0.4.0
+```
+
+The tag is what publishes: the module proxy resolves it, so `go install
+...@v0.4.0` works straight away. Pushing it also runs the release workflow,
+which creates the GitHub release with that version's changelog section as its
+notes and the tag annotation as its title. A tag with no section in the
+changelog fails the workflow rather than getting notes invented from the commit
+log; document it, then replay the run from the Actions tab.
+
 ## License
 
 MIT, see [LICENSE](LICENSE).
