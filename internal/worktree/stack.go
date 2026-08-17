@@ -14,32 +14,29 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
 
-// hasVolumes reports whether this stack already has volumes, which tells a
-// restart from a first start.
-func hasVolumes(ctx context.Context, o Options, wt stack.Worktree) bool {
+// stackVolumes lists the volumes docker labelled with this stack's compose
+// project. Empty on a stack that never came up, which is how a first start is
+// told from a restart, and on an unreachable docker.
+func stackVolumes(ctx context.Context, o Options, wt stack.Worktree) []string {
 	res, err := o.Runner.Run(ctx, execx.Cmd{
 		Name: "docker",
 		Args: []string{"volume", "ls", "-q", "--filter", "label=com.docker.compose.project=" + o.projectName(wt)},
 	})
-	return err == nil && strings.TrimSpace(res.Stdout) != ""
+	if err != nil {
+		return nil
+	}
+	return strings.Fields(res.Stdout)
 }
 
 // removeVolumes drops the stack's volumes once the worktree is gone. `docker
 // compose down`, which wtc runs on stop, deliberately keeps them: without this
 // every removed worktree leaves its database behind forever.
 func removeVolumes(ctx context.Context, o Options, wt stack.Worktree) {
-	project := stack.ProjectName(filepath.Base(o.Project.Dir), wt.Index, wt.Branch)
-	res, err := o.Runner.Run(ctx, execx.Cmd{
-		Name: "docker",
-		Args: []string{"volume", "ls", "-q", "--filter", "label=com.docker.compose.project=" + project},
-	})
-	if err != nil {
-		return
-	}
-	volumes := strings.Fields(res.Stdout)
+	volumes := stackVolumes(ctx, o, wt)
 	if len(volumes) == 0 {
 		return
 	}
+	project := o.projectName(wt)
 	if _, err := o.Runner.Run(ctx, execx.Cmd{
 		Name: "docker",
 		Args: append([]string{"volume", "rm"}, volumes...),
@@ -87,7 +84,7 @@ func start(ctx context.Context, o Options, dest string) error {
 	if err != nil {
 		return err
 	}
-	fresh := !hasVolumes(ctx, o, wt)
+	fresh := len(stackVolumes(ctx, o, wt)) == 0
 	if err := o.Stack.Up(ctx, o.projectName(wt), dest, files); err != nil {
 		return fmt.Errorf("starting the stack: %w", err)
 	}

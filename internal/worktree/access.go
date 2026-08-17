@@ -3,11 +3,9 @@ package worktree
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 	"github.com/Hy0sh/worktree-manager/internal/index"
-	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
 
 // Exec runs a command inside the worktree's application container. Doing it by
@@ -28,8 +26,7 @@ func Exec(ctx context.Context, o Options, service string, command []string) erro
 		return fmt.Errorf("no application service known for this project: pass --service, " +
 			"or set app_service in its config")
 	}
-	project := stack.ProjectName(filepath.Base(o.Project.Dir), wt.Index, wt.Branch)
-	args := append([]string{"compose", "-p", project, "exec", service}, command...)
+	args := append([]string{"compose", "-p", o.projectName(wt), "exec", service}, command...)
 	_, err = o.Runner.Run(ctx, execx.Cmd{
 		Name:        "docker",
 		Args:        args,

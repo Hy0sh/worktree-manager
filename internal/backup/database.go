@@ -29,17 +29,13 @@ func (m *Manager) ensureUp(ctx context.Context, name string, p config.Project, c
 		}
 	}
 	// Only the database has to run: migrations happen in their own container.
-	var missing []string
-	if !running[cfg.DBService] {
-		missing = append(missing, cfg.DBService)
-	}
-	if len(missing) == 0 {
+	if running[cfg.DBService] {
 		m.logf("database of %s already running", name)
 		return nil
 	}
 	if _, err := m.Runner.Run(ctx, execx.Cmd{
 		Name: "docker",
-		Args: append([]string{"compose", "up", "-d"}, missing...),
+		Args: []string{"compose", "up", "-d", cfg.DBService},
 		Dir:  p.Dir,
 		Live: true,
 	}); err != nil {
