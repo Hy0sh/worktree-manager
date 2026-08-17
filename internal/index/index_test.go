@@ -90,7 +90,7 @@ func TestResolveBackfillCollisionIsAnActionableError(t *testing.T) {
 	if err == nil {
 		t.Fatal("two branches on the same index is a broken state, not something to paper over")
 	}
-	for _, want := range []string{"docker compose -p my-app-wt-3-fix-allow down", "review-gal-1020", "wtm start"} {
+	for _, want := range []string{"docker compose -p my-app-wt-3-fix-allow down -v", "review-gal-1020", "wtm start"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %q must mention %q", err, want)
 		}
@@ -145,10 +145,43 @@ func TestResolveMustExistNeverInvents(t *testing.T) {
 }
 
 func TestResolveSurvivesAnUnreachableDocker(t *testing.T) {
-	r, _, _ := newResolver(t, nil, nil)
+	r, path, _ := newResolver(t, nil, nil)
 	got, err := r.Resolve(context.Background(), "feat/x", 0, MayAllocate)
 	if err != nil || got != 1 {
 		t.Fatalf("docker being down must degrade to config-only allocation, got %d, %v", got, err)
+	}
+	if recorded(t, path, "feat/x") != 0 {
+		t.Fatal("a resolution made blind, without docker evidence, must not be persisted")
+	}
+}
+
+func TestResolveWithDockerDownLeavesNoTraceForTheNextCall(t *testing.T) {
+	r, path, fake := newResolver(t, nil, nil)
+	if _, err := r.Resolve(context.Background(), "feat/x", 0, MayAllocate); err != nil {
+		t.Fatal(err)
+	}
+	if recorded(t, path, "feat/x") != 0 {
+		t.Fatal("the blind resolution must not have recorded anything")
+	}
+	// Docker is back, with no trace of feat/x: a second Resolve must be free
+	// to allocate normally and persist it, unconstrained by the earlier
+	// in-memory guess.
+	fake.Handler = func(c execx.Cmd) (execx.Result, error) {
+		line := c.String()
+		switch {
+		case strings.Contains(line, "ps -a"):
+			return execx.Result{Stdout: "\n"}, nil
+		case strings.Contains(line, "volume ls"):
+			return execx.Result{Stdout: "\n"}, nil
+		}
+		return execx.Result{}, nil
+	}
+	got, err := r.Resolve(context.Background(), "feat/x", 0, MayAllocate)
+	if err != nil || got != 1 {
+		t.Fatalf("got %d, %v", got, err)
+	}
+	if recorded(t, path, "feat/x") != 1 {
+		t.Fatal("with docker back, the allocation must be recorded for real")
 	}
 }
 

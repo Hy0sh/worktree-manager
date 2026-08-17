@@ -97,7 +97,7 @@ func (r *Resolver) Resolve(ctx context.Context, branch string, pos int, mode Mod
 			if n, label, found := MatchBranch(labels, r.RepoName, branch); found {
 				if owner := ownerOf(p.WorktreeIndices, n); owner != "" && owner != branch {
 					return fmt.Errorf("branch %q left a stack at index %d, which now belongs to branch %q; "+
-						"stop the old stack with `docker compose -p %s down`, then `wtm start %s` will allocate a fresh index",
+						"stop the old stack with `docker compose -p %s down -v`, then `wtm start %s` will allocate a fresh index",
 						branch, n, owner, label, branch)
 				}
 				record(n)
@@ -111,6 +111,15 @@ func (r *Resolver) Resolve(ctx context.Context, branch string, pos int, mode Mod
 		// still free and no other branch's debris squats it.
 		if pos > 0 && ownerOf(p.WorktreeIndices, pos) == "" &&
 			!(dockerOK && hasLeftovers(labels, r.RepoName, pos, branch)) {
+			if !dockerOK {
+				// A blind guess made without docker evidence must not become
+				// permanent: a neighbour that hasn't been backfilled yet may
+				// really be running at this index. Resolve for this call
+				// only, so a later Resolve (once docker answers again) is
+				// still free to backfill or allocate for real.
+				idx = pos
+				return nil
+			}
 			record(pos)
 			return nil
 		}
@@ -125,6 +134,12 @@ func (r *Resolver) Resolve(ctx context.Context, branch string, pos int, mode Mod
 			if dockerOK && hasLeftovers(labels, r.RepoName, n, branch) {
 				r.logf("index %d skipped: docker still holds containers or volumes of a previous worktree there", n)
 				continue
+			}
+			if !dockerOK {
+				// Same reasoning as the fallback above: an allocation made
+				// blind is a guess, not a fact worth pinning forever.
+				idx = n
+				return nil
 			}
 			record(n)
 			return nil

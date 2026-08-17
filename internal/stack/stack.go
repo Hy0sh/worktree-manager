@@ -100,7 +100,9 @@ func (c *Client) Worktrees(ctx context.Context) ([]Worktree, error) {
 	return out, nil
 }
 
-// FindByBranch resolves the index wtc start/stop expect.
+// FindByBranch locates a branch's worktree (its path, branch and listing
+// position); resolving that into an index is the resolver's job, not this
+// one's.
 func (c *Client) FindByBranch(ctx context.Context, branch string) (Worktree, error) {
 	wts, err := c.Worktrees(ctx)
 	if err != nil {

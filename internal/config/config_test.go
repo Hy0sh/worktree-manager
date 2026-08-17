@@ -1,6 +1,7 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -52,6 +53,9 @@ func TestSaveThenLoadRoundtrip(t *testing.T) {
 	}
 	if p.Dir != "/repo/myapp" || p.BaseBranch != "main" || !p.Dump {
 		t.Fatalf("roundtrip lost data: %+v", p)
+	}
+	if _, err := os.Stat(path + ".tmp"); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("Save must not leave its temp file behind, stat: %v", err)
 	}
 }
 
