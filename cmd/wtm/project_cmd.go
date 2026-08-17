@@ -56,15 +56,11 @@ func newProjectCmd(a *app) *cobra.Command {
 			if err != nil || !info.IsDir() {
 				return fmt.Errorf("%s is not an accessible directory", abs)
 			}
-			if a.cfg.Has(args[0]) {
-				return fmt.Errorf("project %q is already registered", args[0])
-			}
 			p := config.Project{
 				Dir:          abs,
 				BaseBranch:   base,
 				Dump:         dump,
 				GitContainer: gitContainer,
-				PortOffset:   a.cfg.NextPortOffset(),
 			}
 			if dbService != "" || dbUser != "" || appService != "" || deps != "" || migrate != "" || len(env) > 0 {
 				envMap, err := parseEnv(env)
@@ -80,8 +76,17 @@ func newProjectCmd(a *app) *cobra.Command {
 					Env:            envMap,
 				}
 			}
-			a.cfg.Projects[args[0]] = p
-			if err := a.cfg.Save(a.cfgPath); err != nil {
+			// The existence check and the offset both read the registry, so
+			// they live inside the same lock as the write: two concurrent
+			// registrations must not pick the same offset.
+			if err := config.WithLock(a.cfgPath, func(c *config.Config) error {
+				if c.Has(args[0]) {
+					return fmt.Errorf("project %q is already registered", args[0])
+				}
+				p.PortOffset = c.NextPortOffset()
+				c.Projects[args[0]] = p
+				return nil
+			}); err != nil {
 				return err
 			}
 			fmt.Fprintf(a.out, "project %s registered (%s)\n", args[0], abs)
@@ -146,10 +151,13 @@ func newProjectCmd(a *app) *cobra.Command {
 					return err
 				}
 			}
-			delete(a.cfg.Projects, name)
-			if err := a.cfg.Save(a.cfgPath); err != nil {
+			if err := config.WithLock(a.cfgPath, func(c *config.Config) error {
+				delete(c.Projects, name)
+				return nil
+			}); err != nil {
 				return err
 			}
+			delete(a.cfg.Projects, name)
 			fmt.Fprintf(a.out, "project %s removed from the registry\n", name)
 			return nil
 		},
