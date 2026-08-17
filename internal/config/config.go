@@ -34,8 +34,13 @@ type Project struct {
 	// so without it two projects whose database listens on 5432 would fight
 	// over the same host port. Zero for the first project, which keeps the
 	// ports it already had.
-	PortOffset int     `json:"port_offset,omitempty"`
-	Backup     *Backup `json:"backup,omitempty"`
+	PortOffset int `json:"port_offset,omitempty"`
+	// WorktreeIndices pins each branch to the index its stack was created
+	// with. The index feeds the port formula and the compose project name,
+	// so deriving it from git's listing order (which resorts alphabetically)
+	// renumbers running stacks; recording it here is what keeps it stable.
+	WorktreeIndices map[string]int `json:"worktree_indices,omitempty"`
+	Backup          *Backup        `json:"backup,omitempty"`
 }
 
 // Defaults for the most common docker compose layout.
