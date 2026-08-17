@@ -37,6 +37,22 @@ pg_restore --no-owner --no-privileges --exit-on-error --single-transaction \
 echo "wtm: restore done, migrations already applied"
 `
 
+// ensureSnapshotAssets writes the restore script and the generated compose
+// file. Idempotent, and run on every start so a worktree created before they
+// existed picks them up too.
+func ensureSnapshotAssets(o Options, dest string) error {
+	if !o.Project.Dump {
+		return nil
+	}
+	if err := writeRestoreScript(o.BackupsDir, o.Name); err != nil {
+		return fmt.Errorf("writing the restore script: %w", err)
+	}
+	if err := writeSnapshotOverride(dest, o.Project.BackupConfig().DBService); err != nil {
+		return fmt.Errorf("writing the snapshot compose file: %w", err)
+	}
+	return nil
+}
+
 // writeRestoreScript puts the script next to the dump, where the worktree's
 // .db-snapshot symlink makes it reachable from the container.
 func writeRestoreScript(backupsDir, project string) error {
