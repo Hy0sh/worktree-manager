@@ -49,6 +49,12 @@ func TestProjectOffsetSeparatesProjects(t *testing.T) {
 	}
 }
 
+func TestAllocatePortRejectsAnUnallocatedIndex(t *testing.T) {
+	if _, err := AllocatePort(5432, 0, 1, 0); err == nil {
+		t.Fatal("index 0 means the resolver never ran; AllocatePort must refuse it")
+	}
+}
+
 func TestAllocatePortFallsBackAboveTheRange(t *testing.T) {
 	// 20000 + 60000 + 1 would overflow, so the fallback applies.
 	got, err := AllocatePort(60000, 2, 1, 0)

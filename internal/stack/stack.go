@@ -12,9 +12,14 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 )
 
-// Worktree is one linked worktree, with the index wtc addresses it by.
+// Worktree is one linked worktree. Index is the stable, allocated index the
+// ports and the compose project name are derived from; this package never
+// fills it — the resolver in internal/index does. Pos is merely where git
+// listed the worktree, which resorts alphabetically as worktrees come and
+// go, so it is only good as a first-guess hint for that resolver.
 type Worktree struct {
 	Index  int
+	Pos    int
 	Path   string
 	Branch string
 }
@@ -33,6 +38,13 @@ func ProjectName(repoName string, index int, branch string) string {
 	return sanitize(fmt.Sprintf("%s-wt-%d-%s", repoName, index, branch))
 }
 
+// ProjectPrefix is what every compose project of a worktree at this index
+// starts with, whatever its branch. It is how leftovers of a removed
+// worktree are spotted before the index is handed to a new one.
+func ProjectPrefix(repoName string, index int) string {
+	return sanitize(fmt.Sprintf("%s-wt-%d", repoName, index)) + "-"
+}
+
 func sanitize(input string) string {
 	var b strings.Builder
 	for _, r := range strings.ToLower(input) {
@@ -46,9 +58,10 @@ func sanitize(input string) string {
 	return strings.Trim(collapsed, "-")
 }
 
-// Worktrees lists the worktrees the way wtc indexes them: `git worktree list
-// --porcelain` order, main repository excluded, 1-based. Reproducing the rule
-// here is more robust than parsing the coloured table `wtc list` prints.
+// Worktrees lists the linked worktrees in `git worktree list --porcelain`
+// order, main repository excluded. It records the position as Pos but leaves
+// Index to the resolver: git resorts this listing alphabetically, which is
+// exactly the instability the persisted index exists to fix.
 func (c *Client) Worktrees(ctx context.Context) ([]Worktree, error) {
 	res, err := c.Runner.Run(ctx, execx.Cmd{
 		Name: "git",
@@ -70,7 +83,7 @@ func (c *Client) Worktrees(ctx context.Context) ([]Worktree, error) {
 		if first {
 			first = false // the first block is the main repository
 		} else {
-			out = append(out, Worktree{Index: len(out) + 1, Path: path, Branch: br})
+			out = append(out, Worktree{Pos: len(out) + 1, Path: path, Branch: br})
 		}
 		path, br = "", ""
 	}
@@ -100,7 +113,7 @@ func (c *Client) FindByBranch(ctx context.Context, branch string) (Worktree, err
 	}
 	known := make([]string, 0, len(wts))
 	for _, wt := range wts {
-		known = append(known, fmt.Sprintf("%d:%s", wt.Index, wt.Branch))
+		known = append(known, fmt.Sprintf("%d:%s", wt.Pos, wt.Branch))
 	}
 	list := "no linked worktree"
 	if len(known) > 0 {
