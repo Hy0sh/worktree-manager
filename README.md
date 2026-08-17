@@ -88,8 +88,13 @@ wtm backup refresh <TAB>     # registered project names
 
 ```sh
 # register a project (once)
+wtm project create my-project                             # asks, step by step
 wtm project create my-project --dir ~/dev/projects/my-project --base develop
 wtm project list
+
+# change a registered project, its backup settings included
+wtm project edit my-project                               # asks, step by step
+wtm project edit my-project --dump --app-service backend
 
 # create a worktree + start its stack
 wtm create my-app feat/my-branch            # base = the project's own
@@ -171,8 +176,21 @@ wtm project create platform --dir ~/dev/projects/platform \
 ```
 
 `{{database}}` gets replaced by the temporary database's name. `--db-service`
-defaults to `db` and `--db-user` defaults to `postgres`. These settings can
-be reviewed and tweaked directly in `config.json`.
+defaults to `db` and `--db-user` defaults to `postgres`.
+
+None of this has to be known in advance: `wtm project create <name>` without
+`--dir`, and `wtm project edit <name>` without any flag, ask one question at a
+time, offer the services found in the project's compose file, and only bring up
+the migration command once the backup is enabled. Every question defaults to
+what the project already has, so editing is a run of empty answers plus the one
+field being changed. Flags and questions mix: what is passed on the command
+line becomes the answer offered by default. `--no-input` turns a missing value
+into an error rather than a question, for scripts and CI.
+
+`wtm project edit` never touches the port offset nor the recorded worktree
+indices, which is what re-registering a project would do: every running stack
+would change ports and compose project name. The settings can also be reviewed
+directly in `config.json`.
 
 `--git-container` is only useful for projects whose compose bind-mounts the
 git-dir into a container; left off, it creates nothing.

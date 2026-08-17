@@ -1,12 +1,8 @@
-// Command wtm is the single entry point for the lifecycle of a
-// project worktree: create, start, stop, remove, plus the Postgres backup that
-// makes a fresh database cheap to bootstrap.
 package main
 
 import (
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"text/tabwriter"
 
@@ -17,98 +13,12 @@ import (
 
 func newProjectCmd(a *app) *cobra.Command {
 	cmd := &cobra.Command{Use: "project", Short: "Manages the project registry"}
+	cmd.AddCommand(newProjectCreateCmd(a), newProjectEditCmd(a), newProjectListCmd(a), newProjectRemoveCmd(a))
+	return cmd
+}
 
-	var (
-		dir          string
-		base         string
-		dump         bool
-		gitContainer bool
-		dbService    string
-		dbUser       string
-		appService   string
-		deps         string
-		migrate      string
-		env          []string
-	)
-	create := &cobra.Command{
-		Use:           "create <name>",
-		Short:         "Registers a project",
-		Args:          cobra.ExactArgs(1),
-		SilenceUsage:  true,
-		SilenceErrors: true,
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if err := config.ValidateIdentifier("project name", args[0]); err != nil {
-				return err
-			}
-			for kind, value := range map[string]string{"database service": dbService, "application service": appService} {
-				if value == "" {
-					continue
-				}
-				if err := config.ValidateIdentifier(kind, value); err != nil {
-					return err
-				}
-			}
-			abs, err := filepath.Abs(dir)
-			if err != nil {
-				return err
-			}
-			info, err := os.Stat(abs)
-			if err != nil || !info.IsDir() {
-				return fmt.Errorf("%s is not an accessible directory", abs)
-			}
-			p := config.Project{
-				Dir:          abs,
-				BaseBranch:   base,
-				Dump:         dump,
-				GitContainer: gitContainer,
-			}
-			if dbService != "" || dbUser != "" || appService != "" || deps != "" || migrate != "" || len(env) > 0 {
-				envMap, err := parseEnv(env)
-				if err != nil {
-					return err
-				}
-				p.Backup = &config.Backup{
-					DBService:      dbService,
-					DBUser:         dbUser,
-					AppService:     appService,
-					DepsCommand:    deps,
-					MigrateCommand: migrate,
-					Env:            envMap,
-				}
-			}
-			// The existence check and the offset both read the registry, so
-			// they live inside the same lock as the write: two concurrent
-			// registrations must not pick the same offset.
-			if err := config.WithLock(a.cfgPath, func(c *config.Config) error {
-				if c.Has(args[0]) {
-					return fmt.Errorf("project %q is already registered", args[0])
-				}
-				p.PortOffset = c.NextPortOffset()
-				c.Projects[args[0]] = p
-				return nil
-			}); err != nil {
-				return err
-			}
-			fmt.Fprintf(a.out, "project %s registered (%s)\n", args[0], abs)
-			if p.PortOffset > 0 {
-				fmt.Fprintf(a.out, "ports shifted by %d so they do not clash with the other projects\n", p.PortOffset)
-			}
-			return nil
-		},
-	}
-	create.Flags().StringVar(&dir, "dir", "", "path to the repository (required)")
-	create.Flags().StringVar(&base, "base", "", "project's base branch")
-	create.Flags().BoolVar(&dump, "dump", false, "enables the Postgres backup for this project")
-	create.Flags().BoolVar(&gitContainer, "git-container", false, "creates the .git-container symlinks (projects that bind-mount the git-dir)")
-	create.Flags().StringVar(&dbService, "db-service", "", "compose service for the database (default: "+config.DefaultDBService+")")
-	create.Flags().StringVar(&dbUser, "db-user", "", "postgres user (default: "+config.DefaultDBUser+")")
-	create.Flags().StringVar(&appService, "app-service", "", "compose service that runs the migrations (e.g. backend, api, php-nginx)")
-	create.Flags().StringVar(&deps, "deps", "", "dependency install command before migration (e.g. 'poetry install --no-root --with dev')")
-	create.Flags().StringVar(&migrate, "migrate", "", "migration command (e.g. 'python manage.py migrate', 'npx prisma migrate deploy')")
-	create.Flags().StringArrayVar(&env, "env", nil, "variable passed to the migration container, repeatable (e.g. --env DB_NAME="+config.DatabasePlaceholder+")")
-	_ = create.MarkFlagRequired("dir")
-
-	list := &cobra.Command{
+func newProjectListCmd(a *app) *cobra.Command {
+	return &cobra.Command{
 		Use:           "list",
 		Short:         "Lists the registered projects",
 		Args:          cobra.NoArgs,
@@ -128,7 +38,9 @@ func newProjectCmd(a *app) *cobra.Command {
 			return w.Flush()
 		},
 	}
+}
 
+func newProjectRemoveCmd(a *app) *cobra.Command {
 	var assumeYes bool
 	remove := &cobra.Command{
 		Use:               "remove <name>",
@@ -163,9 +75,7 @@ func newProjectCmd(a *app) *cobra.Command {
 		},
 	}
 	remove.Flags().BoolVarP(&assumeYes, "yes", "y", false, "do not ask for confirmation")
-
-	cmd.AddCommand(create, list, remove)
-	return cmd
+	return remove
 }
 
 // parseEnv turns repeated --env KEY=VALUE flags into a map.
