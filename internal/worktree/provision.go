@@ -34,6 +34,12 @@ const (
 // link, the .env and compose override copies, the link to the central backup.
 // The two symlinks are always rewritten, they carry no local state.
 func provision(ctx context.Context, o Options, dest string, mode provisionMode) error {
+	// Keeping those artifacts out of git is a convenience, not something the
+	// stack needs, so a repository that refuses the write still gets started.
+	if err := excludeArtifacts(ctx, o); err != nil {
+		o.logf("warning: wtm's own files could not be added to info/exclude, "+
+			"do not commit them: %v", err)
+	}
 	if o.Project.GitContainer {
 		if err := linkGitContainer(ctx, o, dest); err != nil {
 			return err
