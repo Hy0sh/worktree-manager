@@ -47,7 +47,7 @@ func List(ctx context.Context, o Options) ([]Entry, error) {
 		status := StatusUnknown
 		if running != nil {
 			status = "down"
-			if wt.Index > 0 && running[stack.ProjectName(filepath.Base(o.Project.Dir), wt.Index, wt.Branch)] {
+			if wt.Index > 0 && running[o.projectName(wt)] {
 				status = "up"
 			} else if wt.Index == 0 {
 				// Not recorded yet: an old stack may still run under the
