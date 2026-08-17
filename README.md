@@ -192,6 +192,16 @@ fallback above 65535. Ports declared as `${VAR:-default}` are written into the
 worktree's `.env`, and ports written as literals into a generated compose file
 that replaces the service's `ports` list, since compose appends otherwise.
 
+The index is allocated when the worktree first needs a stack and recorded in
+`config.json` (`worktree_indices`), so it never changes afterwards. Deriving
+it from `git worktree list` order — what earlier versions did — renumbered
+worktrees whenever a new one sorted before them, handing a new stack the very
+ports of a running neighbour. A worktree created before indices were recorded
+is backfilled from the compose project label its containers and volumes still
+carry, or from its listing position when docker holds no trace. A freed index
+is only reused once docker no longer holds any container or volume of a
+previous worktree there.
+
 Three details earned their place the hard way. The reference is the project's
 *merged* compose configuration, not just the base file: a project already
 remapping a port on purpose keeps that mapping. The project offset exists
@@ -261,6 +271,8 @@ is possible since the database reports healthy only once the restore is done.
 |---|---|
 | Project registry | `~/.config/wtm/config.json` |
 | Dumps + metadata | `~/.config/wtm/backups/<project>/<project>.dump` |
+| Worktree indices | `~/.config/wtm/config.json`, `worktree_indices` per project |
+| Registry write lock | `~/.config/wtm/config.lock`, transient |
 
 A single dump per project, never duplicated: each worktree accesses it
 through a `.db-snapshot` directory symlink. `WTM_CONFIG_DIR` and
