@@ -247,11 +247,18 @@ its own: a stack whose database is brand new prints a reminder, once, with the
 command to run. Measured on a real project, seeding took 33 seconds against
 the twenty minutes the migration history costs.
 
-Nothing is asked of the project. On creation, wtm links `.db-snapshot` to
-the central backup directory, writes a restore script next to the dump, and
-generates a `.wtm-snapshot.yaml` in the worktree that mounts both into the
-database service. That file is handed to docker through `COMPOSE_FILE` when
-the stack starts, on top of the project's own compose files.
+Nothing is asked of the project. wtm links `.db-snapshot` to the central
+backup directory, writes a restore script next to the dump, and generates a
+`.wtm-snapshot.yaml` in the worktree that mounts both into the database
+service. That file is handed to docker through `COMPOSE_FILE` when the stack
+starts, on top of the project's own compose files.
+
+Creation lays those down and so does every `start`, links, `*.env` copies and
+compose overrides alike: they belong to the stack rather than to the checkout,
+and a worktree that lost them, cut by an older wtm or cleaned up by hand, would
+otherwise fail deep inside docker on a raw mount error. What the worktree
+already holds is left as it is, an env file tweaked for the task at hand being
+its own state and not a stale copy.
 
 Putting the mount in the project's compose instead would tie the behaviour
 to the branch the worktree was cut from, since that file is versioned.
