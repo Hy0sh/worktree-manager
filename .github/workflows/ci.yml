@@ -39,10 +39,18 @@ jobs:
       - name: Build
         run: go build ./...
 
-      # govulncheck needs a newer Go than this module's floor, and setup-go
-      # pins GOTOOLCHAIN=local, so this step is allowed to fetch the toolchain
-      # it needs. The build above stays on the floor, which is the point.
+      # govulncheck and staticcheck both need a newer Go than this module's
+      # floor, and setup-go pins GOTOOLCHAIN=local, so these two steps are
+      # allowed to fetch the toolchain they need. The build above stays on the
+      # floor, which is the point.
       - name: Vulnerabilities
         env:
           GOTOOLCHAIN: auto
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
+
+      # go vet says nothing about code nobody calls any more, which is how two
+      # functions survived a rewrite of the compose plumbing.
+      - name: Unused code
+        env:
+          GOTOOLCHAIN: auto
+        run: go run honnef.co/go/tools/cmd/staticcheck@latest ./...
