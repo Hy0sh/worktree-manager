@@ -47,6 +47,10 @@ func newProjectEditCmd(a *app) *cobra.Command {
 					return fmt.Errorf("project %q is not registered any more", name)
 				}
 				edited, ch := u.Apply(p)
+				// An edit enabling the backup by flags never saw the engine
+				// question: detect it rather than defaulting to postgres
+				// silently.
+				detectEngineIfUnset(&edited)
 				changes = ch
 				c.Projects[name] = edited
 				return nil
