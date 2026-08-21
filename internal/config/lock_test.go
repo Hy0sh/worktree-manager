@@ -7,6 +7,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/gofrs/flock"
 )
 
 func lockTestPath(t *testing.T) string {
@@ -61,7 +63,9 @@ func TestWithLockDoesNotSaveOnError(t *testing.T) {
 	}
 }
 
-func TestWithLockTakesOverAStaleLock(t *testing.T) {
+// The lock is held by the kernel, not by the file's existence: a lock file
+// left behind by a killed process holds nothing and must not block.
+func TestWithLockIgnoresALockFileLeftByADeadProcess(t *testing.T) {
 	path := lockTestPath(t)
 	lock := filepath.Join(filepath.Dir(path), "config.lock")
 	if err := os.MkdirAll(filepath.Dir(lock), 0o700); err != nil {
@@ -70,12 +74,8 @@ func TestWithLockTakesOverAStaleLock(t *testing.T) {
 	if err := os.WriteFile(lock, nil, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	old := time.Now().Add(-time.Minute)
-	if err := os.Chtimes(lock, old, old); err != nil {
-		t.Fatal(err)
-	}
 	if err := WithLock(path, func(c *Config) error { return nil }); err != nil {
-		t.Fatalf("a stale lock must be taken over: %v", err)
+		t.Fatalf("an unheld lock file must not block: %v", err)
 	}
 }
 
@@ -85,17 +85,19 @@ func TestWithLockFailsOnAHeldLock(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(lock), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(lock, nil, 0o600); err != nil {
+	holder := flock.New(lock)
+	if err := holder.Lock(); err != nil {
 		t.Fatal(err)
 	}
+	defer holder.Unlock()
 	defer func(d time.Duration) { lockRetry = d }(lockRetry)
 	lockRetry = 100 * time.Millisecond
 	err := WithLock(path, func(c *Config) error { return nil })
 	if err == nil {
-		t.Fatal("a fresh lock held by someone else must time out")
+		t.Fatal("a lock held by someone else must time out")
 	}
 	if !strings.Contains(err.Error(), lock) {
-		t.Fatalf("the error must name the lock file to delete, got: %v", err)
+		t.Fatalf("the error must name the lock file, got: %v", err)
 	}
 }
 

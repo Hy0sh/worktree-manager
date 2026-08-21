@@ -321,7 +321,7 @@ is possible since the database reports healthy only once the restore is done.
 | Project registry | `~/.config/wtm/config.json` |
 | Dumps + metadata | `~/.config/wtm/backups/<project>/<project>.dump` |
 | Worktree indices | `~/.config/wtm/config.json`, `worktree_indices` per project |
-| Registry write lock | `~/.config/wtm/config.lock`, transient |
+| Registry write lock | `~/.config/wtm/config.lock`, an OS file lock; the file staying around is normal |
 
 A single dump per project, never duplicated: each worktree accesses it
 through a `.db-snapshot` directory symlink. `WTM_CONFIG_DIR` and
