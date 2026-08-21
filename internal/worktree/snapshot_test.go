@@ -11,6 +11,39 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 )
 
+// A mongo project's worktree must get the mongo restore script, not the
+// postgres one baked in before engines existed.
+func TestCreateWritesTheEngineRestoreScript(t *testing.T) {
+	f := newFixture(t)
+	o := f.opts("feat/x")
+	o.NoStart = true
+	o.Project.Dump = true
+	o.Project.Backup = &config.Backup{DBEngine: "mongodb"}
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(f.backups, "myapp", "restore-snapshot.sh"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(body), "mongorestore") || strings.Contains(string(body), "pg_restore") {
+		t.Fatalf("wrong engine script:\n%s", body)
+	}
+}
+
+// An engine config.json could carry but wtm does not know must surface as a
+// diagnosis, not as a postgres script silently restored into the wrong server.
+func TestCreateRejectsAnUnknownEngine(t *testing.T) {
+	f := newFixture(t)
+	o := f.opts("feat/x")
+	o.NoStart = true
+	o.Project.Dump = true
+	o.Project.Backup = &config.Backup{DBEngine: "oracle"}
+	if err := Create(context.Background(), o); err == nil || !strings.Contains(err.Error(), "oracle") {
+		t.Fatalf("an unknown engine must fail naming itself, got %v", err)
+	}
+}
+
 // Relying on the project's compose to mount the dump made the behaviour depend
 // on the branch the worktree was cut from, since that file is versioned. wtm
 // carries the restore itself so any project gets it, on any branch.
