@@ -58,19 +58,36 @@ func TestRefreshMigratesInADisposableContainer(t *testing.T) {
 		t.Fatalf("Refresh: %v", err)
 	}
 
-	var migrate string
-	for _, l := range f.Lines() {
-		if strings.Contains(l, "manage.py migrate") {
-			migrate = l
+	var (
+		migrate     string
+		migrateCall execx.Call
+	)
+	for _, c := range f.Calls {
+		if l := c.Line(); strings.Contains(l, "manage.py migrate") {
+			migrate, migrateCall = l, c
 		}
 	}
-	for _, want := range []string{"run --rm --no-deps", "-e DB_NAME=myapp_snapshot_tmp", "backend sh -c"} {
+	for _, want := range []string{"run --rm --no-deps", "-e DB_NAME", "backend sh -c"} {
 		if !strings.Contains(migrate, want) {
 			t.Fatalf("migrate call %q should contain %q", migrate, want)
 		}
 	}
 	if strings.Contains(migrate, "exec") {
 		t.Fatalf("migrate must not exec into the running backend: %q", migrate)
+	}
+	// The value goes through the process environment, never through the
+	// arguments: an error message quoting the command must not leak it.
+	if strings.Contains(migrate, "myapp_snapshot_tmp") {
+		t.Fatalf("the env value must not appear in the arguments: %q", migrate)
+	}
+	found := false
+	for _, kv := range migrateCall.Env {
+		if kv == "DB_NAME=myapp_snapshot_tmp" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("DB_NAME should reach docker through Env, got %v", migrateCall.Env)
 	}
 	for _, want := range []string{filepath.Join(p.Dir, "compose.yaml"), filepath.Join(p.Dir, "compose.override.yaml")} {
 		if !strings.Contains(migrate, want) {

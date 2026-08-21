@@ -46,8 +46,8 @@ func TestRefreshRunsFullSequence(t *testing.T) {
 	}
 	for _, c := range f.Calls {
 		if strings.Contains(strings.Join(c.Args, " "), "migrate") {
-			if !strings.Contains(strings.Join(c.Args, " "), "DB_NAME=my_app_snapshot_tmp") {
-				t.Fatalf("migrate must target the temporary database, got %v", c.Args)
+			if !strings.Contains(strings.Join(c.Env, " "), "DB_NAME=my_app_snapshot_tmp") {
+				t.Fatalf("migrate must target the temporary database through Env, got %v", c.Env)
 			}
 		}
 		if c.Dir != p.Dir {

@@ -37,12 +37,17 @@ func (m *Manager) migrate(ctx context.Context, p config.Project, cfg config.Back
 		shell = cfg.DepsCommand + " && " + shell
 	}
 	args = append(args, "run", "--rm", "--no-deps", "-T")
+	// `-e KEY` alone makes docker read the value from its own environment.
+	// Keeping the values out of the argument list keeps credentials (these are
+	// often a DATABASE_URL) out of the error messages that quote the command.
+	var env []string
 	for _, k := range sortedKeys(cfg.Env) {
-		args = append(args, "-e", k+"="+config.Expand(cfg.Env[k], db))
+		args = append(args, "-e", k)
+		env = append(env, k+"="+config.Expand(cfg.Env[k], db))
 	}
 	args = append(args, cfg.AppService, "sh", "-c", shell)
 
-	if _, err := m.Runner.Run(ctx, execx.Cmd{Name: "docker", Args: args, Dir: p.Dir, Live: true}); err != nil {
+	if _, err := m.Runner.Run(ctx, execx.Cmd{Name: "docker", Args: args, Dir: p.Dir, Env: env, Live: true}); err != nil {
 		return fmt.Errorf("migrations on the temporary database: %w", withOOMHint(err))
 	}
 	return nil
