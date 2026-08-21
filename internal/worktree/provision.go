@@ -8,11 +8,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Hy0sh/worktree-manager/internal/compose"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 )
-
-// composeOverrides are copied verbatim when present, like bin/new-worktree did.
-var composeOverrides = []string{"compose.override.yaml", "docker-compose.override.yml"}
 
 // skipDirs are never descended into when looking for *.env files.
 var skipDirs = map[string]bool{".git": true, ".worktrees": true, "node_modules": true, ".claude": true}
@@ -135,7 +133,7 @@ func copyEnvFiles(root, dest string, mode provisionMode) error {
 }
 
 func copyComposeOverrides(root, dest string, mode provisionMode) error {
-	for _, name := range composeOverrides {
+	for _, name := range compose.OverrideNames {
 		src := filepath.Join(root, name)
 		if _, err := os.Stat(src); err != nil {
 			continue

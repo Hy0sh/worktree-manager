@@ -12,7 +12,10 @@ import (
 // baseNames is docker compose's own lookup order.
 var baseNames = []string{"compose.yaml", "compose.yml", "docker-compose.yaml", "docker-compose.yml"}
 
-var overrideNames = []string{
+// OverrideNames is exported so provisioning copies exactly the files this
+// package detects; two lists drifting apart is how a detected override once
+// ended up referenced by -f without existing in the worktree.
+var OverrideNames = []string{
 	"compose.override.yaml", "compose.override.yml",
 	"docker-compose.override.yaml", "docker-compose.override.yml",
 }
@@ -30,7 +33,7 @@ func Files(dir string) ([]string, error) {
 	if len(files) == 0 {
 		return nil, fmt.Errorf("no compose file found in %s", dir)
 	}
-	for _, name := range overrideNames {
+	for _, name := range OverrideNames {
 		if path := filepath.Join(dir, name); exists(path) {
 			files = append(files, path)
 			break

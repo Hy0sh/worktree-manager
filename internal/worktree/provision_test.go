@@ -35,6 +35,31 @@ func TestCreateCopiesEnvFilesAndComposeOverride(t *testing.T) {
 	}
 }
 
+// Every override name compose.Files detects must be copied: the start command
+// passes each detected name to docker compose -f against the worktree, so a
+// detected-but-not-copied override makes the stack fail on a missing file.
+func TestCreateCopiesEveryComposeOverrideName(t *testing.T) {
+	for _, name := range []string{
+		"compose.override.yaml", "compose.override.yml",
+		"docker-compose.override.yaml", "docker-compose.override.yml",
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newFixture(t)
+			mustWrite(t, filepath.Join(f.root, name), "services: {}")
+
+			o := f.opts("feat/x")
+			o.NoStart = true
+			if err := Create(context.Background(), o); err != nil {
+				t.Fatalf("Create: %v", err)
+			}
+			dest := filepath.Join(f.root, ".worktrees", "feat/x")
+			if _, err := os.Stat(filepath.Join(dest, name)); err != nil {
+				t.Fatalf("%s should have been copied: %v", name, err)
+			}
+		})
+	}
+}
+
 // .git-container is a macOS/VirtioFS workaround a project opts into, not
 // something every repository should be littered with.
 func TestCreateSkipsGitContainerByDefault(t *testing.T) {
