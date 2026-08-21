@@ -7,6 +7,9 @@ import (
 
 func TestByNameResolvesEveryRegisteredEngineAndDefaultsToPostgres(t *testing.T) {
 	for _, name := range Names() {
+		if IsFileBased(name) {
+			continue // no server commands to resolve
+		}
 		eng, err := ByName(name)
 		if err != nil || eng.Name() != name {
 			t.Fatalf("ByName(%q) = %v, %v", name, eng, err)
@@ -37,6 +40,35 @@ func TestDetectMatchesCommonImages(t *testing.T) {
 		if _, ok := Detect(image); ok {
 			t.Fatalf("Detect(%q) should not match", image)
 		}
+	}
+}
+
+// sqlite has no server: it never resolves through ByName, callers branch on
+// IsFileBased first, but it is a valid engine name everywhere names are
+// checked or completed.
+func TestFileBasedEngines(t *testing.T) {
+	found := false
+	for _, n := range Names() {
+		if n == "sqlite" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("Names() must list sqlite, got %v", Names())
+	}
+	if !IsFileBased("sqlite") || IsFileBased("") || IsFileBased("postgres") {
+		t.Fatal("IsFileBased must single out sqlite")
+	}
+	for _, n := range append(Names(), "") {
+		if !Valid(n) {
+			t.Fatalf("Valid(%q) must hold", n)
+		}
+	}
+	if Valid("oracle") {
+		t.Fatal("an unknown engine is not valid")
+	}
+	if _, err := ByName("sqlite"); err == nil {
+		t.Fatal("a file-based engine has no server commands to resolve")
 	}
 }
 
