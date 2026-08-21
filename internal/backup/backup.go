@@ -51,6 +51,10 @@ func (m *Manager) Refresh(ctx context.Context, name string, p config.Project) er
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
+	// A file-based engine has no server: its snapshot is the file itself.
+	if dbengine.IsFileBased(cfg.DBEngine) {
+		return m.refreshFile(ctx, name, p, cfg)
+	}
 	eng, err := dbengine.ByName(cfg.DBEngine)
 	if err != nil {
 		return err
