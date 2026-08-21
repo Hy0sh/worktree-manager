@@ -37,10 +37,10 @@ func newDoctorCmd(a *app) *cobra.Command {
 			}
 			fmt.Fprintln(a.out)
 			w := tabwriter.NewWriter(a.out, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "PROJECT\tDIRECTORY\tSTRIDE\tOFFSET")
+			fmt.Fprintln(w, "PROJECT\tDIRECTORY\tSTRIDE\tOFFSET\tENGINE")
 			for _, name := range a.cfg.Names() {
 				p := a.cfg.Projects[name]
-				fmt.Fprintf(w, "%s\t%s\t%d\t%d\n", name, p.Dir, stack.Stride(p.Dir), p.PortOffset)
+				fmt.Fprintf(w, "%s\t%s\t%d\t%d\t%s\n", name, p.Dir, stack.Stride(p.Dir), p.PortOffset, p.BackupConfig().DBEngine)
 			}
 			return w.Flush()
 		},

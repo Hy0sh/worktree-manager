@@ -2,10 +2,12 @@ package main
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/Hy0sh/worktree-manager/internal/config"
+	"github.com/Hy0sh/worktree-manager/internal/dbengine"
 )
 
 // projectFlags are the settings of a project as the command line carries them.
@@ -18,6 +20,7 @@ type projectFlags struct {
 	gitContainer bool
 	dbService    string
 	dbUser       string
+	dbEngine     string
 	appService   string
 	deps         string
 	migrate      string
@@ -28,10 +31,11 @@ type projectFlags struct {
 func (f *projectFlags) bind(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.dir, "dir", "", "path to the repository")
 	cmd.Flags().StringVar(&f.base, "base", "", "project's base branch")
-	cmd.Flags().BoolVar(&f.dump, "dump", false, "enables the Postgres backup for this project")
+	cmd.Flags().BoolVar(&f.dump, "dump", false, "enables the database backup for this project")
 	cmd.Flags().BoolVar(&f.gitContainer, "git-container", false, "creates the .git-container symlinks (projects that bind-mount the git-dir)")
 	cmd.Flags().StringVar(&f.dbService, "db-service", "", "compose service for the database (default: "+config.DefaultDBService+")")
-	cmd.Flags().StringVar(&f.dbUser, "db-user", "", "postgres user (default: "+config.DefaultDBUser+")")
+	cmd.Flags().StringVar(&f.dbUser, "db-user", "", "database user (default: "+config.DefaultDBUser+")")
+	cmd.Flags().StringVar(&f.dbEngine, "db-engine", "", "database engine: "+strings.Join(dbengine.Names(), ", ")+" (default: detected from the compose image, else "+config.DefaultDBEngine+")")
 	cmd.Flags().StringVar(&f.appService, "app-service", "", "compose service that runs the migrations (e.g. backend, api, php-nginx)")
 	cmd.Flags().StringVar(&f.deps, "deps", "", "dependency install command before migration (e.g. 'poetry install --no-root --with dev')")
 	cmd.Flags().StringVar(&f.migrate, "migrate", "", "migration command (e.g. 'python manage.py migrate', 'npx prisma migrate deploy')")
@@ -69,6 +73,7 @@ func (f *projectFlags) update(cmd *cobra.Command) (config.ProjectUpdate, error) 
 	}{
 		{"db-service", &f.dbService, &u.DBService},
 		{"db-user", &f.dbUser, &u.DBUser},
+		{"db-engine", &f.dbEngine, &u.DBEngine},
 		{"app-service", &f.appService, &u.AppService},
 		{"deps", &f.deps, &u.DepsCommand},
 		{"migrate", &f.migrate, &u.MigrateCommand},
@@ -98,6 +103,11 @@ func validateUpdate(u config.ProjectUpdate) error {
 			continue
 		}
 		if err := config.ValidateIdentifier(kind, *value); err != nil {
+			return err
+		}
+	}
+	if u.DBEngine != nil && *u.DBEngine != "" {
+		if _, err := dbengine.ByName(*u.DBEngine); err != nil {
 			return err
 		}
 	}

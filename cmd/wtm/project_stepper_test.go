@@ -30,7 +30,8 @@ func TestStepperFillsAProjectFromScratch(t *testing.T) {
 		"main",                     // base branch
 		"y",                        // enable the backup
 		"",                         // database service, keep the default
-		"",                         // postgres user, keep the default
+		"",                         // database engine, keep the detected one
+		"",                         // database user, keep the default
 		"backend",                  // service running the migrations
 		"python manage.py migrate", // migration command
 		"",                         // no deps command
@@ -51,6 +52,9 @@ func TestStepperFillsAProjectFromScratch(t *testing.T) {
 	b := p.BackupConfig()
 	if b.DBService != config.DefaultDBService || b.DBUser != config.DefaultDBUser {
 		t.Fatalf("defaults should have been offered and kept: %+v", b)
+	}
+	if b.DBEngine != "postgres" {
+		t.Fatalf("the engine detected from the compose image should be kept: %+v", b)
 	}
 	if b.AppService != "backend" || b.MigrateCommand != "python manage.py migrate" {
 		t.Fatalf("backup = %+v", b)
@@ -78,13 +82,14 @@ func TestStepperOnlyChangesWhatIsAnswered(t *testing.T) {
 		Backup: &config.Backup{
 			DBService:      "db",
 			DBUser:         "postgres",
+			DBEngine:       "postgres",
 			AppService:     "backend",
 			MigrateCommand: "python manage.py migrate",
 			Env:            map[string]string{"DB_NAME": "{{database}}"},
 		},
 	}
 	in := strings.NewReader(strings.Join([]string{
-		"", "", "", "", "appuser", "", "", "", "", "",
+		"", "", "", "", "", "appuser", "", "", "", "", "",
 	}, "\n") + "\n")
 
 	u, err := runProjectStepper(newPrompter(in, new(bytes.Buffer)), current)
@@ -101,6 +106,61 @@ func TestStepperOnlyChangesWhatIsAnswered(t *testing.T) {
 	}
 	if edited.Backup.Env["DB_NAME"] != "{{database}}" {
 		t.Fatalf("the environment must survive an empty answer: %v", edited.Backup.Env)
+	}
+}
+
+// The engine question offers what the compose image says as its default, so
+// registering a mysql project is a plain enter, not a thing to know.
+func TestStepperDetectsTheEngineFromTheComposeImage(t *testing.T) {
+	dir := t.TempDir()
+	body := "services:\n  db:\n    image: mysql:8.4\n  backend:\n    build: .\n"
+	if err := os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte(body), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	in := strings.NewReader(strings.Join([]string{
+		dir, "main", "y",
+		"",        // database service
+		"",        // database engine: keep the detected mysql
+		"",        // database user
+		"backend", // service running the migrations
+		"migrate", // migration command
+		"",        // deps
+		"",        // environment end
+		"n",       // git-container
+	}, "\n") + "\n")
+
+	u, err := runProjectStepper(newPrompter(in, new(bytes.Buffer)), config.Project{})
+	if err != nil {
+		t.Fatalf("stepper: %v", err)
+	}
+	if u.DBEngine == nil || *u.DBEngine != "mysql" {
+		t.Fatalf("engine = %q, the compose image says mysql", *u.DBEngine)
+	}
+}
+
+// An engine wtm does not support must be re-asked, not recorded and discovered
+// at the first refresh.
+func TestStepperAsksAgainForAnUnknownEngine(t *testing.T) {
+	dir := repoWithCompose(t)
+	var out bytes.Buffer
+	in := strings.NewReader(strings.Join([]string{
+		dir, "main", "y",
+		"",        // database service
+		"oracle",  // unknown engine
+		"mariadb", // corrected
+		"",        // database user
+		"backend", "migrate", "", "", "n",
+	}, "\n") + "\n")
+
+	u, err := runProjectStepper(newPrompter(in, &out), config.Project{})
+	if err != nil {
+		t.Fatalf("stepper: %v", err)
+	}
+	if u.DBEngine == nil || *u.DBEngine != "mariadb" {
+		t.Fatalf("engine = %v", u.DBEngine)
+	}
+	if !strings.Contains(out.String(), "unknown") {
+		t.Fatalf("the rejection should be explained:\n%s", out.String())
 	}
 }
 
