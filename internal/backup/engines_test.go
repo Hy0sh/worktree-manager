@@ -20,7 +20,7 @@ func TestRefreshUsesTheConfiguredEngine(t *testing.T) {
 	}
 	all := strings.Join(f.Lines(), "\n")
 	for _, want := range []string{
-		"mysqladmin ping",
+		`mysql -uroot -e "SELECT 1"`,
 		"DROP DATABASE IF EXISTS myapp_snapshot_tmp",
 		"CREATE DATABASE myapp_snapshot_tmp",
 		"mysqldump --single-transaction",
