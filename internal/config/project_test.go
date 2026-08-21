@@ -35,6 +35,27 @@ func TestBackupConfigDefaultsTheEngine(t *testing.T) {
 	}
 }
 
+func TestBackupConfigDefaultsTheDBPath(t *testing.T) {
+	if got := (Project{}).BackupConfig().DBPath; got != DefaultDBPath {
+		t.Fatalf("default db_path = %q", got)
+	}
+	p := Project{Backup: &Backup{DBPath: "var/data.db"}}
+	if got := p.BackupConfig().DBPath; got != "var/data.db" {
+		t.Fatalf("db_path = %q", got)
+	}
+}
+
+func TestApplyRecordsTheDBPathChange(t *testing.T) {
+	path := "var/data.db"
+	p, changes := (ProjectUpdate{DBPath: &path}).Apply(Project{})
+	if p.Backup == nil || p.Backup.DBPath != "var/data.db" {
+		t.Fatalf("backup = %+v", p.Backup)
+	}
+	if len(changes) != 1 || changes[0].Field != "db_path" {
+		t.Fatalf("changes = %+v", changes)
+	}
+}
+
 func TestApplyRecordsTheEngineChange(t *testing.T) {
 	engine := "mariadb"
 	p, changes := (ProjectUpdate{DBEngine: &engine}).Apply(Project{})

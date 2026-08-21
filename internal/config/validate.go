@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"path/filepath"
 	"regexp"
 )
 
@@ -21,6 +22,19 @@ func ValidateIdentifier(kind, name string) error {
 	}
 	if !identifier.MatchString(name) {
 		return fmt.Errorf("invalid %s %q: use lowercase letters, digits, dashes and underscores, starting with a letter or a digit", kind, name)
+	}
+	return nil
+}
+
+// ValidateRelativePath rejects a path that could escape the directory it is
+// joined under: db_path lands inside each worktree and inside the app
+// container, so it has to stay a plain relative path.
+func ValidateRelativePath(kind, path string) error {
+	if path == "" {
+		return fmt.Errorf("%s is empty", kind)
+	}
+	if !filepath.IsLocal(path) {
+		return fmt.Errorf("invalid %s %q: must be a relative path inside the project", kind, path)
 	}
 	return nil
 }

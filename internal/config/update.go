@@ -15,6 +15,7 @@ type ProjectUpdate struct {
 	DBService      *string
 	DBUser         *string
 	DBEngine       *string
+	DBPath         *string
 	AppService     *string
 	DepsCommand    *string
 	MigrateCommand *string
@@ -73,6 +74,7 @@ func (u ProjectUpdate) Apply(p Project) (Project, []FieldChange) {
 	str("db_service", &b.DBService, u.DBService)
 	str("db_user", &b.DBUser, u.DBUser)
 	str("db_engine", &b.DBEngine, u.DBEngine)
+	str("db_path", &b.DBPath, u.DBPath)
 	str("app_service", &b.AppService, u.AppService)
 	str("deps_command", &b.DepsCommand, u.DepsCommand)
 	str("migrate_command", &b.MigrateCommand, u.MigrateCommand)
@@ -86,8 +88,8 @@ func (u ProjectUpdate) Apply(p Project) (Project, []FieldChange) {
 
 func (u ProjectUpdate) touchesBackup() bool {
 	return u.DBService != nil || u.DBUser != nil || u.DBEngine != nil ||
-		u.AppService != nil || u.DepsCommand != nil || u.MigrateCommand != nil ||
-		u.Env != nil
+		u.DBPath != nil || u.AppService != nil || u.DepsCommand != nil ||
+		u.MigrateCommand != nil || u.Env != nil
 }
 
 func sameEnv(a, b map[string]string) bool {
