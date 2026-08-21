@@ -57,13 +57,39 @@ func Detect(image string) (Engine, bool) {
 	return nil, false
 }
 
+// fileBased are engines without a server: no compose service to probe, the
+// snapshot is the database file itself. They never resolve through ByName;
+// callers branch on IsFileBased first.
+var fileBased = []string{"sqlite"}
+
+// IsFileBased reports whether name designates an engine whose snapshot is a
+// plain file rather than a server dump.
+func IsFileBased(name string) bool {
+	for _, n := range fileBased {
+		if n == name {
+			return true
+		}
+	}
+	return false
+}
+
+// Valid reports whether name designates a supported engine, file-based ones
+// included. The empty name is the postgres default.
+func Valid(name string) bool {
+	if IsFileBased(name) {
+		return true
+	}
+	_, err := ByName(name)
+	return err == nil
+}
+
 // Names lists the supported engines, for validation and completion.
 func Names() []string {
-	names := make([]string, 0, len(engines))
+	names := make([]string, 0, len(engines)+len(fileBased))
 	for _, e := range engines {
 		names = append(names, e.Name())
 	}
-	return names
+	return append(names, fileBased...)
 }
 
 // imageRepo strips tag and digest: "bitnami/postgresql:16" -> "bitnami/postgresql".
