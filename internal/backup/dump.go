@@ -7,12 +7,13 @@ import (
 	"path/filepath"
 
 	"github.com/Hy0sh/worktree-manager/internal/config"
+	"github.com/Hy0sh/worktree-manager/internal/dbengine"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 )
 
-// dump streams pg_dump to a temporary file and renames it only on success, so a
-// failed refresh never leaves a partial dump behind.
-func (m *Manager) dump(ctx context.Context, name string, p config.Project, cfg config.Backup, db string) error {
+// dump streams the engine's dump command to a temporary file and renames it
+// only on success, so a failed refresh never leaves a partial dump behind.
+func (m *Manager) dump(ctx context.Context, name string, p config.Project, cfg config.Backup, eng dbengine.Engine, db string) error {
 	final := m.DumpPath(name)
 	// A dump carries everything the migrations create, reference data included,
 	// so it stays readable by its owner alone.
@@ -26,14 +27,14 @@ func (m *Manager) dump(ctx context.Context, name string, p config.Project, cfg c
 	}
 	_, runErr := m.Runner.Run(ctx, execx.Cmd{
 		Name:   "docker",
-		Args:   []string{"compose", "exec", "-T", cfg.DBService, "pg_dump", "-U", cfg.DBUser, "-Fc", "--no-owner", "--no-privileges", "-d", db},
+		Args:   append([]string{"compose", "exec", "-T", cfg.DBService}, eng.DumpArgs(cfg.DBUser, db)...),
 		Dir:    p.Dir,
 		Stdout: tmp,
 	})
 	closeErr := tmp.Close()
 	if runErr != nil {
 		_ = os.Remove(tmpPath)
-		return fmt.Errorf("pg_dump: %w", runErr)
+		return fmt.Errorf("dumping %s: %w", db, runErr)
 	}
 	if closeErr != nil {
 		_ = os.Remove(tmpPath)

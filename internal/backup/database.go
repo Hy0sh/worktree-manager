@@ -72,23 +72,11 @@ func (m *Manager) waitFor(ctx context.Context, label string, defaultAttempts int
 	return fmt.Errorf("timed out waiting for %s (%d attempts): %w", label, attempts, last)
 }
 
-func (m *Manager) psql(ctx context.Context, p config.Project, cfg config.Backup, sql string) (execx.Result, error) {
+// execInDB runs one of the engine's commands inside the database container.
+func (m *Manager) execInDB(ctx context.Context, p config.Project, cfg config.Backup, args []string) (execx.Result, error) {
 	return m.Runner.Run(ctx, execx.Cmd{
 		Name: "docker",
-		Args: []string{"compose", "exec", "-T", cfg.DBService, "psql", "-U", cfg.DBUser, "-c", sql},
+		Args: append([]string{"compose", "exec", "-T", cfg.DBService}, args...),
 		Dir:  p.Dir,
 	})
-}
-
-// tmpDBName keeps the identifier valid unquoted: my-app would not be.
-func tmpDBName(project string) string {
-	var b strings.Builder
-	for _, r := range strings.ToLower(project) {
-		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') || r == '_' {
-			b.WriteRune(r)
-		} else {
-			b.WriteRune('_')
-		}
-	}
-	return b.String() + "_snapshot_tmp"
 }

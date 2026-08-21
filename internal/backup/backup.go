@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/Hy0sh/worktree-manager/internal/config"
+	"github.com/Hy0sh/worktree-manager/internal/dbengine"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 )
 
@@ -50,34 +51,41 @@ func (m *Manager) Refresh(ctx context.Context, name string, p config.Project) er
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
-	db := tmpDBName(name)
+	eng, err := dbengine.ByName(cfg.DBEngine)
+	if err != nil {
+		return err
+	}
+	db := dbengine.TempDBName(name)
 
 	if err := m.ensureUp(ctx, name, p, cfg); err != nil {
 		return err
 	}
 	if err := m.waitFor(ctx, "the database", dbWaitAttempts, execx.Cmd{
 		Name: "docker",
-		Args: []string{"compose", "exec", "-T", cfg.DBService, "pg_isready", "-U", cfg.DBUser},
+		Args: append([]string{"compose", "exec", "-T", cfg.DBService}, eng.ReadyArgs(cfg.DBUser)...),
 		Dir:  p.Dir,
 	}); err != nil {
 		return err
 	}
 	// From here the throwaway database may exist, so always try to drop it.
 	defer func() {
-		_, _ = m.psql(ctx, p, cfg, "DROP DATABASE IF EXISTS "+db+";")
+		_, _ = m.execInDB(ctx, p, cfg, eng.DropTempDBArgs(cfg.DBUser, db))
 	}()
 
-	if _, err := m.psql(ctx, p, cfg, "DROP DATABASE IF EXISTS "+db+";"); err != nil {
+	if _, err := m.execInDB(ctx, p, cfg, eng.DropTempDBArgs(cfg.DBUser, db)); err != nil {
 		return fmt.Errorf("cleaning up the temporary database: %w", err)
 	}
-	if _, err := m.psql(ctx, p, cfg, "CREATE DATABASE "+db+";"); err != nil {
-		return fmt.Errorf("creating the temporary database: %w", err)
+	// Some engines (mongo) create a database on its first write instead.
+	if args := eng.CreateTempDBArgs(cfg.DBUser, db); args != nil {
+		if _, err := m.execInDB(ctx, p, cfg, args); err != nil {
+			return fmt.Errorf("creating the temporary database: %w", err)
+		}
 	}
 	if err := m.migrate(ctx, p, cfg, db); err != nil {
 		return err
 	}
 
-	if err := m.dump(ctx, name, p, cfg, db); err != nil {
+	if err := m.dump(ctx, name, p, cfg, eng, db); err != nil {
 		return err
 	}
 	return m.writeMeta(ctx, name, p)
