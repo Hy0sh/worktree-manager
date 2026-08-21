@@ -4,7 +4,8 @@
 
 Go CLI that creates a ready-to-use git worktree and manages its full
 lifecycle: creation, stack startup, stop, removal, plus a pre-migrated
-Postgres backup that makes bootstrapping a database fast.
+database backup (Postgres, MySQL, MariaDB or MongoDB) that makes
+bootstrapping a database fast.
 
 It has no runtime dependency beyond `git` and `docker`: port allocation,
 compose project naming and the stack lifecycle are all handled directly.
@@ -134,7 +135,7 @@ wtm run feat/my-branch -- claude
 wtm run feat/my-branch -- git status
 cd $(wtm path feat/my-branch)
 
-# Postgres backup
+# database backup
 wtm backup refresh my-app            # starts db+backend if needed
 wtm backup list
 wtm backup remove my-app
@@ -192,6 +193,13 @@ wtm project create platform --dir ~/dev/projects/platform \
 
 `{{database}}` gets replaced by the temporary database's name. `--db-service`
 defaults to `db` and `--db-user` defaults to `postgres`.
+
+Postgres, MySQL, MariaDB and MongoDB are supported. The engine is read from
+the database service's image in the compose file and offered as the default
+at registration, then recorded as `db_engine` (`--db-engine` overrides it).
+Database credentials are never stored by wtm: every engine command reads them
+from the container's own environment (`POSTGRES_*`, `MYSQL_ROOT_PASSWORD`,
+`MONGO_INITDB_*`).
 
 None of this has to be known in advance: `wtm project create <name>` without
 `--dir`, and `wtm project edit <name>` without any flag, ask one question at a
@@ -309,10 +317,11 @@ worktree still needs its own seed. `wtm exec` is the way in: reaching the
 container by hand means knowing the compose project name derived from the
 repository, the index and the branch, which is internal knowledge.
 
-Postgres only runs `docker-entrypoint-initdb.d` on an empty data directory,
-which gives the right semantics for free: a fresh worktree restores, an
-existing one is untouched, and no race with the application's own migrations
-is possible since the database reports healthy only once the restore is done.
+The official postgres, mysql, mariadb and mongo images all run
+`docker-entrypoint-initdb.d` only on an empty data directory, which gives the
+right semantics for free: a fresh worktree restores, an existing one is
+untouched, and no race with the application's own migrations is possible
+since the database reports healthy only once the restore is done.
 
 ## Storage
 
