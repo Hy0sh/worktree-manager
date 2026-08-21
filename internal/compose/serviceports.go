@@ -4,6 +4,8 @@ import (
 	"os"
 	"regexp"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // ServicePort is one published port of a service, as declared in the base
@@ -28,61 +30,113 @@ var webPorts = map[string]bool{
 func (s ServicePort) IsWeb() bool { return webPorts[s.Container] }
 
 var (
-	serviceHeader = regexp.MustCompile(`^  ([A-Za-z0-9._-]+):\s*$`)
-	serviceKey    = regexp.MustCompile(`^    ([A-Za-z0-9._-]+):`)
-	portsEntry    = regexp.MustCompile(`^\s+-\s+(.*)$`)
-
-	paramEntry = regexp.MustCompile(`^\$\{([A-Za-z_][A-Za-z0-9_]*):-(\d+)\}:(\d+)$`)
-	plainEntry = regexp.MustCompile(`^(?:[\d.]+:)?(\d+):(\d+)$`)
+	paramShort = regexp.MustCompile(`^\$\{([A-Za-z_][A-Za-z0-9_]*):-(\d+)\}:(\d+)$`)
+	plainShort = regexp.MustCompile(`^(?:[\d.]+:)?(\d+):(\d+)$`)
+	paramValue = regexp.MustCompile(`^\$\{([A-Za-z_][A-Za-z0-9_]*):-(\d+)\}$`)
+	plainValue = regexp.MustCompile(`^\d+$`)
 )
 
-// ServicePorts lists the published ports per service. It reads the base file
-// only, mirroring wtc, which never merges override files.
+// ServicePorts lists the published ports per service, from that one file
+// only: merging across files is MergedServicePorts' job. The file is walked
+// as a YAML tree rather than decoded into structs, so compose's own tags
+// (!override, !reset) and anchors pass through instead of failing the parse.
 func ServicePorts(path string) ([]ServicePort, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
 	}
-	var (
-		out     []ServicePort
-		service string
-		inPorts bool
-	)
-	for _, line := range strings.Split(string(data), "\n") {
-		if m := serviceHeader.FindStringSubmatch(line); m != nil {
-			service, inPorts = m[1], false
-			continue
-		}
-		if m := serviceKey.FindStringSubmatch(line); m != nil {
-			inPorts = m[1] == "ports"
-			continue
-		}
-		if !inPorts || service == "" {
-			continue
-		}
-		m := portsEntry.FindStringSubmatch(line)
-		if m == nil {
-			continue
-		}
-		if sp, ok := parseEntry(service, m[1]); ok {
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return nil, err
+	}
+	var out []ServicePort
+	walkPorts(&doc, func(service string, entry *yaml.Node) {
+		if sp, ok := parsePortNode(service, entry); ok {
 			out = append(out, sp)
 		}
-	}
+	})
 	return out, nil
 }
 
-func parseEntry(service, raw string) (ServicePort, bool) {
-	// Drop trailing comments and quotes: `- "9080:8080" # Traefik dashboard`.
-	if i := strings.Index(raw, "#"); i >= 0 {
-		raw = raw[:i]
+// servicesNode returns the `services:` mapping of a parsed file, nil when the
+// file has none.
+func servicesNode(doc *yaml.Node) *yaml.Node {
+	root := deref(doc)
+	if root.Kind == yaml.DocumentNode && len(root.Content) > 0 {
+		root = deref(root.Content[0])
 	}
-	value := strings.Trim(strings.TrimSpace(raw), `"'`)
+	return mapValue(root, "services")
+}
 
-	if m := paramEntry.FindStringSubmatch(value); m != nil {
-		return ServicePort{Service: service, Var: m[1], Host: m[2], Container: m[3]}, true
+// walkPorts visits every entry of every service's ports list.
+func walkPorts(doc *yaml.Node, visit func(service string, entry *yaml.Node)) {
+	services := servicesNode(doc)
+	if services == nil || services.Kind != yaml.MappingNode {
+		return
 	}
-	if m := plainEntry.FindStringSubmatch(value); m != nil {
-		return ServicePort{Service: service, Host: m[1], Container: m[2]}, true
+	for i := 0; i+1 < len(services.Content); i += 2 {
+		name := services.Content[i].Value
+		ports := mapValue(deref(services.Content[i+1]), "ports")
+		if ports == nil || ports.Kind != yaml.SequenceNode {
+			continue
+		}
+		for _, entry := range ports.Content {
+			visit(name, deref(entry))
+		}
+	}
+}
+
+// mapValue returns the value node for key, nil when n is not a mapping or the
+// key is absent.
+func mapValue(n *yaml.Node, key string) *yaml.Node {
+	if n == nil || n.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(n.Content); i += 2 {
+		if n.Content[i].Value == key {
+			return deref(n.Content[i+1])
+		}
+	}
+	return nil
+}
+
+// deref follows a YAML alias to its anchor, so `ports: *shared` still reads.
+func deref(n *yaml.Node) *yaml.Node {
+	if n != nil && n.Kind == yaml.AliasNode && n.Alias != nil {
+		return n.Alias
+	}
+	return n
+}
+
+// parsePortNode understands both compose syntaxes: the short scalar form
+// ("HOST:CONTAINER", with an optional interface prefix or ${VAR:-default}
+// host), and the long mapping form (target/published).
+func parsePortNode(service string, n *yaml.Node) (ServicePort, bool) {
+	switch n.Kind {
+	case yaml.ScalarNode:
+		value := strings.TrimSpace(n.Value)
+		if m := paramShort.FindStringSubmatch(value); m != nil {
+			return ServicePort{Service: service, Var: m[1], Host: m[2], Container: m[3]}, true
+		}
+		if m := plainShort.FindStringSubmatch(value); m != nil {
+			return ServicePort{Service: service, Host: m[1], Container: m[2]}, true
+		}
+	case yaml.MappingNode:
+		target := mapValue(n, "target")
+		published := mapValue(n, "published")
+		if target == nil || published == nil {
+			// Without a published side there is no host port to isolate.
+			return ServicePort{}, false
+		}
+		sp := ServicePort{Service: service, Container: target.Value}
+		if m := paramValue.FindStringSubmatch(published.Value); m != nil {
+			sp.Var, sp.Host = m[1], m[2]
+			return sp, true
+		}
+		if plainValue.MatchString(published.Value) {
+			sp.Host = published.Value
+			return sp, true
+		}
 	}
 	return ServicePort{}, false
 }

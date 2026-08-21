@@ -2,20 +2,13 @@ package compose
 
 import (
 	"os"
-	"regexp"
 	"sort"
-	"strings"
-)
 
-var (
-	servicesBlock = regexp.MustCompile(`^services:\s*$`)
-	topLevelKey   = regexp.MustCompile(`^[A-Za-z0-9._-]+:`)
+	"gopkg.in/yaml.v3"
 )
 
 // Services lists the service names declared across the project's compose
 // files, in declaration order, then alphabetically for what the overrides add.
-// Unlike ServicePorts it tracks the `services:` block, because a name is only
-// a service when it sits there: `volumes:` and `networks:` indent the same way.
 func Services(dir string) ([]string, error) {
 	files, err := Files(dir)
 	if err != nil {
@@ -48,21 +41,17 @@ func servicesOf(path string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	var (
-		names  []string
-		inside bool
-	)
-	for _, line := range strings.Split(string(data), "\n") {
-		switch {
-		case servicesBlock.MatchString(line):
-			inside = true
-		case topLevelKey.MatchString(line):
-			inside = false
-		case inside:
-			if m := serviceHeader.FindStringSubmatch(line); m != nil {
-				names = append(names, m[1])
-			}
-		}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return nil, err
+	}
+	services := servicesNode(&doc)
+	if services == nil || services.Kind != yaml.MappingNode {
+		return nil, nil
+	}
+	var names []string
+	for i := 0; i+1 < len(services.Content); i += 2 {
+		names = append(names, services.Content[i].Value)
 	}
 	return names, nil
 }

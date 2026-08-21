@@ -71,7 +71,7 @@ func TestPortsSeparatesHardcodedFromParametrised(t *testing.T) {
 	if len(raw) != 2 {
 		t.Fatalf("raw = %v, want 2 entries (quoted and unquoted forms)", raw)
 	}
-	if raw[0] != `- "5432:5432"` || raw[1] != "- 8080:8080" {
+	if raw[0] != "5432:5432" || raw[1] != "8080:8080" {
 		t.Fatalf("raw = %v", raw)
 	}
 }
