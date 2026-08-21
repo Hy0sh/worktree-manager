@@ -18,3 +18,18 @@ func TestValidateIdentifierRejectsWhatWouldBeInjected(t *testing.T) {
 		}
 	}
 }
+
+// db_path is joined under each worktree and interpreted inside the app
+// container: anything that could climb out of the project must be rejected.
+func TestValidateRelativePathRejectsEscapes(t *testing.T) {
+	for _, ok := range []string{"db.sqlite3", "var/data.db"} {
+		if err := ValidateRelativePath("db_path", ok); err != nil {
+			t.Fatalf("%q should be accepted: %v", ok, err)
+		}
+	}
+	for _, bad := range []string{"", "../x.db", "/abs/x.db", "a/../../x.db"} {
+		if err := ValidateRelativePath("db_path", bad); err == nil {
+			t.Fatalf("%q should be rejected", bad)
+		}
+	}
+}

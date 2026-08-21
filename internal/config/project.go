@@ -33,6 +33,8 @@ const (
 	DefaultDBService = "db"
 	DefaultDBUser    = "postgres"
 	DefaultDBEngine  = "postgres"
+	// DefaultDBPath is Django's convention, the most common sqlite layout.
+	DefaultDBPath = "db.sqlite3"
 	// DefaultMigrationsPath covers Django's app/migrations, Prisma's
 	// prisma/migrations and MikroORM's src/database/migrations.
 	DefaultMigrationsPath = "*migrations/*"
@@ -51,7 +53,11 @@ type Backup struct {
 	// DBEngine names the database engine (see internal/dbengine). Empty means
 	// postgres, which is what every project registered before this field
 	// existed means.
-	DBEngine   string `json:"db_engine,omitempty"`
+	DBEngine string `json:"db_engine,omitempty"`
+	// DBPath is where a file-based engine's database lives, relative to the
+	// project root. The dump is copied there in each worktree. Ignored by
+	// server engines.
+	DBPath     string `json:"db_path,omitempty"`
 	AppService string `json:"app_service,omitempty"` // required
 	// DepsCommand runs before the migration in the disposable container, for
 	// projects that install their dependencies at container startup rather
@@ -83,6 +89,9 @@ func (p Project) BackupConfig() Backup {
 	}
 	if b.DBEngine == "" {
 		b.DBEngine = DefaultDBEngine
+	}
+	if b.DBPath == "" {
+		b.DBPath = DefaultDBPath
 	}
 	if b.MigrationsPath == "" {
 		b.MigrationsPath = DefaultMigrationsPath
