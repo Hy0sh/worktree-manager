@@ -44,6 +44,11 @@ func TestMySQLCommandsExpandCredentialsInContainer(t *testing.T) {
 	if s := eng.DropTempDBArgs("ignored", "x_tmp")[2]; !strings.Contains(s, "DROP DATABASE IF EXISTS x_tmp") {
 		t.Fatalf("drop = %q", s)
 	}
+	// A ping answers during the image's init phase, before root is usable;
+	// only an authenticated query proves the final server is up.
+	if s := eng.ReadyArgs("ignored")[2]; !strings.Contains(s, `mysql -uroot -e "SELECT 1"`) {
+		t.Fatalf("ready = %q", s)
+	}
 }
 
 func TestMariaDBUsesItsOwnBinariesAndPasswordVariable(t *testing.T) {

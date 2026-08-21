@@ -9,7 +9,6 @@ import "strings"
 type mysqlFamily struct {
 	name     string
 	match    string // substring of the image repo
-	admin    string // mysqladmin | mariadb-admin
 	client   string // mysql | mariadb
 	dump     string // mysqldump | mariadb-dump
 	password string // shell expression for the root password
@@ -19,7 +18,7 @@ type mysqlFamily struct {
 func newMySQL() mysqlFamily {
 	return mysqlFamily{
 		name: "mysql", match: "mysql",
-		admin: "mysqladmin", client: "mysql", dump: "mysqldump",
+		client: "mysql", dump: "mysqldump",
 		password: `"$MYSQL_ROOT_PASSWORD"`,
 		database: `"${MYSQL_DATABASE:-mysql}"`,
 	}
@@ -28,7 +27,7 @@ func newMySQL() mysqlFamily {
 func newMariaDB() mysqlFamily {
 	return mysqlFamily{
 		name: "mariadb", match: "mariadb",
-		admin: "mariadb-admin", client: "mariadb", dump: "mariadb-dump",
+		client: "mariadb", dump: "mariadb-dump",
 		password: `"${MARIADB_ROOT_PASSWORD:-$MYSQL_ROOT_PASSWORD}"`,
 		database: `"${MARIADB_DATABASE:-${MYSQL_DATABASE:-mysql}}"`,
 	}
@@ -42,8 +41,12 @@ func (e mysqlFamily) sh(cmd string) []string {
 	return []string{"sh", "-c", "MYSQL_PWD=" + e.password + " exec " + cmd}
 }
 
+// ReadyArgs runs an authenticated query rather than a ping: during the
+// image's first initialisation a temporary server already answers pings on
+// the socket while root's password is not set up yet, and commands sent then
+// are refused. The query only succeeds on the final, fully configured server.
 func (e mysqlFamily) ReadyArgs(string) []string {
-	return e.sh(e.admin + " ping --silent -uroot")
+	return e.sh(e.client + ` -uroot -e "SELECT 1"`)
 }
 
 func (e mysqlFamily) DropTempDBArgs(_, db string) []string {

@@ -6,6 +6,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/Hy0sh/worktree-manager/internal/compose"
 	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/dbengine"
 )
@@ -112,6 +113,30 @@ func validateUpdate(u config.ProjectUpdate) error {
 		}
 	}
 	return nil
+}
+
+// detectEngineIfUnset fills db_engine from the compose image when the backup
+// is on and no engine was given. The stepper offers the detection as its
+// default; a scripted --no-input call deserves the same instead of a silent
+// postgres fallback that only fails at the first refresh.
+func detectEngineIfUnset(p *config.Project) {
+	if !p.Dump || p.Dir == "" || (p.Backup != nil && p.Backup.DBEngine != "") {
+		return
+	}
+	img, ok := compose.ServiceImage(p.Dir, p.BackupConfig().DBService)
+	if !ok {
+		return
+	}
+	eng, ok := dbengine.Detect(img)
+	if !ok {
+		return
+	}
+	b := config.Backup{}
+	if p.Backup != nil {
+		b = *p.Backup
+	}
+	b.DBEngine = eng.Name()
+	p.Backup = &b
 }
 
 // stepper walks the questions, unless the command was told not to ask.
