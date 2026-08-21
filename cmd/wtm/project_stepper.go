@@ -8,6 +8,7 @@ import (
 
 	"github.com/Hy0sh/worktree-manager/internal/compose"
 	"github.com/Hy0sh/worktree-manager/internal/config"
+	"github.com/Hy0sh/worktree-manager/internal/dbengine"
 )
 
 // runProjectStepper asks for what a project needs, one question at a time,
@@ -29,13 +30,13 @@ func runProjectStepper(p *prompter, current config.Project) (config.ProjectUpdat
 	}
 	u.BaseBranch = &base
 
-	dump, err := p.askYesNo("enable the Postgres backup?", current.Dump)
+	dump, err := p.askYesNo("enable the database backup?", current.Dump)
 	if err != nil {
 		return u, err
 	}
 	u.Dump = &dump
 	if dump {
-		if err := askBackup(p, dir, current.BackupConfig(), &u); err != nil {
+		if err := askBackup(p, dir, current, &u); err != nil {
 			return u, err
 		}
 	}
@@ -49,8 +50,11 @@ func runProjectStepper(p *prompter, current config.Project) (config.ProjectUpdat
 }
 
 // askBackup only runs when the backup is on: asking for a migration command a
-// project will never run is noise.
-func askBackup(p *prompter, dir string, current config.Backup, u *config.ProjectUpdate) error {
+// project will never run is noise. It works on the project's raw backup
+// section, not the defaulted view: an unset engine must fall back to what the
+// compose image says, not to the postgres default.
+func askBackup(p *prompter, dir string, project config.Project, u *config.ProjectUpdate) error {
+	current := project.BackupConfig()
 	if services, err := compose.Services(dir); err == nil && len(services) > 0 {
 		p.logf("  services in the compose file: %s", strings.Join(services, ", "))
 	}
@@ -58,7 +62,15 @@ func askBackup(p *prompter, dir string, current config.Backup, u *config.Project
 	if err != nil {
 		return err
 	}
-	dbUser, err := p.ask("  postgres user", or(current.DBUser, config.DefaultDBUser))
+	recorded := ""
+	if project.Backup != nil {
+		recorded = project.Backup.DBEngine
+	}
+	engine, err := askEngine(p, dir, dbService, recorded)
+	if err != nil {
+		return err
+	}
+	dbUser, err := p.ask("  database user", or(current.DBUser, config.DefaultDBUser))
 	if err != nil {
 		return err
 	}
@@ -78,9 +90,32 @@ func askBackup(p *prompter, dir string, current config.Backup, u *config.Project
 	if err != nil {
 		return err
 	}
-	u.DBService, u.DBUser, u.AppService = &dbService, &dbUser, &appService
+	u.DBService, u.DBEngine, u.DBUser, u.AppService = &dbService, &engine, &dbUser, &appService
 	u.MigrateCommand, u.DepsCommand, u.Env = &migrate, &deps, env
 	return nil
+}
+
+// askEngine offers what the compose image of the database service says as the
+// default, so registering a mysql project is a plain enter. An engine wtm does
+// not support is re-asked on the spot rather than discovered at the first
+// refresh.
+func askEngine(p *prompter, dir, dbService, current string) (string, error) {
+	detected := config.DefaultDBEngine
+	if img, ok := compose.ServiceImage(dir, dbService); ok {
+		if eng, ok := dbengine.Detect(img); ok {
+			detected = eng.Name()
+		}
+	}
+	for {
+		engine, err := p.ask("  database engine ("+strings.Join(dbengine.Names(), ", ")+")", or(current, detected))
+		if err != nil {
+			return "", err
+		}
+		if _, err := dbengine.ByName(engine); err == nil {
+			return engine, nil
+		}
+		p.logf("  unknown engine %q", engine)
+	}
 }
 
 // askDir keeps asking until the answer is a directory that exists: a typo
