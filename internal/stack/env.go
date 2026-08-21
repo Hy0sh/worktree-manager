@@ -33,5 +33,7 @@ func WriteEnvOverrides(worktreeDir string, allocations []Allocation) error {
 		lines = append(lines, fmt.Sprintf("%s=%d", a.Var, a.Port))
 	}
 
-	return os.WriteFile(path, []byte(portBlock.Rewrite(string(existing), lines)), 0o644)
+	// The mode only applies when this creates the file; an existing .env,
+	// usually copied from the main repository, keeps its own permissions.
+	return os.WriteFile(path, []byte(portBlock.Rewrite(string(existing), lines)), 0o600)
 }
