@@ -19,11 +19,18 @@ controls the machine:
   with a password, so it is created with `0600` permissions, in a `0700`
   directory.
 - The target project's compose files, which are read to know which ports to
-  rebase.
+  rebase, and then handed to `docker compose`. A compose file is code running
+  with Docker's power over the machine (bind mounts, privileged containers,
+  the Docker socket), so registering a repository with `wtm` means trusting
+  it; do not point it at a repository you would not `docker compose up`
+  yourself.
 
 Project and service names are validated against `[a-z0-9_-]` when a project is
 registered, and again when they are interpolated into the generated restore
 script and compose files.
 
 Database dumps under `~/.config/wtm/backups` carry everything the migrations
-create, reference data included, and are written `0600`.
+create, reference data included, and are written `0600`. They are taken from
+your development database as it is, with no anonymization: if that database
+holds personal or client data, so does the dump, and it stays on disk until
+the backup is refreshed or removed.
