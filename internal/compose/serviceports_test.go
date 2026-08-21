@@ -65,6 +65,58 @@ volumes:
 	}
 }
 
+// The long ports syntax (target/published) used to be silently ignored, which
+// left those services unisolated. An entry without a published side has no
+// host port and still contributes nothing.
+func TestServicePortsReadsTheLongSyntax(t *testing.T) {
+	dir := t.TempDir()
+	path := write(t, dir, "compose.yaml", `services:
+  web:
+    ports:
+      - target: 3000
+        published: "${WEB_PORT:-8080}"
+        protocol: tcp
+  metrics:
+    ports:
+      - target: 9090
+        published: 9090
+  internal:
+    ports:
+      - target: 6379
+`)
+	ports, err := ServicePorts(path)
+	if err != nil {
+		t.Fatalf("ServicePorts: %v", err)
+	}
+	if len(ports) != 2 {
+		t.Fatalf("got %d ports, want 2: %+v", len(ports), ports)
+	}
+	if p := ports[0]; p.Service != "web" || p.Var != "WEB_PORT" || p.Host != "8080" || p.Container != "3000" {
+		t.Fatalf("web = %+v", p)
+	}
+	if p := ports[1]; p.Service != "metrics" || p.Var != "" || p.Host != "9090" || p.Container != "9090" {
+		t.Fatalf("metrics = %+v", p)
+	}
+}
+
+// The old line-oriented parser assumed two-space indentation; real projects
+// indent however their formatter likes.
+func TestServicePortsSurvivesNonStandardIndentation(t *testing.T) {
+	dir := t.TempDir()
+	path := write(t, dir, "compose.yaml", `services:
+    db:
+        ports:
+            - "${DB_PORT:-5432}:5432"
+`)
+	ports, err := ServicePorts(path)
+	if err != nil {
+		t.Fatalf("ServicePorts: %v", err)
+	}
+	if len(ports) != 1 || ports[0].Var != "DB_PORT" {
+		t.Fatalf("ports = %+v", ports)
+	}
+}
+
 // Only web ports deserve a clickable URL; a database shown as http:// would be
 // actively misleading.
 func TestIsWebOnlyForWebPorts(t *testing.T) {
