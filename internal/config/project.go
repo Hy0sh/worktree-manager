@@ -32,6 +32,7 @@ type Project struct {
 const (
 	DefaultDBService = "db"
 	DefaultDBUser    = "postgres"
+	DefaultDBEngine  = "postgres"
 	// DefaultMigrationsPath covers Django's app/migrations, Prisma's
 	// prisma/migrations and MikroORM's src/database/migrations.
 	DefaultMigrationsPath = "*migrations/*"
@@ -45,8 +46,12 @@ const (
 // migration commands, three app service names, two database service names,
 // two database users and two ways of telling the app which database to use.
 type Backup struct {
-	DBService  string `json:"db_service,omitempty"`  // default "db"
-	DBUser     string `json:"db_user,omitempty"`     // default "postgres"
+	DBService string `json:"db_service,omitempty"` // default "db"
+	DBUser    string `json:"db_user,omitempty"`    // default "postgres"
+	// DBEngine names the database engine (see internal/dbengine). Empty means
+	// postgres, which is what every project registered before this field
+	// existed means.
+	DBEngine   string `json:"db_engine,omitempty"`
 	AppService string `json:"app_service,omitempty"` // required
 	// DepsCommand runs before the migration in the disposable container, for
 	// projects that install their dependencies at container startup rather
@@ -75,6 +80,9 @@ func (p Project) BackupConfig() Backup {
 	}
 	if b.DBUser == "" {
 		b.DBUser = DefaultDBUser
+	}
+	if b.DBEngine == "" {
+		b.DBEngine = DefaultDBEngine
 	}
 	if b.MigrationsPath == "" {
 		b.MigrationsPath = DefaultMigrationsPath

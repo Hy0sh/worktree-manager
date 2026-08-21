@@ -25,6 +25,27 @@ func TestBackupConfigFillsTheDefaultsIn(t *testing.T) {
 	}
 }
 
+func TestBackupConfigDefaultsTheEngine(t *testing.T) {
+	if got := (Project{}).BackupConfig().DBEngine; got != DefaultDBEngine {
+		t.Fatalf("default engine = %q", got)
+	}
+	p := Project{Backup: &Backup{DBEngine: "mysql"}}
+	if got := p.BackupConfig().DBEngine; got != "mysql" {
+		t.Fatalf("engine = %q", got)
+	}
+}
+
+func TestApplyRecordsTheEngineChange(t *testing.T) {
+	engine := "mariadb"
+	p, changes := (ProjectUpdate{DBEngine: &engine}).Apply(Project{})
+	if p.Backup == nil || p.Backup.DBEngine != "mariadb" {
+		t.Fatalf("backup = %+v", p.Backup)
+	}
+	if len(changes) != 1 || changes[0].Field != "db_engine" {
+		t.Fatalf("changes = %+v", changes)
+	}
+}
+
 // The error is read by someone about to run a refresh, so it has to name every
 // field that is missing, not just the first one.
 func TestValidateNamesEveryMissingField(t *testing.T) {
