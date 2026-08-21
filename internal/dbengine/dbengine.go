@@ -27,7 +27,7 @@ type Engine interface {
 	RestoreScript(project string) string
 }
 
-var engines = []Engine{postgres{}, newMySQL(), newMariaDB()}
+var engines = []Engine{postgres{}, newMySQL(), newMariaDB(), mongodb{}}
 
 // ByName resolves an engine; the empty name is postgres, which is what every
 // project registered before db_engine existed means.
