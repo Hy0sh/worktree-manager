@@ -6,9 +6,65 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-08-22
+
 ### Added
 
+- MySQL, MariaDB and MongoDB join Postgres for the pre-migrated backup. Each
+  engine lives behind one interface (readiness probe, throwaway database,
+  dump command, generated restore script), and the central mechanism is
+  untouched: the official images share Postgres' run-`initdb.d`-only-on-empty
+  semantics. The engine is recorded as `db_engine` in the project's backup
+  settings, empty meaning postgres so nothing changes for existing
+  registrations; at registration it is detected from the database service's
+  compose image and offered as the default, `--db-engine` overrides it, and
+  `wtm doctor` shows it per project. Credentials are never stored nor passed
+  in wtm's arguments: every engine command reads them from the container's
+  own environment (`MYSQL_ROOT_PASSWORD`, `MONGO_INITDB_*`), expanded inside
+  the container.
+- SQLite, as the first file-based engine: no service, no probe, the snapshot
+  is the database file itself. The migration still runs in the disposable app
+  container, targeting a throwaway file collected through the app service's
+  bind mount, and each worktree gets it copied to `db_path` (default
+  `db.sqlite3`, `--db-path` to change it) only when nothing is there yet: a
+  database being worked in is never overwritten. Chosen explicitly with
+  `--db-engine sqlite`, there being no image to detect it from.
 - This changelog.
+
+### Fixed
+
+- Every compose override name the detection knows is now copied into the
+  worktree. Provisioning kept its own list of two names out of four, so a
+  project using `compose.override.yml` or `docker-compose.override.yaml` had
+  its override referenced by `-f` against the worktree without existing
+  there, and `docker compose up` failed on a missing file.
+- The registry lock is held through the kernel (flock, LockFileEx on Windows)
+  instead of a lock file with a staleness heuristic. A killed wtm can no
+  longer leave the registry locked, and the stat-then-remove takeover, which
+  could delete the fresh lock a concurrent wtm had just taken, is gone with
+  the whole stale concept.
+- The migration environment values, typically a `DATABASE_URL` carrying a
+  password, no longer appear in the docker arguments that error messages
+  quote: docker reads a bare `-e KEY` from its own environment, so the values
+  travel there instead.
+- A `.env` created from scratch in a worktree is written `0600`. An existing
+  file keeps its own permissions.
+- The mysql readiness probe is an authenticated query, not `mysqladmin ping`:
+  the image's init phase answers pings on the socket while root is not usable
+  yet, and commands sent then were refused.
+
+### Changed
+
+- Compose files are parsed as YAML instead of line regexes. The old parser
+  assumed two-space indentation and the short `ports:` syntax only, so a
+  service using `target`/`published` or another indentation silently lost its
+  port isolation; anchors and compose's `!override` tags now pass through
+  too.
+- `SECURITY.md` spells out the trust model: compose files run with Docker's
+  power, so registering a repository means trusting it, and dumps carry the
+  development database as it is, with no anonymization.
+- Two dependencies join cobra: `gofrs/flock` and `gopkg.in/yaml.v3`. Nothing
+  changes at runtime, `git` and `docker` remain the only tools required.
 
 ## [0.3.0] - 2026-08-17
 
@@ -126,7 +182,8 @@ First tagged release. The whole worktree lifecycle behind one binary:
   identical so worktrees created with it keep working.
 - A project without a compose file is not an error, there is simply no stack.
 
-[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/Hy0sh/worktree-manager/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.1.1...v0.2.0
