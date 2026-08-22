@@ -8,16 +8,16 @@ import "strings"
 // (MYSQL_ALLOW_EMPTY_PASSWORD) works and nothing is prompted.
 type mysqlFamily struct {
 	name     string
-	match    string // substring of the image repo
-	client   string // mysql | mariadb
-	dump     string // mysqldump | mariadb-dump
-	password string // shell expression for the root password
-	database string // shell expression for the application database name
+	images   []string // image basenames that are this server
+	client   string   // mysql | mariadb
+	dump     string   // mysqldump | mariadb-dump
+	password string   // shell expression for the root password
+	database string   // shell expression for the application database name
 }
 
 func newMySQL() mysqlFamily {
 	return mysqlFamily{
-		name: "mysql", match: "mysql",
+		name: "mysql", images: []string{"mysql", "mysql-server"},
 		client: "mysql", dump: "mysqldump",
 		password: `"$MYSQL_ROOT_PASSWORD"`,
 		database: `"${MYSQL_DATABASE:-mysql}"`,
@@ -26,7 +26,7 @@ func newMySQL() mysqlFamily {
 
 func newMariaDB() mysqlFamily {
 	return mysqlFamily{
-		name: "mariadb", match: "mariadb",
+		name: "mariadb", images: []string{"mariadb"},
 		client: "mariadb", dump: "mariadb-dump",
 		password: `"${MARIADB_ROOT_PASSWORD:-$MYSQL_ROOT_PASSWORD}"`,
 		database: `"${MARIADB_DATABASE:-${MYSQL_DATABASE:-mysql}}"`,
@@ -34,9 +34,12 @@ func newMariaDB() mysqlFamily {
 }
 
 func (e mysqlFamily) Name() string                 { return e.name }
-func (e mysqlFamily) DetectImage(repo string) bool { return strings.Contains(repo, e.match) }
+func (e mysqlFamily) DetectImage(repo string) bool { return baseIs(repo, e.images...) }
 
 // sh wraps a command so the root password expands inside the container.
+// SECURITY: cmd is concatenated into a shell line. Only literals and
+// identifiers sanitised by TempDBName may reach it; anything coming from
+// config or user input would be a shell injection inside the container.
 func (e mysqlFamily) sh(cmd string) []string {
 	return []string{"sh", "-c", "MYSQL_PWD=" + e.password + " exec " + cmd}
 }

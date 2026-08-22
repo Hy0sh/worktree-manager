@@ -43,6 +43,37 @@ func TestDetectMatchesCommonImages(t *testing.T) {
 	}
 }
 
+// Detection decides which commands run against the container: an image that
+// merely mentions an engine in its name (a proxy, a sidecar, a toolbox) must
+// not be mistaken for the server itself. Detection is a default the stepper
+// offers; missing one costs a question, matching wrong breaks the backup.
+func TestDetectRejectsLookalikeImages(t *testing.T) {
+	for _, image := range []string{
+		"mycompany/mysql-proxy:1",
+		"registry.example.com/platform/mysql-tools",
+		"mycompany/mongo-backup-sidecar",
+		"postgrest/postgrest:v12",
+		"mariadb-operator/mariadb-operator",
+	} {
+		if eng, ok := Detect(image); ok {
+			t.Fatalf("Detect(%q) = %s, a lookalike must not match", image, eng.Name())
+		}
+	}
+	// The real servers keep matching, registries and tags stripped.
+	for image, want := range map[string]string{
+		"mysql/mysql-server:8.0":                       "mysql",
+		"docker.io/library/mysql:8.4":                  "mysql",
+		"mongodb/mongodb-community-server:7.0-ubi8":    "mongodb",
+		"registry.example.com/mirror/bitnami/mariadb":  "mariadb",
+		"postgres@sha256:0000000000000000000000000000": "postgres",
+	} {
+		eng, ok := Detect(image)
+		if !ok || eng.Name() != want {
+			t.Fatalf("Detect(%q) = %v, %v, want %s", image, eng, ok, want)
+		}
+	}
+}
+
 // sqlite has no server: it never resolves through ByName, callers branch on
 // IsFileBased first, but it is a valid engine name everywhere names are
 // checked or completed.

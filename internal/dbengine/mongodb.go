@@ -1,14 +1,18 @@
 package dbengine
 
-import "strings"
-
 type mongodb struct{}
 
-func (mongodb) Name() string                 { return "mongodb" }
-func (mongodb) DetectImage(repo string) bool { return strings.Contains(repo, "mongo") }
+func (mongodb) Name() string { return "mongodb" }
+
+func (mongodb) DetectImage(repo string) bool {
+	return baseIs(repo, "mongo", "mongodb", "mongodb-community-server")
+}
 
 // sh runs cmd with the root auth flags appended, but only when the container
 // declares a root user: a no-auth mongo accepts none of them.
+// SECURITY: cmd is concatenated into a shell line. Only literals and
+// identifiers sanitised by TempDBName may reach it; anything coming from
+// config or user input would be a shell injection inside the container.
 func (mongodb) sh(cmd string) []string {
 	return []string{"sh", "-c",
 		`if [ -n "$MONGO_INITDB_ROOT_USERNAME" ]; then set -- -u "$MONGO_INITDB_ROOT_USERNAME" -p "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin; else set --; fi; exec ` + cmd + ` "$@"`}
