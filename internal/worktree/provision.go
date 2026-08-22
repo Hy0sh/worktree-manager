@@ -98,18 +98,45 @@ func linkSnapshotDir(o Options, dest string) error {
 	return forceSymlink(target, filepath.Join(dest, ".db-snapshot"))
 }
 
-// forceSymlink is `ln -sfn`: replace whatever is there. Docker materialises a
-// directory at the source of a bind-mount that does not exist, so what has to
-// go can be a non-empty one. RemoveAll does not follow the link it replaces, so
-// a live snapshot directory is never touched through it.
+// forceSymlink is `ln -sfn` with one restraint on what it replaces: a
+// symlink, or an empty directory tree, which is what Docker materialises at
+// the source of a missing bind-mount (a tree, not just one directory, when
+// the source is a file inside one). A path holding real content is refused
+// rather than destroyed: a repository tracking a file where wtm puts its
+// artifacts is a conflict for the user to resolve, not something to delete.
 func forceSymlink(target, link string) error {
-	if err := os.RemoveAll(link); err != nil {
-		return fmt.Errorf("replacing %s: %w", link, err)
+	info, err := os.Lstat(link)
+	switch {
+	case err != nil:
+		// Nothing there, nothing to replace.
+	case info.Mode()&os.ModeSymlink != 0:
+		if err := os.Remove(link); err != nil {
+			return fmt.Errorf("replacing %s: %w", link, err)
+		}
+	case info.IsDir() && emptyTree(link):
+		if err := os.RemoveAll(link); err != nil {
+			return fmt.Errorf("replacing %s: %w", link, err)
+		}
+	default:
+		return fmt.Errorf("%s holds real content where wtm needs a symlink: move it away and retry", link)
 	}
 	if err := os.Symlink(target, link); err != nil {
 		return fmt.Errorf("linking %s -> %s: %w", link, target, err)
 	}
 	return nil
+}
+
+// emptyTree reports whether path contains only directories all the way down.
+func emptyTree(path string) bool {
+	empty := true
+	_ = filepath.WalkDir(path, func(_ string, d fs.DirEntry, err error) error {
+		if err != nil || !d.IsDir() {
+			empty = false
+			return fs.SkipAll
+		}
+		return nil
+	})
+	return empty
 }
 
 func copyEnvFiles(root, dest string, mode provisionMode, logf func(string, ...any)) error {
