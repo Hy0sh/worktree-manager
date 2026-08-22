@@ -11,6 +11,118 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 )
 
+// A file-based engine has no restore machinery: the whole story is the dump
+// copied to db_path, and none of the server-engine assets may appear.
+func TestCreateCopiesTheSQLiteDumpInsteadOfRestoreAssets(t *testing.T) {
+	f := newFixture(t)
+	if err := os.MkdirAll(filepath.Join(f.backups, "myapp"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(f.backups, "myapp", "myapp.dump"), "sqlite-payload")
+
+	o := f.opts("feat/x")
+	o.NoStart = true
+	o.Project.Dump = true
+	o.Project.Backup = &config.Backup{DBEngine: "sqlite"}
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	dest := filepath.Join(f.root, ".worktrees", "feat", "x")
+	got, err := os.ReadFile(filepath.Join(dest, "db.sqlite3"))
+	if err != nil || string(got) != "sqlite-payload" {
+		t.Fatalf("db.sqlite3 = %q, %v", got, err)
+	}
+	for _, absent := range []string{
+		filepath.Join(dest, ".wtm-snapshot.yaml"),
+		filepath.Join(dest, ".db-snapshot"),
+		filepath.Join(f.backups, "myapp", "restore-snapshot.sh"),
+	} {
+		if _, err := os.Lstat(absent); !os.IsNotExist(err) {
+			t.Fatalf("%s must not exist for a file-based engine", absent)
+		}
+	}
+}
+
+// The copy fills a gap, never clobbers: a database being worked in survives a
+// start, exactly like an edited .env does.
+func TestStartKeepsAnExistingSQLiteFile(t *testing.T) {
+	f := newFixture(t)
+	if err := os.MkdirAll(filepath.Join(f.backups, "myapp"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(f.backups, "myapp", "myapp.dump"), "fresh-dump")
+
+	o := f.opts("feat/x")
+	o.NoStart = true
+	o.Project.Dump = true
+	o.Project.Backup = &config.Backup{DBEngine: "sqlite"}
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	dest := filepath.Join(f.root, ".worktrees", "feat", "x")
+	mustWrite(t, filepath.Join(dest, "db.sqlite3"), "being-worked-in")
+
+	start := f.opts("feat/x")
+	start.Project.Dump = true
+	start.Project.Backup = &config.Backup{DBEngine: "sqlite"}
+	if err := Start(context.Background(), start); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(dest, "db.sqlite3"))
+	if err != nil || string(got) != "being-worked-in" {
+		t.Fatalf("db.sqlite3 = %q, a start overwrote the working database", got)
+	}
+}
+
+// No dump yet is a note, not a failure: the worktree is usable, the database
+// simply starts empty until a refresh runs.
+func TestCreateSQLiteWithoutADumpStillSucceeds(t *testing.T) {
+	f := newFixture(t)
+	o := f.opts("feat/x")
+	o.NoStart = true
+	o.Project.Dump = true
+	o.Project.Backup = &config.Backup{DBEngine: "sqlite"}
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	dest := filepath.Join(f.root, ".worktrees", "feat", "x")
+	if _, err := os.Stat(filepath.Join(dest, "db.sqlite3")); !os.IsNotExist(err) {
+		t.Fatal("no dump means no file to copy")
+	}
+}
+
+// db_path reaches filepath.Join against the worktree, and config.json can be
+// hand-edited: an escaping path must fail, not write outside the worktree.
+func TestCreateRejectsAnEscapingDBPath(t *testing.T) {
+	f := newFixture(t)
+	o := f.opts("feat/x")
+	o.NoStart = true
+	o.Project.Dump = true
+	o.Project.Backup = &config.Backup{DBEngine: "sqlite", DBPath: "../outside.db"}
+	if err := Create(context.Background(), o); err == nil || !strings.Contains(err.Error(), "db_path") {
+		t.Fatalf("an escaping db_path must be rejected, got %v", err)
+	}
+}
+
+// The generated snapshot override references a database service a file-based
+// engine does not have: it must stay out of the compose file list.
+func TestComposeFilesSkipTheSnapshotOverrideForFileEngines(t *testing.T) {
+	f := newFixture(t)
+	o := f.opts("feat/x")
+	o.Project.Dump = true
+	o.Project.Backup = &config.Backup{DBEngine: "sqlite"}
+	files, err := composeFiles(o, filepath.Join(f.root, ".worktrees", "feat", "x"))
+	if err != nil {
+		t.Fatalf("composeFiles: %v", err)
+	}
+	for _, file := range files {
+		if strings.Contains(file, ".wtm-snapshot.yaml") {
+			t.Fatalf("the snapshot override must be skipped: %v", files)
+		}
+	}
+}
+
 // A mongo project's worktree must get the mongo restore script, not the
 // postgres one baked in before engines existed.
 func TestCreateWritesTheEngineRestoreScript(t *testing.T) {
