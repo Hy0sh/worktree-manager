@@ -44,7 +44,7 @@ func provision(ctx context.Context, o Options, dest string, mode provisionMode) 
 			return err
 		}
 	}
-	if err := copyEnvFiles(o.Project.Dir, dest, mode); err != nil {
+	if err := copyEnvFiles(o.Project.Dir, dest, mode, o.logf); err != nil {
 		return fmt.Errorf("copying .env files: %w", err)
 	}
 	if err := copyComposeOverrides(o.Project.Dir, dest, mode); err != nil {
@@ -112,7 +112,7 @@ func forceSymlink(target, link string) error {
 	return nil
 }
 
-func copyEnvFiles(root, dest string, mode provisionMode) error {
+func copyEnvFiles(root, dest string, mode provisionMode, logf func(string, ...any)) error {
 	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -130,6 +130,16 @@ func copyEnvFiles(root, dest string, mode provisionMode) error {
 		}
 		if depth > envMaxDepth || !strings.HasSuffix(d.Name(), ".env") {
 			return nil
+		}
+		// The copy follows a valid symlink (a snapshot of the developer's
+		// values is the point), but a dangling one, typically .env pointing
+		// at an .env.local that does not exist yet, is the developer's state
+		// and must not fail the whole provisioning.
+		if d.Type()&fs.ModeSymlink != 0 {
+			if _, err := os.Stat(path); err != nil {
+				logf("warning: %s is a symlink whose target is missing, not copied", rel)
+				return nil
+			}
 		}
 		return copyFile(path, filepath.Join(dest, rel), mode)
 	})
@@ -164,6 +174,14 @@ func copyFile(src, dst string, mode provisionMode) error {
 	}
 	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
 		return err
+	}
+	// Never write through a symlink the checkout may have laid down at dst:
+	// the copy must be the worktree's own file, and a branch-controlled link
+	// could point anywhere, outside the worktree included.
+	if info, err := os.Lstat(dst); err == nil && info.Mode()&os.ModeSymlink != 0 {
+		if err := os.Remove(dst); err != nil {
+			return fmt.Errorf("replacing the symlink at %s: %w", dst, err)
+		}
 	}
 	return os.WriteFile(dst, data, info.Mode().Perm())
 }

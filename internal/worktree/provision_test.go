@@ -35,6 +35,59 @@ func TestCreateCopiesEnvFilesAndComposeOverride(t *testing.T) {
 	}
 }
 
+// A checkout can lay a symlink down where a copy lands (a branch tracking
+// .env as a link, even one escaping the worktree): writing through it would
+// put the developer's env values at a path the branch chose. The copy must
+// replace the link with the worktree's own regular file.
+func TestCopyEnvFilesNeverWritesThroughADestinationSymlink(t *testing.T) {
+	root, dest := t.TempDir(), t.TempDir()
+	mustWrite(t, filepath.Join(root, ".env"), "SECRET=1")
+	outside := filepath.Join(filepath.Dir(dest), "pillaged.txt")
+	if err := os.Symlink(outside, filepath.Join(dest, ".env")); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := copyEnvFiles(root, dest, overwriteCopies, t.Logf); err != nil {
+		t.Fatalf("copyEnvFiles: %v", err)
+	}
+	info, err := os.Lstat(filepath.Join(dest, ".env"))
+	if err != nil || info.Mode()&os.ModeSymlink != 0 {
+		t.Fatalf(".env must be the worktree's own regular file, got %v, %v", info, err)
+	}
+	got, err := os.ReadFile(filepath.Join(dest, ".env"))
+	if err != nil || string(got) != "SECRET=1" {
+		t.Fatalf(".env = %q, %v", got, err)
+	}
+	if _, err := os.Lstat(outside); !os.IsNotExist(err) {
+		t.Fatalf("nothing may be written where the link pointed: %s exists", outside)
+	}
+}
+
+// A dangling .env symlink in the project (.env -> .env.local before that file
+// exists) is the developer's state, not a reason to fail the whole create.
+func TestCopyEnvFilesSkipsADanglingSourceSymlink(t *testing.T) {
+	root, dest := t.TempDir(), t.TempDir()
+	if err := os.Symlink(".env.local", filepath.Join(root, ".env")); err != nil {
+		t.Fatal(err)
+	}
+	mustWrite(t, filepath.Join(root, "backend", "app.env"), "APP=1")
+
+	var warned bool
+	logf := func(format string, args ...any) { warned = true }
+	if err := copyEnvFiles(root, dest, overwriteCopies, logf); err != nil {
+		t.Fatalf("a dangling symlink must be skipped, not fail the copy: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "backend", "app.env")); err != nil {
+		t.Fatalf("the other env files must still be copied: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(dest, ".env")); !os.IsNotExist(err) {
+		t.Fatal("the dangling link itself must not be copied")
+	}
+	if !warned {
+		t.Fatal("the skip must be said, silence would hide a missing env")
+	}
+}
+
 // Every override name compose.Files detects must be copied: the start command
 // passes each detected name to docker compose -f against the worktree, so a
 // detected-but-not-copied override makes the stack fail on a missing file.
