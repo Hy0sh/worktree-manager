@@ -70,9 +70,25 @@ func askBackup(p *prompter, dir string, project config.Project, u *config.Projec
 	if err != nil {
 		return err
 	}
-	dbUser, err := p.ask("  database user", or(current.DBUser, config.DefaultDBUser))
-	if err != nil {
-		return err
+	// A file-based engine has no database user; what it needs instead is
+	// where the file lives, so the dump lands where the application looks.
+	var dbUser, dbPath string
+	if dbengine.IsFileBased(engine) {
+		for {
+			dbPath, err = p.ask("  database file (relative to the project)", or(current.DBPath, config.DefaultDBPath))
+			if err != nil {
+				return err
+			}
+			if config.ValidateRelativePath("db_path", dbPath) == nil {
+				break
+			}
+			p.logf("  must be a relative path inside the project")
+		}
+	} else {
+		dbUser, err = p.ask("  database user", or(current.DBUser, config.DefaultDBUser))
+		if err != nil {
+			return err
+		}
 	}
 	appService, err := p.askRequired("  service running the migrations", current.AppService)
 	if err != nil {
@@ -90,7 +106,12 @@ func askBackup(p *prompter, dir string, project config.Project, u *config.Projec
 	if err != nil {
 		return err
 	}
-	u.DBService, u.DBEngine, u.DBUser, u.AppService = &dbService, &engine, &dbUser, &appService
+	u.DBService, u.DBEngine, u.AppService = &dbService, &engine, &appService
+	if dbengine.IsFileBased(engine) {
+		u.DBPath = &dbPath
+	} else {
+		u.DBUser = &dbUser
+	}
 	u.MigrateCommand, u.DepsCommand, u.Env = &migrate, &deps, env
 	return nil
 }
@@ -111,7 +132,7 @@ func askEngine(p *prompter, dir, dbService, current string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		if _, err := dbengine.ByName(engine); err == nil {
+		if dbengine.Valid(engine) {
 			return engine, nil
 		}
 		p.logf("  unknown engine %q", engine)
