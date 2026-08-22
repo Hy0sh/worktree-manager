@@ -6,6 +6,31 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-08-22
+
+### Fixed
+
+- Copies into a worktree no longer follow symlinks, in either direction. A
+  branch tracking `.env` as a symlink, even one escaping the worktree, had
+  the developer's env values written through the link at a path the branch
+  chose, and the worktree never got its own file; the copy now replaces the
+  link with a regular file. And a dangling source symlink, typically `.env`
+  pointing at an `.env.local` not created yet, failed the whole create on a
+  stat error instead of being skipped with a warning.
+- The `.db-snapshot` and `.git-container` links no longer destroy real
+  content standing at their path. Replacing the empty directory trees Docker
+  materialises at missing bind-mount sources still works; a tracked file or
+  a directory with files is now refused with a conflict message instead of
+  being deleted.
+- Refreshes of one project are serialised through a per-project lock: two at
+  once fought over the same throwaway database and, for sqlite, the same
+  temporary file. The second one fails fast rather than queue up to redo the
+  first one's work.
+- Engine detection matches the image's exact basename against an explicit
+  list per engine, instead of a substring: `mysql-proxy` was taken for mysql
+  and `mongo-backup-sidecar` for mongodb, and a `--no-input` registration
+  recorded that wrong engine without any question asked.
+
 ## [0.4.0] - 2026-08-22
 
 ### Added
@@ -182,7 +207,8 @@ First tagged release. The whole worktree lifecycle behind one binary:
   identical so worktrees created with it keep working.
 - A project without a compose file is not an error, there is simply no stack.
 
-[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/Hy0sh/worktree-manager/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.2.1...v0.3.0
 [0.2.1]: https://github.com/Hy0sh/worktree-manager/compare/v0.2.0...v0.2.1
