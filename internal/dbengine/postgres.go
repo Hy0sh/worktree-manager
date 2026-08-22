@@ -1,13 +1,11 @@
 package dbengine
 
-import "strings"
-
 type postgres struct{}
 
 func (postgres) Name() string { return "postgres" }
 
 func (postgres) DetectImage(repo string) bool {
-	return strings.Contains(repo, "postgres") || strings.Contains(repo, "postgis")
+	return baseIs(repo, "postgres", "postgresql", "postgis")
 }
 
 func (postgres) ReadyArgs(user string) []string {

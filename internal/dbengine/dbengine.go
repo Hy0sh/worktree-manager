@@ -104,6 +104,24 @@ func imageRepo(image string) string {
 	return image
 }
 
+// baseIs reports whether the image's last path segment is exactly one of
+// names. Detection decides which commands run against the container, so an
+// image that merely mentions an engine (a proxy, a sidecar, a toolbox) must
+// not be mistaken for the server itself: missing a match costs the user a
+// question, matching wrong breaks the backup.
+func baseIs(repo string, names ...string) bool {
+	base := repo
+	if i := strings.LastIndex(repo, "/"); i >= 0 {
+		base = repo[i+1:]
+	}
+	for _, n := range names {
+		if base == n {
+			return true
+		}
+	}
+	return false
+}
+
 // TempDBName keeps the throwaway database identifier valid unquoted in every
 // engine: my-app would not be.
 func TempDBName(project string) string {
