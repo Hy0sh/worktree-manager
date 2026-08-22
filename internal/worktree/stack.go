@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/Hy0sh/worktree-manager/internal/compose"
+	"github.com/Hy0sh/worktree-manager/internal/dbengine"
 	"github.com/Hy0sh/worktree-manager/internal/dockermem"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 	"github.com/Hy0sh/worktree-manager/internal/index"
@@ -135,7 +136,9 @@ func composeFiles(o Options, dest string) ([]string, error) {
 	for _, f := range projectFiles {
 		files = append(files, filepath.Join(dest, filepath.Base(f)))
 	}
-	if o.Project.Dump {
+	// A file-based engine has no snapshot override: the generated file would
+	// reference a database service the project does not have.
+	if o.Project.Dump && !dbengine.IsFileBased(o.Project.BackupConfig().DBEngine) {
 		files = append(files, filepath.Join(dest, snapshotOverride))
 	}
 	if path := filepath.Join(dest, portsOverride); fileExists(path) {

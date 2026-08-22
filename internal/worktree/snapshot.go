@@ -28,17 +28,39 @@ func ensureSnapshotAssets(o Options, dest string) error {
 	if !o.Project.Dump {
 		return nil
 	}
-	eng, err := dbengine.ByName(o.Project.BackupConfig().DBEngine)
+	cfg := o.Project.BackupConfig()
+	if dbengine.IsFileBased(cfg.DBEngine) {
+		return ensureDBFileCopy(o, dest, cfg)
+	}
+	eng, err := dbengine.ByName(cfg.DBEngine)
 	if err != nil {
 		return err
 	}
 	if err := writeRestoreScript(o.BackupsDir, o.Name, eng); err != nil {
 		return fmt.Errorf("writing the restore script: %w", err)
 	}
-	if err := writeSnapshotOverride(dest, o.Project.BackupConfig().DBService); err != nil {
+	if err := writeSnapshotOverride(dest, cfg.DBService); err != nil {
 		return fmt.Errorf("writing the snapshot compose file: %w", err)
 	}
 	return nil
+}
+
+// ensureDBFileCopy is the whole restore story of a file-based engine: put the
+// pre-migrated file where the application expects it, and only when nothing
+// is there yet — a database being worked in is never clobbered, on create and
+// start alike.
+func ensureDBFileCopy(o Options, dest string, cfg config.Backup) error {
+	// Checked here and not only at registration: config.json can be
+	// hand-edited, and this path reaches filepath.Join against the worktree.
+	if err := config.ValidateRelativePath("db_path", cfg.DBPath); err != nil {
+		return err
+	}
+	src := filepath.Join(o.BackupsDir, o.Name, o.Name+".dump")
+	if _, err := os.Stat(src); err != nil {
+		o.logf("no dump yet: the database starts empty, run `wtm backup refresh %s` to build one", o.Name)
+		return nil
+	}
+	return copyFile(src, filepath.Join(dest, cfg.DBPath), keepWorktreeCopies)
 }
 
 // writeRestoreScript puts the script next to the dump, where the worktree's
