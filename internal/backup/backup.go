@@ -6,12 +6,14 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/dbengine"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
+	"github.com/gofrs/flock"
 )
 
 const (
@@ -42,6 +44,27 @@ func (m *Manager) logf(format string, args ...any) {
 	}
 }
 
+// lockRefresh serialises the refreshes of one project: two at once fight over
+// the same throwaway database and temporary file. Failing fast beats queueing,
+// since waiting behind another refresh only redoes its work. The kernel
+// releases the lock when the process dies, and the file staying on disk
+// afterwards is normal.
+func (m *Manager) lockRefresh(name string) (func(), error) {
+	dir := filepath.Join(m.Root, name)
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, err
+	}
+	l := flock.New(filepath.Join(dir, "refresh.lock"))
+	locked, err := l.TryLock()
+	if err != nil {
+		return nil, fmt.Errorf("taking %s: %w", l.Path(), err)
+	}
+	if !locked {
+		return nil, fmt.Errorf("a refresh of %s is already running; wait for it to finish", name)
+	}
+	return func() { _ = l.Unlock() }, nil
+}
+
 // Refresh regenerates the dump: it starts the database if needed, migrates a
 // throwaway one and dumps it as migrate left it, data included. Everything the
 // migrations create is therefore captured, permissions and reference data
@@ -51,6 +74,11 @@ func (m *Manager) Refresh(ctx context.Context, name string, p config.Project) er
 	if err := cfg.Validate(); err != nil {
 		return err
 	}
+	unlock, err := m.lockRefresh(name)
+	if err != nil {
+		return err
+	}
+	defer unlock()
 	// A file-based engine has no server: its snapshot is the file itself.
 	if dbengine.IsFileBased(cfg.DBEngine) {
 		return m.refreshFile(ctx, name, p, cfg)
