@@ -164,6 +164,38 @@ func TestStepperAsksAgainForAnUnknownEngine(t *testing.T) {
 	}
 }
 
+// sqlite has no database user: that question is replaced by the file's path,
+// and an escaping answer is re-asked on the spot.
+func TestStepperAsksForTheFileInsteadOfTheUserOnSQLite(t *testing.T) {
+	dir := repoWithCompose(t)
+	var out bytes.Buffer
+	in := strings.NewReader(strings.Join([]string{
+		dir, "main", "y",
+		"",           // database service
+		"sqlite",     // engine
+		"../evil.db", // escaping file path, re-asked
+		"var/app.db", // corrected
+		"backend", "migrate", "", "", "n",
+	}, "\n") + "\n")
+
+	u, err := runProjectStepper(newPrompter(in, &out), config.Project{})
+	if err != nil {
+		t.Fatalf("stepper: %v", err)
+	}
+	if u.DBPath == nil || *u.DBPath != "var/app.db" {
+		t.Fatalf("db_path = %v", u.DBPath)
+	}
+	if u.DBUser != nil {
+		t.Fatalf("the database user must not be asked for sqlite, got %v", *u.DBUser)
+	}
+	if !strings.Contains(out.String(), "relative path") {
+		t.Fatalf("the rejection should be explained:\n%s", out.String())
+	}
+	if strings.Contains(out.String(), "database user") {
+		t.Fatalf("the user question should not appear:\n%s", out.String())
+	}
+}
+
 // A mistyped path is caught while the user is still there to fix it.
 func TestStepperAsksAgainForADirectoryThatDoesNotExist(t *testing.T) {
 	dir := repoWithCompose(t)

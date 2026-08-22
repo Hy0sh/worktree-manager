@@ -22,6 +22,7 @@ type projectFlags struct {
 	dbService    string
 	dbUser       string
 	dbEngine     string
+	dbPath       string
 	appService   string
 	deps         string
 	migrate      string
@@ -37,6 +38,7 @@ func (f *projectFlags) bind(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.dbService, "db-service", "", "compose service for the database (default: "+config.DefaultDBService+")")
 	cmd.Flags().StringVar(&f.dbUser, "db-user", "", "database user (default: "+config.DefaultDBUser+")")
 	cmd.Flags().StringVar(&f.dbEngine, "db-engine", "", "database engine: "+strings.Join(dbengine.Names(), ", ")+" (default: detected from the compose image, else "+config.DefaultDBEngine+")")
+	cmd.Flags().StringVar(&f.dbPath, "db-path", "", "database file for file-based engines, relative to the project (default: "+config.DefaultDBPath+")")
 	cmd.Flags().StringVar(&f.appService, "app-service", "", "compose service that runs the migrations (e.g. backend, api, php-nginx)")
 	cmd.Flags().StringVar(&f.deps, "deps", "", "dependency install command before migration (e.g. 'poetry install --no-root --with dev')")
 	cmd.Flags().StringVar(&f.migrate, "migrate", "", "migration command (e.g. 'python manage.py migrate', 'npx prisma migrate deploy')")
@@ -75,6 +77,7 @@ func (f *projectFlags) update(cmd *cobra.Command) (config.ProjectUpdate, error) 
 		{"db-service", &f.dbService, &u.DBService},
 		{"db-user", &f.dbUser, &u.DBUser},
 		{"db-engine", &f.dbEngine, &u.DBEngine},
+		{"db-path", &f.dbPath, &u.DBPath},
 		{"app-service", &f.appService, &u.AppService},
 		{"deps", &f.deps, &u.DepsCommand},
 		{"migrate", &f.migrate, &u.MigrateCommand},
@@ -107,8 +110,11 @@ func validateUpdate(u config.ProjectUpdate) error {
 			return err
 		}
 	}
-	if u.DBEngine != nil && *u.DBEngine != "" {
-		if _, err := dbengine.ByName(*u.DBEngine); err != nil {
+	if u.DBEngine != nil && *u.DBEngine != "" && !dbengine.Valid(*u.DBEngine) {
+		return fmt.Errorf("unknown database engine %q (supported: %s)", *u.DBEngine, strings.Join(dbengine.Names(), ", "))
+	}
+	if u.DBPath != nil && *u.DBPath != "" {
+		if err := config.ValidateRelativePath("db_path", *u.DBPath); err != nil {
 			return err
 		}
 	}
