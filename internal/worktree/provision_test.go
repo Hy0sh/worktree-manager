@@ -4,6 +4,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -32,6 +33,32 @@ func TestCreateCopiesEnvFilesAndComposeOverride(t *testing.T) {
 		if _, err := os.Stat(filepath.Join(dest, rel)); !os.IsNotExist(err) {
 			t.Fatalf("%s should not have been copied", rel)
 		}
+	}
+}
+
+// forceSymlink replaces symlinks and the empty directory trees Docker
+// materialises at missing bind-mount sources, and nothing else: a path
+// holding real content is a conflict to surface, never something to delete.
+func TestForceSymlinkRefusesRealContent(t *testing.T) {
+	target := t.TempDir()
+
+	dir := t.TempDir()
+	link := filepath.Join(dir, ".db-snapshot")
+	mustWrite(t, filepath.Join(link, "precious.sql"), "data")
+	if err := forceSymlink(target, link); err == nil || !strings.Contains(err.Error(), link) {
+		t.Fatalf("a directory with real files must be refused naming the path, got %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(link, "precious.sql")); err != nil {
+		t.Fatalf("the refused content must be intact: %v", err)
+	}
+
+	file := filepath.Join(t.TempDir(), ".git-container")
+	mustWrite(t, file, "tracked")
+	if err := forceSymlink(target, file); err == nil {
+		t.Fatal("a regular file must be refused")
+	}
+	if got, err := os.ReadFile(file); err != nil || string(got) != "tracked" {
+		t.Fatalf("the refused file must be intact: %q, %v", got, err)
 	}
 }
 
