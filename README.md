@@ -4,7 +4,7 @@
 
 Go CLI that creates a ready-to-use git worktree and manages its full
 lifecycle: creation, stack startup, stop, removal, plus a pre-migrated
-database backup (Postgres, MySQL, MariaDB or MongoDB) that makes
+database backup (Postgres, MySQL, MariaDB, MongoDB or SQLite) that makes
 bootstrapping a database fast.
 
 It has no runtime dependency beyond `git` and `docker`: port allocation,
@@ -194,12 +194,21 @@ wtm project create platform --dir ~/dev/projects/platform \
 `{{database}}` gets replaced by the temporary database's name. `--db-service`
 defaults to `db` and `--db-user` defaults to `postgres`.
 
-Postgres, MySQL, MariaDB and MongoDB are supported. The engine is read from
-the database service's image in the compose file and offered as the default
-at registration, then recorded as `db_engine` (`--db-engine` overrides it).
-Database credentials are never stored by wtm: every engine command reads them
-from the container's own environment (`POSTGRES_*`, `MYSQL_ROOT_PASSWORD`,
-`MONGO_INITDB_*`).
+Postgres, MySQL, MariaDB, MongoDB and SQLite are supported. The engine is
+read from the database service's image in the compose file and offered as the
+default at registration, then recorded as `db_engine` (`--db-engine`
+overrides it). Database credentials are never stored by wtm: every engine
+command reads them from the container's own environment (`POSTGRES_*`,
+`MYSQL_ROOT_PASSWORD`, `MONGO_INITDB_*`).
+
+SQLite has no database service, so it is chosen explicitly with
+`--db-engine sqlite` (there is no image to detect it from). Its snapshot is
+the database file itself: the migration runs in the disposable app container
+as usual, targeting a throwaway file that `{{database}}` points at, and the
+result is collected through the app service's bind mount — mounting the
+project directory into that service is required. Each worktree then gets the
+file copied to `db_path` (default `db.sqlite3`), and only when nothing is
+there yet: a database being worked in is never overwritten.
 
 None of this has to be known in advance: `wtm project create <name>` without
 `--dir`, and `wtm project edit <name>` without any flag, ask one question at a
