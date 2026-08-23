@@ -7,6 +7,8 @@ package dbengine
 
 import (
 	"fmt"
+	"path"
+	"slices"
 	"strings"
 )
 
@@ -110,16 +112,7 @@ func imageRepo(image string) string {
 // not be mistaken for the server itself: missing a match costs the user a
 // question, matching wrong breaks the backup.
 func baseIs(repo string, names ...string) bool {
-	base := repo
-	if i := strings.LastIndex(repo, "/"); i >= 0 {
-		base = repo[i+1:]
-	}
-	for _, n := range names {
-		if base == n {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(names, path.Base(repo))
 }
 
 // TempDBName keeps the throwaway database identifier valid unquoted in every

@@ -6,6 +6,33 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+## [0.4.2] - 2026-08-23
+
+### Fixed
+
+- Every checkout-controlled write — worktree provisioning, `.env`
+  generation, port rewrites, snapshot restores — now goes through the new
+  `internal/safefile` package, which refuses to write through a symlink
+  standing at the destination.
+- An `.env` symlink is only followed, and recreated as a symlink, when its
+  target resolves inside the project; one pointing outside is now skipped
+  with a warning instead of being copied through.
+- Rebasing a port for a worktree keeps the original host interface prefix
+  (e.g. `127.0.0.1:`) instead of dropping it and binding the service to
+  every interface. IPv6 `host_ip` bindings are still not rebased, unchanged
+  from 0.4.x.
+- Engine detection recognises more known server image variants and now
+  warns and asks on an image it cannot place, instead of silently
+  defaulting to postgres.
+- `forceSymlink` no longer refuses to replace a directory that holds only
+  Finder's `.DS_Store` noise.
+- `app_service` is validated on every path that can set it — creation,
+  edit and the stepper alike — and re-validated at generation time; its
+  temporary override file now lives under wtm's own directory instead of
+  the shared system temp directory.
+- `backup rm` deletes the backup directory again: the refresh lock file
+  staying on disk no longer keeps an otherwise-empty directory behind.
+
 ## [0.4.1] - 2026-08-22
 
 ### Fixed
