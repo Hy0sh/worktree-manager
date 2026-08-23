@@ -19,7 +19,6 @@ import (
 // is worth a warning.
 const WarnRatio = 0.85
 
-// Usage is a snapshot of the Docker VM.
 type Usage struct {
 	Total int64 // bytes available to the VM
 	Used  int64 // bytes used by every running container
@@ -39,10 +38,8 @@ func (u Usage) PerProject() int64 {
 	return u.StackUsed / int64(u.Projects)
 }
 
-// Projected is what usage would look like with one more stack.
 func (u Usage) Projected() int64 { return u.Used + u.PerProject() }
 
-// Tight reports whether starting one more stack would cross WarnRatio.
 func (u Usage) Tight() bool {
 	if u.Total <= 0 || u.Projects <= 0 {
 		return false
@@ -50,7 +47,6 @@ func (u Usage) Tight() bool {
 	return float64(u.Projected()) > float64(u.Total)*WarnRatio
 }
 
-// Warning is the message to show, empty when there is nothing to say.
 func (u Usage) Warning() string {
 	if !u.Tight() {
 		return ""
@@ -61,8 +57,6 @@ func (u Usage) Warning() string {
 		u.Projects, Human(u.Used), Human(u.Total), Human(u.PerProject()), Human(u.Projected()))
 }
 
-// Read samples the VM: total memory, per-container usage, and how many compose
-// projects are running.
 func Read(ctx context.Context, runner execx.Runner) (Usage, error) {
 	var u Usage
 
@@ -148,7 +142,6 @@ func ParseSize(s string) (int64, error) {
 	return 0, fmt.Errorf("unrecognized size: %q", s)
 }
 
-// Human renders bytes the way the messages read best.
 func Human(n int64) string {
 	switch {
 	case n >= 1<<30:

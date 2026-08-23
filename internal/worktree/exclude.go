@@ -11,7 +11,6 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/mark"
 )
 
-// artifactBlock is the section wtm maintains in the repository's info/exclude.
 var artifactBlock = mark.Block{
 	Start: "# --- wtm artifacts ---",
 	End:   "# --- end wtm ---",
@@ -23,11 +22,9 @@ var artifactBlock = mark.Block{
 // without this a commit takes wtm's plumbing along with the work.
 var excluded = []string{".worktrees/", ".git-container", ".db-snapshot", snapshotOverride, portsOverride}
 
-// excludeArtifacts records those names in the repository's info/exclude rather
-// than in .gitignore, which is versioned and belongs to the project. git reads
-// info/exclude from the common git-dir, shared by the main checkout and every
-// worktree, so one write covers them all, the .git-container link wtm puts in
-// the main checkout included.
+// excludeArtifacts writes to info/exclude rather than .gitignore, which is
+// versioned and belongs to the project. git reads it from the common git-dir,
+// shared by the main checkout and every worktree, so one write covers them all.
 func excludeArtifacts(ctx context.Context, o Options) error {
 	dir, err := commonGitDir(ctx, o)
 	if err != nil {

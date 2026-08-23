@@ -175,11 +175,10 @@ func projectDir(input string) (string, error) {
 	if err != nil || !info.IsDir() {
 		return "", fmt.Errorf("%s is not an accessible directory", abs)
 	}
-	// Every command wtm has goes through git, so a directory without it is a
-	// project wtm can do nothing with: better said here than four steps later,
-	// once a refresh has already built an image and dumped a database. The
-	// entry is a file in a linked worktree and a directory in a main
-	// repository, hence Stat rather than IsDir.
+	// Every command goes through git, so saying it here beats failing four steps
+	// later, once a refresh has built an image and dumped a database. The entry
+	// is a file in a linked worktree and a directory in a main repository, hence
+	// Stat rather than IsDir.
 	if _, err := os.Stat(filepath.Join(abs, ".git")); err != nil {
 		return "", fmt.Errorf("%s is not a git repository: wtm creates worktrees, which git alone can do", abs)
 	}

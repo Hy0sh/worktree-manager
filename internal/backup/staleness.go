@@ -17,10 +17,8 @@ type Staleness struct {
 	Known   bool // false when the recorded revision cannot be compared
 }
 
-// Behind reports whether refreshing would save time.
 func (s Staleness) Behind() bool { return s.Known && s.Commits > 0 }
 
-// Describe renders the state for a listing.
 func (s Staleness) Describe() string {
 	switch {
 	case !s.Known:
@@ -34,8 +32,6 @@ func (s Staleness) Describe() string {
 	}
 }
 
-// Check compares the revision recorded next to the dump with the project's
-// migration history.
 func (m *Manager) Check(ctx context.Context, name string, p config.Project) Staleness {
 	meta, err := m.ReadMeta(name)
 	if err != nil || strings.TrimSpace(meta.GitRev) == "" {

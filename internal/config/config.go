@@ -14,7 +14,6 @@ import (
 // FallbackBaseBranch applies when neither the project nor the config names one.
 const FallbackBaseBranch = "develop"
 
-// Config is the whole registry.
 type Config struct {
 	DefaultBaseBranch string             `json:"default_base_branch,omitempty"`
 	Projects          map[string]Project `json:"projects"`
@@ -39,7 +38,6 @@ func Load(path string) (*Config, error) {
 	return cfg, nil
 }
 
-// Save writes the registry, creating the directory when needed.
 func (c *Config) Save(path string) error {
 	// The registry can hold a DATABASE_URL with its password, so it is kept
 	// readable by its owner alone.
@@ -50,10 +48,8 @@ func (c *Config) Save(path string) error {
 	if err != nil {
 		return err
 	}
-	// Readers (Load) run outside the lock. Writing in place would let one see
-	// a truncated file mid-write; writing to a sibling temp file and renaming
-	// it over path is atomic, so a reader only ever sees the old or the new
-	// content, never a partial one.
+	// Readers (Load) run outside the lock, so writing in place would let one
+	// see a truncated file: the temp file and the rename make it atomic.
 	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, append(data, '\n'), 0o600); err != nil {
 		return err
@@ -61,8 +57,8 @@ func (c *Config) Save(path string) error {
 	return os.Rename(tmp, path)
 }
 
-// NextPortOffset returns a free offset for a new project, in steps of 1000.
-// The first project keeps 0 so its existing worktrees are untouched.
+// NextPortOffset steps by 1000, and the first project keeps 0 so its existing
+// worktrees are untouched.
 func (c *Config) NextPortOffset() int {
 	taken := map[int]bool{}
 	for _, p := range c.Projects {
@@ -75,7 +71,6 @@ func (c *Config) NextPortOffset() int {
 	}
 }
 
-// Names lists the registered projects, sorted.
 func (c *Config) Names() []string {
 	names := make([]string, 0, len(c.Projects))
 	for name := range c.Projects {
@@ -92,7 +87,6 @@ func (c *Config) Has(name string) bool {
 	return ok
 }
 
-// Get returns a project, listing the known ones when it is unknown.
 func (c *Config) Get(name string) (Project, error) {
 	p, ok := c.Projects[name]
 	if !ok {
@@ -105,7 +99,6 @@ func (c *Config) Get(name string) (Project, error) {
 	return p, nil
 }
 
-// ResolveCurrent finds the project whose dir is the given repository root.
 func (c *Config) ResolveCurrent(repoRoot string) (string, Project, error) {
 	for _, name := range c.Names() {
 		if samePath(c.Projects[name].Dir, repoRoot) {

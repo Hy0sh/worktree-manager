@@ -7,7 +7,6 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/config"
 )
 
-// Info is one line of `backup list`.
 type Info struct {
 	Name    string
 	Present bool
@@ -51,10 +50,9 @@ func (m *Manager) Remove(name string) (bool, error) {
 			return removed, err
 		}
 	}
-	// wtm's own files carry no state once the dump is gone, and each one left
-	// behind keeps the directory alive: the lock (see lockRefresh) and the
-	// restore script a first `wtm create` wrote. Anything else in there is not
-	// wtm's, so the directory rightly survives for it.
+	// Each of wtm's own files left behind keeps the directory alive: the lock
+	// and the restore script a first `wtm create` wrote. Anything else in there
+	// is not wtm's, so the directory rightly survives for it.
 	dir := filepath.Dir(m.DumpPath(name))
 	for _, own := range []string{refreshLockName, RestoreScriptName} {
 		_ = os.Remove(filepath.Join(dir, own))

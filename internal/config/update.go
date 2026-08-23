@@ -3,8 +3,7 @@ package config
 import "fmt"
 
 // ProjectUpdate carries the fields an edit actually names. A nil pointer means
-// "leave it alone": registering a project and editing one are not the same
-// operation, and an edit must not reset what it says nothing about, the port
+// "leave it alone": an edit must not reset what it says nothing about, the port
 // offset and the recorded worktree indices first of all.
 type ProjectUpdate struct {
 	Dir          *string
@@ -31,7 +30,6 @@ func (u ProjectUpdate) IsEmpty() bool {
 		u.GitContainer == nil && !u.touchesBackup()
 }
 
-// FieldChange is one edited field, as the command reports it.
 type FieldChange struct {
 	Field string
 	From  string

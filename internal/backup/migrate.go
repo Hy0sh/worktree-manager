@@ -55,9 +55,8 @@ func (m *Manager) migrate(ctx context.Context, p config.Project, cfg config.Back
 
 // writeMemOverride lifts the memory cap for the disposable container only:
 // mem_limit 0 means unlimited, so the peak is bounded by the Docker VM alone.
-// It lives under dir (wtm's own 0700 tree) rather than the shared system
-// temp directory, and the name is re-checked at generation like db_service
-// is in writeSnapshotOverride: config.json can be hand-edited.
+// The service name is re-checked here because config.json can be hand-edited,
+// and the file lives under wtm's own 0700 tree rather than the shared temp one.
 func writeMemOverride(dir, service string) (string, error) {
 	if err := config.ValidateIdentifier("application service", service); err != nil {
 		return "", err

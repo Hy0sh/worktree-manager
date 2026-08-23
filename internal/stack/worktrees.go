@@ -8,11 +8,10 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 )
 
-// Worktree is one linked worktree. Index is the stable, allocated index the
-// ports and the compose project name are derived from; this package never
-// fills it — the resolver in internal/index does. Pos is merely where git
-// listed the worktree, which resorts alphabetically as worktrees come and
-// go, so it is only good as a first-guess hint for that resolver.
+// Worktree carries two very different numbers. Index is the stable one the
+// ports and the compose project name derive from, filled by internal/index, not
+// here. Pos is where git listed the worktree, which resorts alphabetically, so
+// it is only a first-guess hint for that resolver.
 type Worktree struct {
 	Index  int
 	Pos    int
@@ -20,10 +19,8 @@ type Worktree struct {
 	Branch string
 }
 
-// Worktrees lists the linked worktrees in `git worktree list --porcelain`
-// order, main repository excluded. It records the position as Pos but leaves
-// Index to the resolver: git resorts this listing alphabetically, which is
-// exactly the instability the persisted index exists to fix.
+// Worktrees lists the linked worktrees in git's own order, main repository
+// excluded.
 func (c *Client) Worktrees(ctx context.Context) ([]Worktree, error) {
 	res, err := c.Runner.Run(ctx, execx.Cmd{
 		Name: "git",
@@ -62,9 +59,6 @@ func (c *Client) Worktrees(ctx context.Context) ([]Worktree, error) {
 	return out, nil
 }
 
-// FindByBranch locates a branch's worktree (its path, branch and listing
-// position); resolving that into an index is the resolver's job, not this
-// one's.
 func (c *Client) FindByBranch(ctx context.Context, branch string) (Worktree, error) {
 	wts, err := c.Worktrees(ctx)
 	if err != nil {

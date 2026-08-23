@@ -8,8 +8,6 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ServicePort is one published port of a service, as declared in the base
-// compose file.
 type ServicePort struct {
 	Service string
 	// Var is the environment variable wtc overrides, empty when the port is
@@ -27,7 +25,6 @@ var webPorts = map[string]bool{
 	"5173": true, "8000": true, "8025": true, "8080": true, "9001": true,
 }
 
-// IsWeb reports whether this port is worth prefixing with http://.
 func (s ServicePort) IsWeb() bool { return webPorts[s.Container] }
 
 var (
@@ -62,8 +59,6 @@ func ServicePorts(path string) ([]ServicePort, error) {
 	return out, nil
 }
 
-// servicesNode returns the `services:` mapping of a parsed file, nil when the
-// file has none.
 func servicesNode(doc *yaml.Node) *yaml.Node {
 	root := deref(doc)
 	if root.Kind == yaml.DocumentNode && len(root.Content) > 0 {
@@ -72,7 +67,6 @@ func servicesNode(doc *yaml.Node) *yaml.Node {
 	return mapValue(root, "services")
 }
 
-// walkPorts visits every entry of every service's ports list.
 func walkPorts(doc *yaml.Node, visit func(service string, entry *yaml.Node)) {
 	services := servicesNode(doc)
 	if services == nil || services.Kind != yaml.MappingNode {
@@ -90,8 +84,6 @@ func walkPorts(doc *yaml.Node, visit func(service string, entry *yaml.Node)) {
 	}
 }
 
-// mapValue returns the value node for key, nil when n is not a mapping or the
-// key is absent.
 func mapValue(n *yaml.Node, key string) *yaml.Node {
 	if n == nil || n.Kind != yaml.MappingNode {
 		return nil

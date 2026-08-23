@@ -5,7 +5,6 @@ import (
 	"strings"
 )
 
-// Project is one registered repository.
 type Project struct {
 	Dir        string `json:"dir"`
 	BaseBranch string `json:"base_branch,omitempty"`
@@ -14,16 +13,14 @@ type Project struct {
 	// projects whose compose bind-mounts the git directory into a container
 	// (macOS/VirtioFS cannot mount the pointer file a linked worktree uses).
 	GitContainer bool `json:"git_container,omitempty"`
-	// PortOffset shifts every rebased port of this project. The allocation
-	// formula only knows the default port, the worktree index and the stride,
-	// so without it two projects whose database listens on 5432 would fight
-	// over the same host port. Zero for the first project, which keeps the
-	// ports it already had.
+	// PortOffset shifts every rebased port: the formula only knows the default
+	// port, the index and the stride, so without it two projects whose database
+	// listens on 5432 fight over the same host port. Zero for the first one,
+	// which keeps the ports it already had.
 	PortOffset int `json:"port_offset,omitempty"`
-	// WorktreeIndices pins each branch to the index its stack was created
-	// with. The index feeds the port formula and the compose project name,
-	// so deriving it from git's listing order (which resorts alphabetically)
-	// renumbers running stacks; recording it here is what keeps it stable.
+	// WorktreeIndices pins each branch to the index its stack was created with.
+	// Deriving it from git's listing order, which resorts alphabetically, would
+	// renumber running stacks: the index feeds ports and the compose project name.
 	WorktreeIndices map[string]int `json:"worktree_indices,omitempty"`
 	Backup          *Backup        `json:"backup,omitempty"`
 }
@@ -44,9 +41,8 @@ const (
 )
 
 // Backup describes how to rebuild a schema. Everything here differs from one
-// project to the next: a survey of four real projects found four different
-// migration commands, three app service names, two database service names,
-// two database users and two ways of telling the app which database to use.
+// project to the next: four real projects gave four migration commands, three
+// app service names and two ways of telling the app which database to use.
 type Backup struct {
 	DBService string `json:"db_service,omitempty"` // default "db"
 	DBUser    string `json:"db_user,omitempty"`    // default "postgres"
@@ -75,7 +71,6 @@ type Backup struct {
 	Env map[string]string `json:"env,omitempty"`
 }
 
-// BackupConfig returns the project's backup settings with defaults applied.
 func (p Project) BackupConfig() Backup {
 	b := Backup{}
 	if p.Backup != nil {
@@ -99,7 +94,6 @@ func (p Project) BackupConfig() Backup {
 	return b
 }
 
-// Validate reports what is missing before a refresh can run.
 func (b Backup) Validate() error {
 	var missing []string
 	if b.AppService == "" {
@@ -114,7 +108,6 @@ func (b Backup) Validate() error {
 	return nil
 }
 
-// Expand substitutes the throwaway database name.
 func Expand(s, database string) string {
 	return strings.ReplaceAll(s, DatabasePlaceholder, database)
 }

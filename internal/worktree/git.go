@@ -97,7 +97,6 @@ func remoteBranch(ctx context.Context, o Options) (string, error) {
 	}
 }
 
-// trackingRefs lists the remotes whose tracking ref for o.Branch is present.
 func trackingRefs(ctx context.Context, o Options, all []string) []string {
 	var carriers []string
 	for _, r := range all {
@@ -108,7 +107,6 @@ func trackingRefs(ctx context.Context, o Options, all []string) []string {
 	return carriers
 }
 
-// remotes lists the repository's remotes, in git's order.
 func remotes(ctx context.Context, o Options) []string {
 	res, err := o.Runner.Run(ctx, execx.Cmd{
 		Name: "git",

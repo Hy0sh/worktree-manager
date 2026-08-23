@@ -1,6 +1,3 @@
-// Command wtm is the single entry point for the lifecycle of a
-// project worktree: create, start, stop, remove, plus the Postgres backup that
-// makes a fresh database cheap to bootstrap.
 package main
 
 import (
@@ -100,8 +97,6 @@ func (a *app) reportOrphanVolumes(ctx context.Context) {
 	fmt.Fprintf(a.out, "  drop them with `docker volume rm %s`\n", strings.Join(orphans, " "))
 }
 
-// newDoctorCmd answers "which wtc will actually run?", which stops being
-// obvious once it can come from three places.
 func newDoctorCmd(a *app) *cobra.Command {
 	return &cobra.Command{
 		Use:           "doctor",

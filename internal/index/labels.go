@@ -47,12 +47,10 @@ func hasLeftovers(labels []string, repoName string, n int, branch string) bool {
 	return false
 }
 
-// dockerProjects lists every compose project docker still knows about,
-// stopped containers and volumes included. ok is false only when the first
-// probe (ps -a) fails, meaning docker itself is unreachable and resolution
-// must degrade to the registry alone; if only the volume probe fails, the
-// container labels already gathered are still returned with ok == true,
-// since partial evidence can only understate leftovers, never overstate them.
+// dockerProjects lists every compose project docker still knows about, stopped
+// containers and volumes included. ok is false only when `ps -a` itself fails,
+// meaning docker is unreachable and resolution must degrade to the registry:
+// partial evidence can only understate leftovers, never overstate them.
 func (r *Resolver) dockerProjects(ctx context.Context) (labels []string, ok bool) {
 	seen := map[string]bool{}
 	add := func(name string) {
@@ -78,11 +76,9 @@ func (r *Resolver) dockerProjects(ctx context.Context) (labels []string, ok bool
 		Args: []string{"volume", "ls", "--format", "{{.Labels}}"},
 	})
 	if err != nil {
-		// The container probe already answered: that partial evidence is
-		// still worth keeping. Missing volume labels can only make a dirty
-		// index look clean (a false negative that skips leftover detection
-		// for volume-only debris), never the reverse, so it is safe to
-		// proceed with what ps -a found rather than discard it.
+		// Missing volume labels can only make a dirty index look clean, never
+		// the reverse, so what ps -a found is worth keeping rather than
+		// discarding.
 		r.logf("warning: docker volumes could not be listed, leftover detection may miss volume-only debris")
 		return labels, true
 	}

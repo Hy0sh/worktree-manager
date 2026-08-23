@@ -1,8 +1,7 @@
 // Package index owns the branch→index mapping of a project's worktrees. The
-// index feeds the port formula and the compose project name, so it must
-// never change once a stack exists; this package allocates it once, records
-// it in the registry, and recovers it from docker for worktrees that predate
-// the recording.
+// index feeds the port formula and the compose project name, so it must never
+// change once a stack exists: allocated once, recorded in the registry, and
+// recovered from docker for worktrees that predate the recording.
 package index
 
 import (
@@ -29,7 +28,6 @@ const (
 // as far as stacks are concerned, this worktree never started one.
 var ErrNoIndex = errors.New("no recorded index")
 
-// Resolver answers "which index does this branch own" for one project.
 type Resolver struct {
 	ConfigPath string
 	Runner     execx.Runner
@@ -44,11 +42,10 @@ func (r *Resolver) logf(format string, args ...any) {
 	}
 }
 
-// Resolve returns the branch's index. pos is the 1-based position git lists
-// the worktree at (0 when unknown), used only as the historical fallback so
-// worktrees created before indices were recorded keep the ports their .env
-// already carries. Steps, first answer wins: recorded → backfill from docker
-// labels → git position if free and clean → allocation (MayAllocate only).
+// Resolve tries, first answer winning: recorded → backfill from docker labels →
+// git position if free and clean → allocation (MayAllocate only). pos is that
+// git position, kept only so worktrees created before indices were recorded
+// keep the ports their .env already carries.
 func (r *Resolver) Resolve(ctx context.Context, branch string, pos int, mode Mode) (int, error) {
 	// Nominal path: recorded, read-only, no lock and no docker.
 	cfg, err := config.Load(r.ConfigPath)
@@ -101,18 +98,15 @@ func (r *Resolver) Resolve(ctx context.Context, branch string, pos int, mode Mod
 			}
 		}
 
-		// Historical fallback: before indices were recorded, the index was
-		// the git listing position. A worktree created --no-start back then
-		// has that position's ports in its .env, so honour it while it is
-		// still free and no other branch's debris squats it.
+		// Historical fallback: a worktree created --no-start before indices
+		// were recorded has the git position's ports in its .env, so honour it
+		// while it is free and no other branch's debris squats it.
 		if pos > 0 && ownerOf(p.WorktreeIndices, pos) == "" &&
 			!(dockerOK && hasLeftovers(labels, r.RepoName, pos, branch)) {
 			if !dockerOK {
-				// A blind guess made without docker evidence must not become
-				// permanent: a neighbour that hasn't been backfilled yet may
-				// really be running at this index. Resolve for this call
-				// only, so a later Resolve (once docker answers again) is
-				// still free to backfill or allocate for real.
+				// A guess made without docker evidence must not become
+				// permanent: a neighbour not backfilled yet may really be
+				// running here, so resolve for this call only.
 				idx = pos
 				return nil
 			}
@@ -144,7 +138,6 @@ func (r *Resolver) Resolve(ctx context.Context, branch string, pos int, mode Mod
 	return idx, err
 }
 
-// Release forgets the branch's index once its worktree is removed.
 func (r *Resolver) Release(branch string) error {
 	return config.WithLock(r.ConfigPath, func(c *config.Config) error {
 		p, ok := c.Projects[r.Name]
@@ -157,7 +150,6 @@ func (r *Resolver) Release(branch string) error {
 	})
 }
 
-// Recorded returns the saved branch→index map, for read-only display.
 func (r *Resolver) Recorded() map[string]int {
 	cfg, err := config.Load(r.ConfigPath)
 	if err != nil {
@@ -166,7 +158,6 @@ func (r *Resolver) Recorded() map[string]int {
 	return cfg.Projects[r.Name].WorktreeIndices
 }
 
-// ownerOf returns which branch holds an index, "" when free.
 func ownerOf(indices map[string]int, n int) string {
 	for branch, i := range indices {
 		if i == n {

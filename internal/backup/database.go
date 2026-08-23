@@ -46,7 +46,6 @@ func (m *Manager) ensureUp(ctx context.Context, name string, p config.Project, c
 	return nil
 }
 
-// waitFor retries a probe until it succeeds or the budget runs out.
 func (m *Manager) waitFor(ctx context.Context, label string, defaultAttempts int, probe execx.Cmd) error {
 	attempts := defaultAttempts
 	if m.MaxWaitAttempts > 0 {
@@ -74,15 +73,11 @@ func (m *Manager) waitFor(ctx context.Context, label string, defaultAttempts int
 	return fmt.Errorf("timed out waiting for %s (%d attempts): %w", label, attempts, last)
 }
 
-// assertPopulated refuses to dump a throwaway database no migration ever
-// reached. The {{database}} mechanism only works if the app honours the
-// variable it is mapped to; when it does not, the migrations run against the
-// project's own database and the throwaway one stays empty. Dumping it would
-// publish a snapshot that silently brings every worktree up on an empty
-// database, so the emptiness is reported here instead of at the first start.
-//
-// Only a count that reads as zero fails: a probe that cannot run, or whose
-// output is not a number, is a diagnosis wtm could not make, not a verdict.
+// assertPopulated refuses to dump a throwaway database no migration reached.
+// {{database}} only works if the app honours the variable it is mapped to; when
+// it does not, the migrations hit the project's own database and this dump would
+// bring every worktree up empty. Only a count that reads as zero fails: an
+// unreadable probe is a diagnosis wtm could not make, not a verdict.
 func (m *Manager) assertPopulated(ctx context.Context, p config.Project, cfg config.Backup, eng dbengine.Engine, db string) error {
 	res, err := m.execInDB(ctx, p, cfg, eng.ObjectCountArgs(cfg.DBUser, db))
 	if err != nil {
@@ -103,7 +98,6 @@ func (m *Manager) assertPopulated(ctx context.Context, p config.Project, cfg con
 		db, cfg.MigrateCommand, config.DatabasePlaceholder, config.DatabasePlaceholder)
 }
 
-// execInDB runs one of the engine's commands inside the database container.
 func (m *Manager) execInDB(ctx context.Context, p config.Project, cfg config.Backup, args []string) (execx.Result, error) {
 	return m.Runner.Run(ctx, execx.Cmd{
 		Name: "docker",

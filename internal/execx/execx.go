@@ -12,7 +12,6 @@ import (
 	"strings"
 )
 
-// Cmd describes one external command invocation.
 type Cmd struct {
 	Name  string
 	Args  []string
@@ -36,7 +35,6 @@ func (c Cmd) String() string {
 	return c.Name + " " + strings.Join(c.Args, " ")
 }
 
-// Result holds what a finished command produced.
 type Result struct {
 	Stdout   string
 	Stderr   string
@@ -67,7 +65,6 @@ func (e *Error) Error() string {
 
 func (e *Error) Unwrap() error { return e.Err }
 
-// OSRunner runs commands for real.
 type OSRunner struct {
 	// Live output goes here; both default to the process streams.
 	Stdout io.Writer

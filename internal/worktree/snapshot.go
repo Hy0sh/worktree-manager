@@ -11,21 +11,19 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/safefile"
 )
 
-// snapshotOverride is the compose file wtm generates in the worktree. Handing
-// the restore to the project's own compose would make the behaviour depend on
-// the branch the worktree was cut from, since that file is versioned. wtm
-// carries it instead, so any project gets the restore without changing a line.
+// snapshotOverride is generated rather than left to the project's own compose,
+// which is versioned: the restore would then depend on the branch the worktree
+// was cut from. Carrying it here means any project gets it untouched.
 const snapshotOverride = ".wtm-snapshot.yaml"
 
 // portsOverride is generated whenever a project publishes literal ports.
 const portsOverride = ".wtm-ports.yaml"
 
-// ensureSnapshotAssets writes the restore script and the generated compose
-// file. Idempotent, and run on every start so a worktree created before they
-// existed picks them up too. The script body comes from the project's engine;
-// all of them rely on docker-entrypoint-initdb.d only running on an empty
-// data directory, so a fresh worktree restores and an existing one is left
-// alone, with no race against the application's own migrate.
+// ensureSnapshotAssets is idempotent and runs on every start, so a worktree
+// created before these files existed picks them up too. Every engine's script
+// relies on docker-entrypoint-initdb.d only running on an empty data directory:
+// a fresh worktree restores, an existing one is left alone, and nothing races
+// the application's own migrate.
 func ensureSnapshotAssets(o Options, dest string) error {
 	if !o.Project.Dump {
 		return nil
@@ -47,10 +45,9 @@ func ensureSnapshotAssets(o Options, dest string) error {
 	return nil
 }
 
-// ensureDBFileCopy is the whole restore story of a file-based engine: put the
-// pre-migrated file where the application expects it, and only when nothing
-// is there yet — a database being worked in is never clobbered, on create and
-// start alike.
+// ensureDBFileCopy is the whole restore story of a file-based engine: the
+// pre-migrated file goes where the application expects it, and only when
+// nothing is there yet, so a database being worked in is never clobbered.
 func ensureDBFileCopy(o Options, dest string, cfg config.Backup) error {
 	// Checked here and not only at registration: config.json can be
 	// hand-edited, and this path reaches filepath.Join against the worktree.
@@ -81,8 +78,6 @@ func writeRestoreScript(backupsDir, project string, eng dbengine.Engine) error {
 	return os.WriteFile(filepath.Join(dir, backup.RestoreScriptName), []byte(eng.RestoreScript(project)), 0o755)
 }
 
-// writeSnapshotOverride generates the compose file mounting the dump and the
-// restore script into the database service.
 func writeSnapshotOverride(dest, dbService string) error {
 	// Interpolated into a generated YAML document, where a newline would inject
 	// arbitrary compose keys, volume mounts included.

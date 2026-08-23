@@ -11,7 +11,6 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
 
-// Entry is one worktree as `wtm list` shows it.
 type Entry struct {
 	stack.Worktree
 	// Status is "up", "down", or "-" when docker could not be reached.
@@ -25,7 +24,6 @@ const StatusUnknown = "-"
 // dockerStatusTimeout keeps the listing responsive whatever docker is doing.
 const dockerStatusTimeout = 5 * time.Second
 
-// List returns the project's worktrees along with the state of their stack.
 func List(ctx context.Context, o Options) ([]Entry, error) {
 	worktrees, err := o.Stack.Worktrees(ctx)
 	if err != nil {

@@ -15,9 +15,8 @@ import (
 // file becomes reachable from the host once the container is gone.
 const tmpDBFile = ".wtm-snapshot-tmp.sqlite3"
 
-// refreshFile rebuilds the dump of a file-based engine. There is no server to
-// start, probe or clean: migrate into a throwaway file inside the disposable
-// container, then collect that file as the dump.
+// refreshFile has no server to start, probe or clean: it migrates into a
+// throwaway file inside the disposable container, then collects it as the dump.
 func (m *Manager) refreshFile(ctx context.Context, name string, p config.Project, cfg config.Backup) error {
 	host := filepath.Join(p.Dir, tmpDBFile)
 	removeDBFiles(host)
@@ -31,9 +30,8 @@ func (m *Manager) refreshFile(ctx context.Context, name string, p config.Project
 		return fmt.Errorf("the migration left no %s in %s: the %s service must bind-mount the project directory for wtm to collect the database file", tmpDBFile, p.Dir, cfg.AppService)
 	}
 	// Opening a sqlite database creates the file and writes nothing into it, so
-	// an empty file is a migration that connected somewhere and built its
-	// schema elsewhere. Publishing it would bring every worktree up on an empty
-	// database, which only shows at the first start.
+	// an empty file is a migration that built its schema somewhere else, and
+	// publishing it would bring every worktree up empty.
 	if info.Size() == 0 {
 		return fmt.Errorf("the migrations left %s empty, so its dump would bring every worktree up on an empty database.\n"+
 			"`%s` ran, but built nothing there: map the variable the app reads to %s in the project's `backup.env`",

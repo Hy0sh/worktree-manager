@@ -99,12 +99,10 @@ func linkSnapshotDir(o Options, dest string) error {
 	return forceSymlink(target, filepath.Join(dest, ".db-snapshot"))
 }
 
-// forceSymlink is `ln -sfn` with one restraint on what it replaces: a
-// symlink, or an empty directory tree, which is what Docker materialises at
-// the source of a missing bind-mount (a tree, not just one directory, when
-// the source is a file inside one). A path holding real content is refused
-// rather than destroyed: a repository tracking a file where wtm puts its
-// artifacts is a conflict for the user to resolve, not something to delete.
+// forceSymlink is `ln -sfn` restrained to what it may replace: a symlink, or
+// the empty directory tree Docker materialises at the source of a missing
+// bind-mount. A path holding real content is a conflict for the user to
+// resolve, not something to delete.
 func forceSymlink(target, link string) error {
 	info, err := os.Lstat(link)
 	switch {
@@ -172,10 +170,9 @@ func copyEnvFiles(root, dest string, mode provisionMode, logf func(string, ...an
 		if depth > envMaxDepth || !strings.HasSuffix(d.Name(), ".env") {
 			return nil
 		}
-		// Following a valid symlink is the point (a snapshot of the
-		// developer's values, .env -> .env.local), but only inside the
-		// project: a cloned branch controls these links, and a target
-		// outside the repository is content the user never put there.
+		// Following a valid symlink is the point (.env -> .env.local), but only
+		// inside the project: a cloned branch controls these links, and a
+		// target outside the repository is content the user never put there.
 		if d.Type()&fs.ModeSymlink != 0 {
 			target, err := filepath.EvalSymlinks(path)
 			if err != nil {

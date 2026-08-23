@@ -6,7 +6,6 @@ package mark
 
 import "strings"
 
-// Block is such a section, named by its two marker lines.
 type Block struct {
 	Start string
 	End   string

@@ -102,7 +102,6 @@ func start(ctx context.Context, o Options, dest string) error {
 	return nil
 }
 
-// hasCompose reports whether the project ships a docker compose file at all.
 func hasCompose(projectDir string) bool {
 	_, err := compose.Base(projectDir)
 	return err == nil
@@ -114,8 +113,6 @@ func (o Options) projectName(wt stack.Worktree) string {
 	return stack.ProjectName(filepath.Base(o.Project.Dir), wt.Index, wt.Branch)
 }
 
-// resolveIndex fills in the branch's stable index. pos is git's listing
-// position, kept only as the resolver's historical fallback.
 func (o Options) resolveIndex(ctx context.Context, wt *stack.Worktree, mode index.Mode) error {
 	n, err := o.Resolver.Resolve(ctx, o.Branch, wt.Pos, mode)
 	if err != nil {

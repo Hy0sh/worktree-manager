@@ -6,7 +6,6 @@ import (
 	"strings"
 )
 
-// Call is one recorded invocation.
 type Call struct {
 	Name string
 	Args []string
@@ -46,7 +45,6 @@ func (f *Fake) Run(_ context.Context, c Cmd) (Result, error) {
 	return res, err
 }
 
-// Lines renders the recorded calls for assertions.
 func (f *Fake) Lines() []string {
 	out := make([]string, 0, len(f.Calls))
 	for _, c := range f.Calls {

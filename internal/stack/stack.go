@@ -9,7 +9,6 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 )
 
-// Client drives the docker stack of one project's worktrees.
 type Client struct {
 	Runner execx.Runner
 	Dir    string // project repository root

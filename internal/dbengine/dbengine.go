@@ -12,7 +12,6 @@ import (
 	"strings"
 )
 
-// Engine is one supported database engine.
 type Engine interface {
 	Name() string
 	// DetectImage reports whether this engine runs the given image repo
@@ -68,8 +67,6 @@ func Detect(image string) (Engine, bool) {
 // callers branch on IsFileBased first.
 var fileBased = []string{"sqlite"}
 
-// IsFileBased reports whether name designates an engine whose snapshot is a
-// plain file rather than a server dump.
 func IsFileBased(name string) bool {
 	for _, n := range fileBased {
 		if n == name {
@@ -89,7 +86,6 @@ func Valid(name string) bool {
 	return err == nil
 }
 
-// Names lists the supported engines, for validation and completion.
 func Names() []string {
 	names := make([]string, 0, len(engines)+len(fileBased))
 	for _, e := range engines {
@@ -110,11 +106,9 @@ func imageRepo(image string) string {
 	return image
 }
 
-// baseIs reports whether the image's last path segment is exactly one of
-// names. Detection decides which commands run against the container, so an
-// image that merely mentions an engine (a proxy, a sidecar, a toolbox) must
-// not be mistaken for the server itself: missing a match costs the user a
-// question, matching wrong breaks the backup.
+// baseIs matches the last path segment exactly: an image that merely mentions
+// an engine (a proxy, a sidecar) must not be taken for the server itself, since
+// missing a match costs a question while matching wrong breaks the backup.
 func baseIs(repo string, names ...string) bool {
 	return slices.Contains(names, path.Base(repo))
 }

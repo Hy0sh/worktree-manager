@@ -16,10 +16,8 @@ import (
 // before this tool stopped shelling out to it must keep the exact same ports.
 const baseOffset = 20000
 
-// DefaultStride applies when the project does not configure one.
 const DefaultStride = 1
 
-// Allocation is one published port, rebased for a given worktree.
 type Allocation struct {
 	Service   string
 	Var       string
@@ -28,7 +26,6 @@ type Allocation struct {
 	Container string
 }
 
-// AllocatePort rebases a default port for a worktree index.
 func AllocatePort(defaultPort, index, stride, projectOffset int) (int, error) {
 	if index < 1 {
 		return 0, fmt.Errorf("worktree index %d was never allocated (wtm bug: the index resolver must run before ports are computed)", index)
@@ -96,13 +93,10 @@ func Stride(projectDir string) int {
 	return DefaultStride
 }
 
-// PortsOverride renders the compose file rebasing the ports a project wrote as
-// literals, which no environment variable can reach. Compose appends `ports`
-// when merging, so the list has to be replaced with !override, and replacing
-// it means restating every port of that service.
-//
-// This is what lets a project be used untouched: without it, a worktree stack
-// would publish the very ports its main stack already holds.
+// PortsOverride rebases the ports a project wrote as literals, which no
+// environment variable can reach and which would otherwise publish the very
+// ports the main stack holds. Compose appends `ports` when merging, so the list
+// has to be replaced with !override, restating every port of that service.
 func PortsOverride(allocations []Allocation) string {
 	byService := map[string][]Allocation{}
 	var order []string

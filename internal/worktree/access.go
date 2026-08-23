@@ -46,10 +46,9 @@ func Path(ctx context.Context, o Options) (string, error) {
 	return wt.Path, nil
 }
 
-// Run executes a command on the host with the worktree as working directory.
-// This is the counterpart of Exec: Exec goes inside the stack's container, Run
-// stays on the machine, for editors, agents and anything else that works on
-// the files rather than in the running application.
+// Run is the counterpart of Exec: it stays on the machine, with the worktree as
+// working directory, for editors, agents and anything else working on the files
+// rather than in the running application.
 func Run(ctx context.Context, o Options, command []string) error {
 	wt, err := o.Stack.FindByBranch(ctx, o.Branch)
 	if err != nil {

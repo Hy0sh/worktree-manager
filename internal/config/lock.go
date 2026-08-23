@@ -17,11 +17,9 @@ var (
 	lockPoll  = 50 * time.Millisecond
 )
 
-// WithLock loads the registry under an exclusive lock, hands it to fn, and
-// saves it when fn returns nil. The lock is an OS file lock (flock on Unix,
-// LockFileEx on Windows) next to config.json: the kernel releases it when the
-// process dies, so a killed wtm can never leave the registry locked. The lock
-// file itself staying on disk afterwards is normal and carries no state.
+// WithLock saves the registry when fn returns nil. The lock is an OS file lock,
+// so the kernel releases it when the process dies and a killed wtm can never
+// leave the registry locked; the lock file staying on disk carries no state.
 func WithLock(path string, fn func(*Config) error) error {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0o700); err != nil {

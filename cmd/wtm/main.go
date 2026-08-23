@@ -1,6 +1,6 @@
-// Command wtm is the single entry point for the lifecycle of a
-// project worktree: create, start, stop, remove, plus the Postgres backup that
-// makes a fresh database cheap to bootstrap.
+// Command wtm is the single entry point for the lifecycle of a project
+// worktree: create, start, stop, remove, plus the pre-migrated database dump
+// that makes a fresh one cheap to bootstrap.
 package main
 
 import (

@@ -17,7 +17,6 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
 
-// Options carries everything a worktree command needs.
 type Options struct {
 	Name       string // project name in the registry
 	Project    config.Project
@@ -53,7 +52,6 @@ func (o Options) logf(format string, args ...any) {
 	}
 }
 
-// Create builds the worktree and, unless NoStart, brings its stack up.
 func Create(ctx context.Context, o Options) error {
 	dest, err := o.dest()
 	if err != nil {
@@ -123,10 +121,9 @@ func Remove(ctx context.Context, o Options) error {
 		return err
 	}
 	// Checked before anything is taken down: a refusal must leave the worktree
-	// exactly as it was, stack included. The worktree always holds untracked
-	// files this tool created (.env copies, .git-container, .db-snapshot), and
-	// git refuses to remove a worktree that has any. Only tracked changes
-	// represent work worth protecting, so check those and force past the rest.
+	// exactly as it was, stack included. Only tracked changes are work worth
+	// protecting; git refuses to remove a worktree holding any untracked file,
+	// which this tool always put there, so the removal below forces past those.
 	if !o.Force {
 		changes, err := trackedChanges(ctx, o, wt.Path)
 		if err != nil {

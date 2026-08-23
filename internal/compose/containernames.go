@@ -7,11 +7,9 @@ import (
 )
 
 // PinnedContainerNames lists the services whose compose file fixes their
-// container_name. wtm isolates a worktree stack by rebasing its ports, its
-// volumes and its compose project name, but a container_name is none of
-// those: docker refuses a second container carrying it, so the main stack and
-// a worktree stack cannot both run. Nothing wtm generates can work around it,
-// hence the warning at registration rather than a failure at the first start.
+// container_name. Ports, volumes and the compose project name are rebased, a
+// container_name is not: docker refuses a second container carrying it, so the
+// main stack and a worktree stack cannot both run.
 func PinnedContainerNames(dir string) ([]string, error) {
 	files, err := Files(dir)
 	if err != nil {

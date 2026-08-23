@@ -16,12 +16,10 @@ type portHolder struct {
 	Label   string
 }
 
-// portClashes reports the ports two different projects would both publish.
-// The port formula shifts each project by its own offset, but the offset step
-// is smaller than the spread of the default ports it is added to, so two
-// projects can land on the same host port: their stacks then refuse to start
-// whenever they run at the same time, with a docker bind error naming neither
-// project.
+// portClashes reports the ports two different projects would both publish. The
+// offset step is smaller than the spread of the default ports it shifts, so two
+// projects can land on the same host port, and their stacks then refuse to
+// start together with a docker bind error naming neither of them.
 func portClashes(holders []portHolder) []string {
 	byPort := map[int][]portHolder{}
 	for _, h := range holders {
@@ -57,14 +55,11 @@ func portClashes(holders []portHolder) []string {
 	return out
 }
 
-// orphanVolumes returns the volumes of worktree stacks of repoName that no
-// live worktree accounts for. They are what a removed worktree leaves when its
-// stack was never taken down through wtm, and they matter beyond disk: the
-// index allocator steps over any index docker still holds volumes for, so a
-// new worktree lands further out with higher ports.
-//
-// live holds the compose project name of every worktree that still exists, and
-// compose names a volume "<project>_<volume>".
+// orphanVolumes returns the volumes of worktree stacks of repoName that no live
+// worktree accounts for. They matter beyond disk: the index allocator steps over
+// any index docker still holds volumes for, so a new worktree lands further out
+// with higher ports. live holds the compose project name of every worktree that
+// still exists, and compose names a volume "<project>_<volume>".
 func orphanVolumes(all []string, repoName string, live []string) []string {
 	prefix := repoName + "-wt-"
 	var out []string

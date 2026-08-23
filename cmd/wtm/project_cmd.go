@@ -80,7 +80,6 @@ func newProjectRemoveCmd(a *app) *cobra.Command {
 	return remove
 }
 
-// parseEnv turns repeated --env KEY=VALUE flags into a map.
 func parseEnv(pairs []string) (map[string]string, error) {
 	if len(pairs) == 0 {
 		return nil, nil

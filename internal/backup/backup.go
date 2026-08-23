@@ -1,4 +1,4 @@
-// Package backup produces and manages the pre-migrated Postgres dump shared by
+// Package backup produces and manages the pre-migrated database dump shared by
 // every worktree of a project.
 package backup
 
@@ -19,16 +19,14 @@ import (
 const (
 	dbWaitAttempts      = 60 // postgres answers quickly once the container is up
 	defaultWaitInterval = time.Second
-	// refreshLockName and RestoreScriptName are the files wtm keeps next to a
-	// dump. Named here because removing a backup has to know what it owns, and
-	// the restore script is written by another package.
+	// Named here because removing a backup has to know which files it owns,
+	// and the restore script is written by another package.
 	refreshLockName = "refresh.lock"
 	// RestoreScriptName is the docker-entrypoint-initdb.d script each worktree
 	// reaches through its .db-snapshot link.
 	RestoreScriptName = "restore-snapshot.sh"
 )
 
-// Manager owns the central backups directory.
 type Manager struct {
 	Runner          execx.Runner
 	Root            string
@@ -53,9 +51,7 @@ func (m *Manager) logf(format string, args ...any) {
 
 // lockRefresh serialises the refreshes of one project: two at once fight over
 // the same throwaway database and temporary file. Failing fast beats queueing,
-// since waiting behind another refresh only redoes its work. The kernel
-// releases the lock when the process dies, and the file staying on disk
-// afterwards is normal.
+// since waiting behind another refresh only redoes its work.
 func (m *Manager) lockRefresh(name string) (func(), error) {
 	dir := filepath.Join(m.Root, name)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
@@ -134,10 +130,9 @@ func (m *Manager) Refresh(ctx context.Context, name string, p config.Project) er
 	return nil
 }
 
-// writeMetaOrWarn records where the dump comes from, and settles for a warning
-// when it cannot: the dump is already published and perfectly usable, so
-// failing the whole refresh over the staleness heuristic would throw away
-// minutes of migrations for a note.
+// writeMetaOrWarn settles for a warning when it cannot record the revision:
+// the dump is already published, so failing the refresh over the staleness
+// heuristic would throw away minutes of migrations for a note.
 func (m *Manager) writeMetaOrWarn(ctx context.Context, name string, p config.Project) {
 	if err := m.writeMeta(ctx, name, p); err != nil {
 		m.logf("warning: the dump is written but its metadata is not, so `backup list` "+

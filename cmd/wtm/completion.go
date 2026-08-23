@@ -10,7 +10,6 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// completeProjects suggests registered project names.
 func (a *app) completeProjects(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
 	if !a.ensureLoaded() || len(args) > 0 {
 		return nil, cobra.ShellCompDirectiveNoFileComp

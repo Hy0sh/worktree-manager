@@ -12,7 +12,6 @@ const (
 	EnvBackupsDir = "WTM_BACKUPS_DIR"
 )
 
-// Dir is where config.json and the central backups live.
 func Dir() (string, error) {
 	if d := os.Getenv(EnvConfigDir); d != "" {
 		return d, nil
@@ -24,7 +23,6 @@ func Dir() (string, error) {
 	return filepath.Join(home, ".config", "wtm"), nil
 }
 
-// Path is the config file location.
 func Path() (string, error) {
 	dir, err := Dir()
 	if err != nil {
@@ -33,8 +31,6 @@ func Path() (string, error) {
 	return filepath.Join(dir, "config.json"), nil
 }
 
-// BackupsDir is the single place where dumps are stored, shared by every
-// worktree through a symlink.
 func BackupsDir() (string, error) {
 	if d := os.Getenv(EnvBackupsDir); d != "" {
 		return d, nil

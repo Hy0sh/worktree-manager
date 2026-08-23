@@ -12,8 +12,6 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
 
-// allocatePorts rebases every parameterised port of the compose file for this
-// worktree and records them in its .env, where docker compose picks them up.
 func allocations(o Options, wt stack.Worktree) ([]stack.Allocation, error) {
 	services, err := compose.MergedServicePorts(o.Project.Dir)
 	if err != nil {
