@@ -51,6 +51,10 @@ func (m *Manager) Remove(name string) (bool, error) {
 			return removed, err
 		}
 	}
-	_ = os.Remove(filepath.Dir(m.DumpPath(name)))
+	// The refresh lock stays on disk by design (see lockRefresh); it carries
+	// no state, so it must not keep the directory alive once the dump is gone.
+	dir := filepath.Dir(m.DumpPath(name))
+	_ = os.Remove(filepath.Join(dir, "refresh.lock"))
+	_ = os.Remove(dir)
 	return removed, nil
 }

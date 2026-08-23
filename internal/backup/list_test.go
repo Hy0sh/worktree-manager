@@ -61,3 +61,24 @@ func TestRemoveDeletesFilesAndIsSoftWhenAbsent(t *testing.T) {
 		t.Fatal("second removal should report nothing removed")
 	}
 }
+
+func TestRemoveDeletesTheDirectoryDespiteTheRefreshLock(t *testing.T) {
+	root := t.TempDir()
+	m := &Manager{Root: root}
+	dir := filepath.Join(root, "myapp")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"myapp.dump", "myapp.dump.meta", "refresh.lock"} {
+		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	removed, err := m.Remove("myapp")
+	if err != nil || !removed {
+		t.Fatalf("Remove = %v, %v", removed, err)
+	}
+	if _, err := os.Stat(dir); !os.IsNotExist(err) {
+		t.Fatal("the backup directory should be gone")
+	}
+}
