@@ -130,5 +130,17 @@ func (m *Manager) Refresh(ctx context.Context, name string, p config.Project) er
 	if err := m.dump(ctx, name, p, cfg, eng, db); err != nil {
 		return err
 	}
-	return m.writeMeta(ctx, name, p)
+	m.writeMetaOrWarn(ctx, name, p)
+	return nil
+}
+
+// writeMetaOrWarn records where the dump comes from, and settles for a warning
+// when it cannot: the dump is already published and perfectly usable, so
+// failing the whole refresh over the staleness heuristic would throw away
+// minutes of migrations for a note.
+func (m *Manager) writeMetaOrWarn(ctx context.Context, name string, p config.Project) {
+	if err := m.writeMeta(ctx, name, p); err != nil {
+		m.logf("warning: the dump is written but its metadata is not, so `backup list` "+
+			"cannot say how far behind it is: %v", err)
+	}
 }

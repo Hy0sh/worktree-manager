@@ -43,7 +43,8 @@ func (m *Manager) refreshFile(ctx context.Context, name string, p config.Project
 		return err
 	}
 	m.logf("dump written: %s", m.DumpPath(name))
-	return m.writeMeta(ctx, name, p)
+	m.writeMetaOrWarn(ctx, name, p)
+	return nil
 }
 
 // removeDBFiles drops a sqlite file along with its -wal and -shm siblings.

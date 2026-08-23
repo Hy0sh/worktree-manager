@@ -10,12 +10,22 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/config"
 )
 
-// repoWithCompose is what the stepper points at: an existing directory, whose
+// repoWithCompose is what the stepper points at: a git repository, whose
 // compose file it reads to offer the service names.
 func repoWithCompose(t *testing.T) string {
 	t.Helper()
+	return repoWithComposeBody(t, "services:\n  db:\n    image: postgres\n  backend:\n    build: .\n")
+}
+
+// repoWithComposeBody builds the same repository around a given compose file.
+// The .git entry is what makes it a project wtm accepts: it creates worktrees,
+// so a directory without git is refused at registration.
+func repoWithComposeBody(t *testing.T, body string) string {
+	t.Helper()
 	dir := t.TempDir()
-	body := "services:\n  db:\n    image: postgres\n  backend:\n    build: .\n"
+	if err := os.Mkdir(filepath.Join(dir, ".git"), 0o755); err != nil {
+		t.Fatal(err)
+	}
 	if err := os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte(body), 0o644); err != nil {
 		t.Fatal(err)
 	}
@@ -112,11 +122,7 @@ func TestStepperOnlyChangesWhatIsAnswered(t *testing.T) {
 // The engine question offers what the compose image says as its default, so
 // registering a mysql project is a plain enter, not a thing to know.
 func TestStepperDetectsTheEngineFromTheComposeImage(t *testing.T) {
-	dir := t.TempDir()
-	body := "services:\n  db:\n    image: mysql:8.4\n  backend:\n    build: .\n"
-	if err := os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte(body), 0o644); err != nil {
-		t.Fatal(err)
-	}
+	dir := repoWithComposeBody(t, "services:\n  db:\n    image: mysql:8.4\n  backend:\n    build: .\n")
 	in := strings.NewReader(strings.Join([]string{
 		dir, "main", "y",
 		"",        // database service
@@ -234,6 +240,27 @@ func TestStepperAnswersGetTheSameValidationAsFlags(t *testing.T) {
 	_, err := f.steppedUpdate(a, config.Project{})
 	if err == nil || !strings.Contains(err.Error(), "application service") {
 		t.Fatalf("prompt answers must pass the flag path's validation, got %v", err)
+	}
+}
+
+// A directory without git is a project wtm can do nothing with: it creates
+// worktrees. Saying so at registration beats failing four steps later, once a
+// refresh has already built an image and dumped a database.
+func TestStepperRefusesADirectoryThatIsNotAGitRepository(t *testing.T) {
+	plain := t.TempDir()
+	repo := repoWithCompose(t)
+	var out bytes.Buffer
+	in := strings.NewReader(plain + "\n" + repo + "\nmain\nn\nn\n")
+
+	u, err := runProjectStepper(newPrompter(in, &out), config.Project{})
+	if err != nil {
+		t.Fatalf("stepper: %v", err)
+	}
+	if u.Dir == nil || *u.Dir != repo {
+		t.Fatalf("dir = %v, the git repository should have been kept", u.Dir)
+	}
+	if !strings.Contains(out.String(), "not a git repository") {
+		t.Fatalf("the reason should be shown:\n%s", out.String())
 	}
 }
 
