@@ -6,6 +6,49 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+## [0.4.3] - 2026-08-23
+
+Everything here came out of running the whole lifecycle against real projects
+rather than the test suite: seven behaviours that only show once a migration,
+a dev server or a second project is involved.
+
+### Fixed
+
+- A refresh no longer publishes a dump of a throwaway database the migrations
+  never reached. The `{{database}}` mechanism only works if the app honours the
+  variable it is mapped to; when it does not, the migrations run against the
+  project's own database and the throwaway one stays empty. That empty dump
+  used to be announced as a success and brought every worktree up on an empty
+  database, discovered at the first start. The count is a safety net, not a
+  gate: only a database that reads as empty fails, a probe wtm cannot run or
+  cannot parse is a warning.
+- Removing a backup drops its directory again. Beside the dump, wtm keeps the
+  refresh lock and, once a worktree has started, the restore script; the
+  0.4.2 fix only accounted for the lock, so the directory survived holding the
+  script. Anything in there that is not wtm's own still keeps it, as before.
+- Registering a directory that is not a git repository is refused on the spot.
+  It used to be accepted, then failed a refresh at its very last step, after
+  the image was built and the database dumped.
+- A refresh whose metadata cannot be written is no longer a failed refresh.
+  The dump is already published and usable; the metadata only feeds the
+  "how far behind" heuristic of `backup list`, so it degrades to a warning.
+- `wtm remove` checks for uncommitted changes before taking the stack down.
+  Refusing after the stack was already stopped left the worktree in place and
+  the developer's dev server gone, for a removal that never happened. The
+  message now says the stack is still running.
+- `project create` and `project edit` warn when the compose file pins a
+  `container_name`. Ports, volumes and the compose project name are rebased;
+  a fixed container name is not, so the main stack and a worktree stack cannot
+  both run, and docker only said so at the first start.
+- `wtm doctor` reports what nothing reported before: the ports two projects
+  would both publish (the per-project offset step is smaller than the spread
+  of the default ports it shifts, so stacks of different projects can collide,
+  with a docker bind error naming neither), and the volumes of removed
+  worktrees, which squat the indices their ports came from and push every new
+  worktree further out.
+- Cancelling `project remove` says how to answer for a script, since a closed
+  input reads as a no.
+
 ## [0.4.2] - 2026-08-23
 
 ### Fixed
@@ -235,7 +278,8 @@ First tagged release. The whole worktree lifecycle behind one binary:
   identical so worktrees created with it keep working.
 - A project without a compose file is not an error, there is simply no stack.
 
-[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.4.2...HEAD
+[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.4.3...HEAD
+[0.4.3]: https://github.com/Hy0sh/worktree-manager/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/Hy0sh/worktree-manager/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/Hy0sh/worktree-manager/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.3.0...v0.4.0
