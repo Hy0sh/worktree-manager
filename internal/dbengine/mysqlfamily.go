@@ -17,7 +17,7 @@ type mysqlFamily struct {
 
 func newMySQL() mysqlFamily {
 	return mysqlFamily{
-		name: "mysql", images: []string{"mysql", "mysql-server"},
+		name: "mysql", images: []string{"mysql", "mysql-server", "mysql-cluster", "percona", "percona-server"},
 		client: "mysql", dump: "mysqldump",
 		password: `"$MYSQL_ROOT_PASSWORD"`,
 		database: `"${MYSQL_DATABASE:-mysql}"`,
@@ -26,7 +26,7 @@ func newMySQL() mysqlFamily {
 
 func newMariaDB() mysqlFamily {
 	return mysqlFamily{
-		name: "mariadb", images: []string{"mariadb"},
+		name: "mariadb", images: []string{"mariadb", "mariadb-galera"},
 		client: "mariadb", dump: "mariadb-dump",
 		password: `"${MARIADB_ROOT_PASSWORD:-$MYSQL_ROOT_PASSWORD}"`,
 		database: `"${MARIADB_DATABASE:-${MYSQL_DATABASE:-mysql}}"`,

@@ -124,8 +124,9 @@ func validateUpdate(u config.ProjectUpdate) error {
 // detectEngineIfUnset fills db_engine from the compose image when the backup
 // is on and no engine was given. The stepper offers the detection as its
 // default; a scripted --no-input call deserves the same instead of a silent
-// postgres fallback that only fails at the first refresh.
-func detectEngineIfUnset(p *config.Project) {
+// postgres fallback that only fails at the first refresh. When the image is
+// not recognised, logf is how that fallback risk reaches the caller.
+func detectEngineIfUnset(p *config.Project, logf func(string, ...any)) {
 	if !p.Dump || p.Dir == "" || (p.Backup != nil && p.Backup.DBEngine != "") {
 		return
 	}
@@ -135,6 +136,9 @@ func detectEngineIfUnset(p *config.Project) {
 	}
 	eng, ok := dbengine.Detect(img)
 	if !ok {
+		// Recording postgres here would only fail at the first refresh, with
+		// pg_dump against whatever this image really is.
+		logf("warning: cannot tell the database engine from image %q, postgres will be assumed; set it with `wtm project edit --db-engine <engine>` if that is wrong", img)
 		return
 	}
 	b := config.Backup{}

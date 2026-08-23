@@ -50,7 +50,9 @@ func newProjectEditCmd(a *app) *cobra.Command {
 				// An edit enabling the backup by flags never saw the engine
 				// question: detect it rather than defaulting to postgres
 				// silently.
-				detectEngineIfUnset(&edited)
+				detectEngineIfUnset(&edited, func(format string, args ...any) {
+					fmt.Fprintf(a.out, format+"\n", args...)
+				})
 				changes = ch
 				c.Projects[name] = edited
 				return nil

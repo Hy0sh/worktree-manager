@@ -5,7 +5,7 @@ type postgres struct{}
 func (postgres) Name() string { return "postgres" }
 
 func (postgres) DetectImage(repo string) bool {
-	return baseIs(repo, "postgres", "postgresql", "postgis")
+	return baseIs(repo, "postgres", "postgresql", "postgis", "postgresql-repmgr")
 }
 
 func (postgres) ReadyArgs(user string) []string {

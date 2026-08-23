@@ -66,6 +66,16 @@ func TestDetectRejectsLookalikeImages(t *testing.T) {
 		"mongodb/mongodb-community-server:7.0-ubi8":    "mongodb",
 		"registry.example.com/mirror/bitnami/mariadb":  "mariadb",
 		"postgres@sha256:0000000000000000000000000000": "postgres",
+		// Known server variants: an enterprise or clustered build of an engine
+		// is still that engine's server, unlike a proxy or a toolbox.
+		"mongodb/mongodb-enterprise-server:7.0": "mongodb",
+		"mongodb/mongodb-atlas-local:latest":    "mongodb",
+		"percona/percona-server-mongodb:7.0":    "mongodb",
+		"mysql/mysql-cluster:8.0":               "mysql",
+		"percona:8.0":                           "mysql",
+		"percona/percona-server:8.0":            "mysql",
+		"bitnami/mariadb-galera:11":             "mariadb",
+		"bitnami/postgresql-repmgr:16":          "postgres",
 	} {
 		eng, ok := Detect(image)
 		if !ok || eng.Name() != want {

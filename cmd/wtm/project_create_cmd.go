@@ -40,7 +40,9 @@ func newProjectCreateCmd(a *app) *cobra.Command {
 			}
 			// The stepper asks for the engine; a flags-only registration gets
 			// the same compose-image detection here.
-			detectEngineIfUnset(&p)
+			detectEngineIfUnset(&p, func(format string, args ...any) {
+				fmt.Fprintf(a.out, format+"\n", args...)
+			})
 
 			// The existence check and the offset both read the registry, so
 			// they live inside the same lock as the write: two concurrent

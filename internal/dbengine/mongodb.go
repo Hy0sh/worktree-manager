@@ -5,7 +5,8 @@ type mongodb struct{}
 func (mongodb) Name() string { return "mongodb" }
 
 func (mongodb) DetectImage(repo string) bool {
-	return baseIs(repo, "mongo", "mongodb", "mongodb-community-server")
+	return baseIs(repo, "mongo", "mongodb", "mongodb-community-server",
+		"mongodb-enterprise-server", "mongodb-atlas-local", "percona-server-mongodb")
 }
 
 // sh runs cmd with the root auth flags appended, but only when the container
