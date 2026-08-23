@@ -14,16 +14,17 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   generation, port rewrites, snapshot restores — now goes through the new
   `internal/safefile` package, which refuses to write through a symlink
   standing at the destination.
-- An `.env` symlink is only followed, and recreated as a symlink, when its
-  target resolves inside the project; one pointing outside is now skipped
-  with a warning instead of being copied through.
+- An `.env` symlink is only followed when its target resolves inside the
+  project, copying the values behind it into a regular file as before; one
+  pointing outside is now skipped with a warning instead of being copied
+  through.
 - Rebasing a port for a worktree keeps the original host interface prefix
   (e.g. `127.0.0.1:`) instead of dropping it and binding the service to
   every interface. IPv6 `host_ip` bindings are still not rebased, unchanged
   from 0.4.x.
 - Engine detection recognises more known server image variants and now
-  warns and asks on an image it cannot place, instead of silently
-  defaulting to postgres.
+  warns on an image it cannot place, instead of silently defaulting to
+  postgres without saying so.
 - `forceSymlink` no longer refuses to replace a directory that holds only
   Finder's `.DS_Store` noise.
 - `app_service` is validated on every path that can set it — creation,
