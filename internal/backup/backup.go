@@ -19,6 +19,13 @@ import (
 const (
 	dbWaitAttempts      = 60 // postgres answers quickly once the container is up
 	defaultWaitInterval = time.Second
+	// refreshLockName and RestoreScriptName are the files wtm keeps next to a
+	// dump. Named here because removing a backup has to know what it owns, and
+	// the restore script is written by another package.
+	refreshLockName = "refresh.lock"
+	// RestoreScriptName is the docker-entrypoint-initdb.d script each worktree
+	// reaches through its .db-snapshot link.
+	RestoreScriptName = "restore-snapshot.sh"
 )
 
 // Manager owns the central backups directory.
@@ -54,7 +61,7 @@ func (m *Manager) lockRefresh(name string) (func(), error) {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return nil, err
 	}
-	l := flock.New(filepath.Join(dir, "refresh.lock"))
+	l := flock.New(filepath.Join(dir, refreshLockName))
 	locked, err := l.TryLock()
 	if err != nil {
 		return nil, fmt.Errorf("taking %s: %w", l.Path(), err)

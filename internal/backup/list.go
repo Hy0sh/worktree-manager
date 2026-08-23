@@ -51,10 +51,14 @@ func (m *Manager) Remove(name string) (bool, error) {
 			return removed, err
 		}
 	}
-	// The refresh lock stays on disk by design (see lockRefresh); it carries
-	// no state, so it must not keep the directory alive once the dump is gone.
+	// wtm's own files carry no state once the dump is gone, and each one left
+	// behind keeps the directory alive: the lock (see lockRefresh) and the
+	// restore script a first `wtm create` wrote. Anything else in there is not
+	// wtm's, so the directory rightly survives for it.
 	dir := filepath.Dir(m.DumpPath(name))
-	_ = os.Remove(filepath.Join(dir, "refresh.lock"))
+	for _, own := range []string{refreshLockName, RestoreScriptName} {
+		_ = os.Remove(filepath.Join(dir, own))
+	}
 	_ = os.Remove(dir)
 	return removed, nil
 }

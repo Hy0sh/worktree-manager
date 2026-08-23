@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/Hy0sh/worktree-manager/internal/backup"
 	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/dbengine"
 	"github.com/Hy0sh/worktree-manager/internal/safefile"
@@ -77,7 +78,7 @@ func writeRestoreScript(backupsDir, project string, eng dbengine.Engine) error {
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, "restore-snapshot.sh"), []byte(eng.RestoreScript(project)), 0o755)
+	return os.WriteFile(filepath.Join(dir, backup.RestoreScriptName), []byte(eng.RestoreScript(project)), 0o755)
 }
 
 // writeSnapshotOverride generates the compose file mounting the dump and the

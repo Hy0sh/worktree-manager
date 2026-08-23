@@ -62,14 +62,17 @@ func TestRemoveDeletesFilesAndIsSoftWhenAbsent(t *testing.T) {
 	}
 }
 
-func TestRemoveDeletesTheDirectoryDespiteTheRefreshLock(t *testing.T) {
+// Every file wtm keeps beside a dump has to go with it: the lock stays on disk
+// by design, and the restore script lands there on the first `wtm create`, so
+// either one left behind keeps an otherwise dead directory alive.
+func TestRemoveDeletesTheDirectoryDespiteTheFilesWtmOwns(t *testing.T) {
 	root := t.TempDir()
 	m := &Manager{Root: root}
 	dir := filepath.Join(root, "myapp")
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	for _, name := range []string{"myapp.dump", "myapp.dump.meta", "refresh.lock"} {
+	for _, name := range []string{"myapp.dump", "myapp.dump.meta", refreshLockName, RestoreScriptName} {
 		if err := os.WriteFile(filepath.Join(dir, name), []byte("x"), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -80,5 +83,29 @@ func TestRemoveDeletesTheDirectoryDespiteTheRefreshLock(t *testing.T) {
 	}
 	if _, err := os.Stat(dir); !os.IsNotExist(err) {
 		t.Fatal("the backup directory should be gone")
+	}
+}
+
+// What is not wtm's own is not wtm's to delete: a file someone else put there
+// keeps the directory, rather than being swept away with it.
+func TestRemoveKeepsADirectoryHoldingSomethingElse(t *testing.T) {
+	root := t.TempDir()
+	m := &Manager{Root: root}
+	dir := filepath.Join(root, "myapp")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(m.DumpPath("myapp"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	notes := filepath.Join(dir, "notes.txt")
+	if err := os.WriteFile(notes, []byte("mine"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Remove("myapp"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(notes); err != nil {
+		t.Fatalf("a foreign file must survive: %v", err)
 	}
 }
