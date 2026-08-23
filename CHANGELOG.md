@@ -6,6 +6,16 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Changed
+
+- `wtm project remove` refuses while the project still has worktrees, listing
+  them. The order matters and used to be silent: every worktree command needs
+  the registry entry, so once it is gone those worktrees can only be removed by
+  editing `config.json` by hand, and the port offset the removal frees is handed
+  to the next registered project, whose stacks would then fight their ports. A
+  directory git cannot answer for does not block, since nothing could be
+  verified and the entry would be trapped.
+
 ## [0.4.4] - 2026-08-23
 
 ### Fixed

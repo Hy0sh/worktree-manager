@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -9,12 +10,32 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Hy0sh/worktree-manager/internal/config"
+	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
 
 func newProjectCmd(a *app) *cobra.Command {
 	cmd := &cobra.Command{Use: "project", Short: "Manages the project registry"}
 	cmd.AddCommand(newProjectCreateCmd(a), newProjectEditCmd(a), newProjectListCmd(a), newProjectRemoveCmd(a))
 	return cmd
+}
+
+// refuseIfWorktreesRemain keeps the removal ordered: worktree commands need the
+// registry entry, and the freed offset goes to the next project, whose stacks
+// would then fight those worktrees' ports. A git error traps nothing.
+func refuseIfWorktreesRemain(ctx context.Context, a *app, name string, p config.Project) error {
+	client := &stack.Client{Runner: a.runner, Dir: p.Dir}
+	worktrees, err := client.Worktrees(ctx)
+	if err != nil || len(worktrees) == 0 {
+		return nil
+	}
+	branches := make([]string, 0, len(worktrees))
+	for _, wt := range worktrees {
+		branches = append(branches, wt.Branch)
+	}
+	return fmt.Errorf("project %s still has %d worktree(s): %s\n"+
+		"remove them first with `wtm remove %s <branch>`, since their ports derive from the port offset %d "+
+		"that the next registered project would reuse",
+		name, len(worktrees), strings.Join(branches, ", "), name, p.PortOffset)
 }
 
 func newProjectListCmd(a *app) *cobra.Command {
@@ -51,7 +72,11 @@ func newProjectRemoveCmd(a *app) *cobra.Command {
 		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
-			if _, err := a.cfg.Get(name); err != nil {
+			p, err := a.cfg.Get(name)
+			if err != nil {
+				return err
+			}
+			if err := refuseIfWorktreesRemain(cmd.Context(), a, name, p); err != nil {
 				return err
 			}
 			m := a.manager()
