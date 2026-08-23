@@ -2,6 +2,7 @@ package worktree
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -112,6 +113,61 @@ func TestCopyEnvFilesSkipsADanglingSourceSymlink(t *testing.T) {
 	}
 	if !warned {
 		t.Fatal("the skip must be said, silence would hide a missing env")
+	}
+}
+
+// A repository can hold a symlink pointing anywhere on disk (e.g. checked out
+// from a hostile branch); following it into a copy would pull that target's
+// content into the worktree. Only a target inside the project may be copied.
+func TestCopyEnvFilesSkipsASymlinkLeavingTheProject(t *testing.T) {
+	root, dest := t.TempDir(), t.TempDir()
+	secret := filepath.Join(t.TempDir(), "id_rsa")
+	if err := os.WriteFile(secret, []byte("PRIVATE KEY"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(secret, filepath.Join(root, "config.env")); err != nil {
+		t.Fatal(err)
+	}
+	var warned []string
+	logf := func(format string, args ...any) { warned = append(warned, fmt.Sprintf(format, args...)) }
+	if err := copyEnvFiles(root, dest, overwriteCopies, logf); err != nil {
+		t.Fatalf("a hostile link must be skipped, not fail the create: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, "config.env")); !os.IsNotExist(err) {
+		t.Fatal("the out-of-project target was copied")
+	}
+	if len(warned) == 0 || !strings.Contains(warned[0], "outside the project") {
+		t.Fatalf("expected a warning, got %v", warned)
+	}
+}
+
+func TestCopyEnvFilesStillFollowsALinkInsideTheProject(t *testing.T) {
+	// .env -> .env.local is the developer state the follow exists for.
+	root, dest := t.TempDir(), t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, ".env.local"), []byte("A=1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, ".env.local"), filepath.Join(root, ".env")); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyEnvFiles(root, dest, overwriteCopies, func(string, ...any) {}); err != nil {
+		t.Fatal(err)
+	}
+	if data, _ := os.ReadFile(filepath.Join(dest, ".env")); string(data) != "A=1\n" {
+		t.Fatalf(".env should hold the snapshot of the linked values, got %q", data)
+	}
+}
+
+func TestCopyEnvFilesSkipsALinkToADirectory(t *testing.T) {
+	root, dest := t.TempDir(), t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "envs"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(root, "envs"), filepath.Join(root, ".env")); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyEnvFiles(root, dest, overwriteCopies, func(string, ...any) {}); err != nil {
+		t.Fatalf("a directory target must be skipped, not fail the create: %v", err)
 	}
 }
 

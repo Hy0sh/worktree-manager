@@ -141,6 +141,11 @@ func emptyTree(path string) bool {
 }
 
 func copyEnvFiles(root, dest string, mode provisionMode, logf func(string, ...any)) error {
+	// Resolved once: every linked .env is checked against it below.
+	rootReal, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return err
+	}
 	return filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -159,13 +164,22 @@ func copyEnvFiles(root, dest string, mode provisionMode, logf func(string, ...an
 		if depth > envMaxDepth || !strings.HasSuffix(d.Name(), ".env") {
 			return nil
 		}
-		// The copy follows a valid symlink (a snapshot of the developer's
-		// values is the point), but a dangling one, typically .env pointing
-		// at an .env.local that does not exist yet, is the developer's state
-		// and must not fail the whole provisioning.
+		// Following a valid symlink is the point (a snapshot of the
+		// developer's values, .env -> .env.local), but only inside the
+		// project: a cloned branch controls these links, and a target
+		// outside the repository is content the user never put there.
 		if d.Type()&fs.ModeSymlink != 0 {
-			if _, err := os.Stat(path); err != nil {
+			target, err := filepath.EvalSymlinks(path)
+			if err != nil {
 				logf("warning: %s is a symlink whose target is missing, not copied", rel)
+				return nil
+			}
+			if target != rootReal && !strings.HasPrefix(target, rootReal+string(os.PathSeparator)) {
+				logf("warning: %s links outside the project (%s), not copied", rel, target)
+				return nil
+			}
+			if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
+				logf("warning: %s does not resolve to a regular file, not copied", rel)
 				return nil
 			}
 		}
