@@ -149,6 +149,22 @@ func detectEngineIfUnset(p *config.Project, logf func(string, ...any)) {
 	p.Backup = &b
 }
 
+// warnPinnedContainers reports the services whose compose file fixes their
+// container_name. It is the one isolation wtm cannot provide: ports, volumes
+// and the compose project name are rebased, a container_name is not, so the
+// main stack and a worktree stack cannot both run.
+func warnPinnedContainers(p config.Project, logf func(string, ...any)) {
+	if p.Dir == "" {
+		return
+	}
+	pinned, err := compose.PinnedContainerNames(p.Dir)
+	if err != nil || len(pinned) == 0 {
+		return
+	}
+	logf("warning: %s pin a container_name, which wtm cannot rebase: the main stack and a worktree stack "+
+		"cannot run at the same time until those lines go", strings.Join(pinned, ", "))
+}
+
 // stepper walks the questions, unless the command was told not to ask.
 func (f *projectFlags) stepper(a *app, current config.Project) (config.ProjectUpdate, error) {
 	if f.noInput {

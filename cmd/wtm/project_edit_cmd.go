@@ -38,6 +38,8 @@ func newProjectEditCmd(a *app) *cobra.Command {
 				}
 			}
 
+			warn := func(format string, args ...any) { fmt.Fprintf(a.out, format+"\n", args...) }
+			var edited config.Project
 			var changes []config.FieldChange
 			if err := config.WithLock(a.cfgPath, func(c *config.Config) error {
 				// Re-read under the lock: the edit applies to what the registry
@@ -46,19 +48,20 @@ func newProjectEditCmd(a *app) *cobra.Command {
 				if !ok {
 					return fmt.Errorf("project %q is not registered any more", name)
 				}
-				edited, ch := u.Apply(p)
+				applied, ch := u.Apply(p)
 				// An edit enabling the backup by flags never saw the engine
 				// question: detect it rather than defaulting to postgres
 				// silently.
-				detectEngineIfUnset(&edited, func(format string, args ...any) {
-					fmt.Fprintf(a.out, format+"\n", args...)
-				})
-				changes = ch
-				c.Projects[name] = edited
+				detectEngineIfUnset(&applied, warn)
+				edited, changes = applied, ch
+				c.Projects[name] = applied
 				return nil
 			}); err != nil {
 				return err
 			}
+			// Outside the lock: reading the project's compose files has no place
+			// in a critical section held over a small registry file.
+			warnPinnedContainers(edited, warn)
 			printChanges(a, name, changes)
 			return nil
 		},
