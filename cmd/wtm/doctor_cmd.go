@@ -100,7 +100,7 @@ func (a *app) reportOrphanVolumes(ctx context.Context) {
 func newDoctorCmd(a *app) *cobra.Command {
 	return &cobra.Command{
 		Use:           "doctor",
-		Short:         "Diagnoses the configuration and wtc resolution",
+		Short:         "Diagnoses the configuration, the Docker VM and what removed worktrees left behind",
 		Args:          cobra.NoArgs,
 		SilenceUsage:  true,
 		SilenceErrors: true,
@@ -122,7 +122,14 @@ func newDoctorCmd(a *app) *cobra.Command {
 			fmt.Fprintln(w, "PROJECT\tDIRECTORY\tSTRIDE\tOFFSET\tENGINE")
 			for _, name := range a.cfg.Names() {
 				p := a.cfg.Projects[name]
-				fmt.Fprintf(w, "%s\t%s\t%d\t%d\t%s\n", name, p.Dir, stack.Stride(p.Dir), p.PortOffset, p.BackupConfig().DBEngine)
+				// BackupConfig defaults the engine to postgres whether or not the
+				// project has a database at all, so a project without a dump would
+				// be reported as running one.
+				engine := "-"
+				if p.Dump {
+					engine = p.BackupConfig().DBEngine
+				}
+				fmt.Fprintf(w, "%s\t%s\t%d\t%d\t%s\n", name, p.Dir, stack.Stride(p.Dir), p.PortOffset, engine)
 			}
 			if err := w.Flush(); err != nil {
 				return err
