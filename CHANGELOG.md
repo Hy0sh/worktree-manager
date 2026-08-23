@@ -6,6 +6,8 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+## [0.4.5] - 2026-08-23
+
 ### Changed
 
 - `wtm project remove` refuses while the project still has worktrees, listing
@@ -308,7 +310,8 @@ First tagged release. The whole worktree lifecycle behind one binary:
   identical so worktrees created with it keep working.
 - A project without a compose file is not an error, there is simply no stack.
 
-[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.4.4...HEAD
+[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.4.5...HEAD
+[0.4.5]: https://github.com/Hy0sh/worktree-manager/compare/v0.4.4...v0.4.5
 [0.4.4]: https://github.com/Hy0sh/worktree-manager/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/Hy0sh/worktree-manager/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/Hy0sh/worktree-manager/compare/v0.4.1...v0.4.2
