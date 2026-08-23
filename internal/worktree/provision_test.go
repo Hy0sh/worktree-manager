@@ -63,6 +63,40 @@ func TestForceSymlinkRefusesRealContent(t *testing.T) {
 	}
 }
 
+func TestForceSymlinkToleratesFinderNoise(t *testing.T) {
+	dir := t.TempDir()
+	link := filepath.Join(dir, ".db-snapshot")
+	if err := os.MkdirAll(link, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	// Docker materialised the directory, then Finder dropped its metadata.
+	if err := os.WriteFile(filepath.Join(link, ".DS_Store"), []byte{0}, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	target := t.TempDir()
+	if err := forceSymlink(target, link); err != nil {
+		t.Fatalf("a .DS_Store must not block the link: %v", err)
+	}
+	if got, _ := os.Readlink(link); got != target {
+		t.Fatalf("link points at %q", got)
+	}
+}
+
+func TestForceSymlinkNamesTheOffendingFile(t *testing.T) {
+	dir := t.TempDir()
+	link := filepath.Join(dir, ".db-snapshot")
+	if err := os.MkdirAll(link, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(link, "data.sql"), []byte("x"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	err := forceSymlink(t.TempDir(), link)
+	if err == nil || !strings.Contains(err.Error(), "data.sql") {
+		t.Fatalf("the error should name the file to move, got %v", err)
+	}
+}
+
 // A checkout can lay a symlink down where a copy lands (a branch tracking
 // .env as a link, even one escaping the worktree): writing through it would
 // put the developer's env values at a path the branch chose. The copy must

@@ -114,7 +114,10 @@ func forceSymlink(target, link string) error {
 		if err := os.Remove(link); err != nil {
 			return fmt.Errorf("replacing %s: %w", link, err)
 		}
-	case info.IsDir() && emptyTree(link):
+	case info.IsDir():
+		if offender := emptyTree(link); offender != "" {
+			return fmt.Errorf("%s holds real content (%s) where wtm needs a symlink: move it away and retry", link, offender)
+		}
 		if err := os.RemoveAll(link); err != nil {
 			return fmt.Errorf("replacing %s: %w", link, err)
 		}
@@ -127,17 +130,22 @@ func forceSymlink(target, link string) error {
 	return nil
 }
 
-// emptyTree reports whether path contains only directories all the way down.
-func emptyTree(path string) bool {
-	empty := true
-	_ = filepath.WalkDir(path, func(_ string, d fs.DirEntry, err error) error {
-		if err != nil || !d.IsDir() {
-			empty = false
+// emptyTree returns the first real file under path, "" when there is none.
+// Finder's .DS_Store does not count: it is metadata the user never chose to
+// put there, and RemoveAll deletes it along with the tree.
+func emptyTree(path string) (offender string) {
+	_ = filepath.WalkDir(path, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			offender = p
 			return fs.SkipAll
 		}
-		return nil
+		if d.IsDir() || d.Name() == ".DS_Store" {
+			return nil
+		}
+		offender = p
+		return fs.SkipAll
 	})
-	return empty
+	return offender
 }
 
 func copyEnvFiles(root, dest string, mode provisionMode, logf func(string, ...any)) error {
