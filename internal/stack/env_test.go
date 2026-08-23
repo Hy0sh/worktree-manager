@@ -7,6 +7,36 @@ import (
 	"testing"
 )
 
+func TestWriteEnvOverridesReplacesASymlinkedEnv(t *testing.T) {
+	dir := t.TempDir()
+	victim := filepath.Join(t.TempDir(), "main.env")
+	if err := os.WriteFile(victim, []byte("MAIN=1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(victim, filepath.Join(dir, ".env")); err != nil {
+		t.Fatal(err)
+	}
+	err := WriteEnvOverrides(dir, []Allocation{{Service: "db", Var: "DB_PORT", Port: 25432, Container: "5432"}})
+	if err != nil {
+		t.Fatalf("WriteEnvOverrides: %v", err)
+	}
+	if data, _ := os.ReadFile(victim); string(data) != "MAIN=1\n" {
+		t.Fatalf("the main repo's .env was rewritten: %q", data)
+	}
+	data, err := os.ReadFile(filepath.Join(dir, ".env"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The link's content must not be carried over: it was never this
+	// worktree's own file.
+	if strings.Contains(string(data), "MAIN=1") {
+		t.Fatalf("linked content leaked into the new .env: %q", data)
+	}
+	if !strings.Contains(string(data), "DB_PORT=25432") {
+		t.Fatalf("port block missing: %q", data)
+	}
+}
+
 // The block keeps the markers the former tool used, so an existing worktree
 // keeps working and rewriting stays idempotent rather than cumulative.
 func TestWriteEnvOverridesIsIdempotent(t *testing.T) {

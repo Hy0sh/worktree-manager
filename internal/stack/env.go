@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/Hy0sh/worktree-manager/internal/mark"
+	"github.com/Hy0sh/worktree-manager/internal/safefile"
 )
 
 // portBlock is the section written into a worktree's .env. Its markers are the
@@ -20,9 +21,13 @@ var portBlock = mark.Block{
 // is how the rebased ports reach the containers.
 func WriteEnvOverrides(worktreeDir string, allocations []Allocation) error {
 	path := filepath.Join(worktreeDir, ".env")
-	existing, err := os.ReadFile(path)
-	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("reading %s: %w", path, err)
+	// A symlink here is never this worktree's own file: its content is not
+	// carried over, and safefile.Write replaces the link below.
+	var existing []byte
+	if info, err := os.Lstat(path); err == nil && info.Mode().IsRegular() {
+		if existing, err = os.ReadFile(path); err != nil {
+			return fmt.Errorf("reading %s: %w", path, err)
+		}
 	}
 
 	lines := make([]string, 0, len(allocations))
@@ -35,5 +40,5 @@ func WriteEnvOverrides(worktreeDir string, allocations []Allocation) error {
 
 	// The mode only applies when this creates the file; an existing .env,
 	// usually copied from the main repository, keeps its own permissions.
-	return os.WriteFile(path, []byte(portBlock.Rewrite(string(existing), lines)), 0o600)
+	return safefile.Write(worktreeDir, path, []byte(portBlock.Rewrite(string(existing), lines)), 0o600)
 }

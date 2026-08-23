@@ -327,3 +327,67 @@ func TestStartReplacesTheDirectoryDockerLeftInsteadOfTheSnapshotLink(t *testing.
 		t.Fatalf(".db-snapshot should be a symlink again: %v", err)
 	}
 }
+
+func TestCopyFileKeepModeReplacesASymlink(t *testing.T) {
+	// A worktree provisioned by wtm <= 0.4.1 can hold .env as a symlink; the
+	// keep mode must not preserve it, only a regular file is worth keeping.
+	root, dest := t.TempDir(), t.TempDir()
+	src := filepath.Join(root, ".env")
+	if err := os.WriteFile(src, []byte("A=1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	victim := filepath.Join(t.TempDir(), "victim")
+	if err := os.WriteFile(victim, []byte("precious"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	dst := filepath.Join(dest, ".env")
+	if err := os.Symlink(victim, dst); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyFile(src, dest, dst, keepWorktreeCopies); err != nil {
+		t.Fatalf("copyFile: %v", err)
+	}
+	if data, _ := os.ReadFile(victim); string(data) != "precious" {
+		t.Fatalf("victim was written through: %q", data)
+	}
+	if info, _ := os.Lstat(dst); info.Mode()&os.ModeSymlink != 0 {
+		t.Fatal(".env should now be a regular copy")
+	}
+}
+
+func TestCopyEnvFilesRefusesAnIntermediateSymlinkEscape(t *testing.T) {
+	root, dest, outside := t.TempDir(), t.TempDir(), t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "backend"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(root, "backend", "app.env"), []byte("A=1\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(outside, filepath.Join(dest, "backend")); err != nil {
+		t.Fatal(err)
+	}
+	err := copyEnvFiles(root, dest, overwriteCopies, func(string, ...any) {})
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if _, statErr := os.Stat(filepath.Join(outside, "app.env")); !os.IsNotExist(statErr) {
+		t.Fatal("env values landed outside the worktree")
+	}
+}
+
+func TestWriteSnapshotOverrideReplacesASymlink(t *testing.T) {
+	dest := t.TempDir()
+	victim := filepath.Join(t.TempDir(), "victim")
+	if err := os.WriteFile(victim, []byte("precious"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(victim, filepath.Join(dest, snapshotOverride)); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeSnapshotOverride(dest, "db"); err != nil {
+		t.Fatalf("writeSnapshotOverride: %v", err)
+	}
+	if data, _ := os.ReadFile(victim); string(data) != "precious" {
+		t.Fatalf("victim overwritten: %q", data)
+	}
+}

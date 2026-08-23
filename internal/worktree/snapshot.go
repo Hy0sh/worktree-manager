@@ -7,6 +7,7 @@ import (
 
 	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/dbengine"
+	"github.com/Hy0sh/worktree-manager/internal/safefile"
 )
 
 // snapshotOverride is the compose file wtm generates in the worktree. Handing
@@ -60,7 +61,7 @@ func ensureDBFileCopy(o Options, dest string, cfg config.Backup) error {
 		o.logf("no dump yet: the database starts empty, run `wtm backup refresh %s` to build one", o.Name)
 		return nil
 	}
-	return copyFile(src, filepath.Join(dest, cfg.DBPath), keepWorktreeCopies)
+	return copyFile(src, dest, filepath.Join(dest, cfg.DBPath), keepWorktreeCopies)
 }
 
 // writeRestoreScript puts the script next to the dump, where the worktree's
@@ -95,5 +96,5 @@ services:
       - ./.db-snapshot:/db-snapshot:ro
       - ./.db-snapshot/restore-snapshot.sh:/docker-entrypoint-initdb.d/10-wtm-restore.sh:ro
 `, dbService)
-	return os.WriteFile(filepath.Join(dest, snapshotOverride), []byte(body), 0o644)
+	return safefile.Write(dest, filepath.Join(dest, snapshotOverride), []byte(body), 0o644)
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/compose"
 	"github.com/Hy0sh/worktree-manager/internal/dbengine"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
+	"github.com/Hy0sh/worktree-manager/internal/safefile"
 )
 
 // skipDirs are never descended into when looking for *.env files.
@@ -168,7 +169,7 @@ func copyEnvFiles(root, dest string, mode provisionMode, logf func(string, ...an
 				return nil
 			}
 		}
-		return copyFile(path, filepath.Join(dest, rel), mode)
+		return copyFile(path, dest, filepath.Join(dest, rel), mode)
 	})
 }
 
@@ -178,16 +179,19 @@ func copyComposeOverrides(root, dest string, mode provisionMode) error {
 		if _, err := os.Stat(src); err != nil {
 			continue
 		}
-		if err := copyFile(src, filepath.Join(dest, name), mode); err != nil {
+		if err := copyFile(src, dest, filepath.Join(dest, name), mode); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func copyFile(src, dst string, mode provisionMode) error {
+func copyFile(src, root, dst string, mode provisionMode) error {
 	if mode == keepWorktreeCopies {
-		if _, err := os.Lstat(dst); err == nil {
+		// Only a regular file (or a directory conflict, left to fail loudly
+		// later) is worth keeping: a symlink is never a local edit, it is the
+		// state that lets a later write escape the worktree.
+		if info, err := os.Lstat(dst); err == nil && info.Mode()&os.ModeSymlink == 0 {
 			return nil
 		}
 	}
@@ -199,16 +203,5 @@ func copyFile(src, dst string, mode provisionMode) error {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
-		return err
-	}
-	// Never write through a symlink the checkout may have laid down at dst:
-	// the copy must be the worktree's own file, and a branch-controlled link
-	// could point anywhere, outside the worktree included.
-	if info, err := os.Lstat(dst); err == nil && info.Mode()&os.ModeSymlink != 0 {
-		if err := os.Remove(dst); err != nil {
-			return fmt.Errorf("replacing the symlink at %s: %w", dst, err)
-		}
-	}
-	return os.WriteFile(dst, data, info.Mode().Perm())
+	return safefile.Write(root, dst, data, info.Mode().Perm())
 }

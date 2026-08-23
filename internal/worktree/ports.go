@@ -8,6 +8,7 @@ import (
 	"strconv"
 
 	"github.com/Hy0sh/worktree-manager/internal/compose"
+	"github.com/Hy0sh/worktree-manager/internal/safefile"
 	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
 
@@ -38,7 +39,7 @@ func allocatePorts(ctx context.Context, o Options, wt stack.Worktree, dest strin
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			return err
 		}
-	} else if err := os.WriteFile(path, []byte(override), 0o644); err != nil {
+	} else if err := safefile.Write(dest, path, []byte(override), 0o644); err != nil {
 		return fmt.Errorf("writing the ports compose file: %w", err)
 	}
 	// Writing into a tracked .env would dirty the worktree on every start, and
