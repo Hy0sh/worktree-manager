@@ -11,8 +11,8 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 )
 
-// A project without a dump has no database at all, so reporting the engine
-// BackupConfig defaults to would say it runs postgres.
+// BackupConfig defaults to postgres even without a database, which is how a
+// project with no dump came to be reported as running one.
 func TestDoctorReportsAnEngineOnlyForProjectsWithADump(t *testing.T) {
 	var out bytes.Buffer
 	a := &app{

@@ -122,9 +122,7 @@ func newDoctorCmd(a *app) *cobra.Command {
 			fmt.Fprintln(w, "PROJECT\tDIRECTORY\tSTRIDE\tOFFSET\tENGINE")
 			for _, name := range a.cfg.Names() {
 				p := a.cfg.Projects[name]
-				// BackupConfig defaults the engine to postgres whether or not the
-				// project has a database at all, so a project without a dump would
-				// be reported as running one.
+				// BackupConfig defaults to postgres even without a database.
 				engine := "-"
 				if p.Dump {
 					engine = p.BackupConfig().DBEngine
