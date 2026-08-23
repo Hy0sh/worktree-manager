@@ -56,8 +56,10 @@ func newProjectRemoveCmd(a *app) *cobra.Command {
 			}
 			m := a.manager()
 			if _, err := os.Stat(m.DumpPath(name)); err == nil {
+				// A closed input answers no, which is right for a person and
+				// wrong for a script, so the way out is part of the message.
 				if !assumeYes && !confirm(a.in, a.out, fmt.Sprintf("also delete the backup %s?", m.DumpPath(name))) {
-					return fmt.Errorf("cancelled")
+					return fmt.Errorf("cancelled: nothing was removed (pass --yes to answer for a script)")
 				}
 				if _, err := m.Remove(name); err != nil {
 					return err
