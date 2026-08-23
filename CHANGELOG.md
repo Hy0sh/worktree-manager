@@ -6,6 +6,26 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+## [0.4.4] - 2026-08-23
+
+### Fixed
+
+- `wtm doctor` no longer reports a database engine for a project that has no
+  database: the backup settings default to postgres whether or not a dump is
+  enabled, so every project without one was listed as running postgres. Those
+  now read `-`, like the other columns with nothing to show.
+- `wtm doctor`'s own description no longer mentions resolving `wtc`, a
+  dependency dropped several versions ago. It says what the command actually
+  reports: the configuration, the Docker VM, and what removed worktrees left
+  behind.
+
+### Changed
+
+- Comments that restated the code are gone, and the convention that keeps them
+  out is written down in `CLAUDE.md`: a comment carries an external
+  constraint, a decision, a contract the signature hides or a specificity, in
+  three lines at most. No behaviour changed.
+
 ## [0.4.3] - 2026-08-23
 
 Everything here came out of running the whole lifecycle against real projects
@@ -278,7 +298,8 @@ First tagged release. The whole worktree lifecycle behind one binary:
   identical so worktrees created with it keep working.
 - A project without a compose file is not an error, there is simply no stack.
 
-[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.4.3...HEAD
+[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.4.4...HEAD
+[0.4.4]: https://github.com/Hy0sh/worktree-manager/compare/v0.4.3...v0.4.4
 [0.4.3]: https://github.com/Hy0sh/worktree-manager/compare/v0.4.2...v0.4.3
 [0.4.2]: https://github.com/Hy0sh/worktree-manager/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/Hy0sh/worktree-manager/compare/v0.4.0...v0.4.1
