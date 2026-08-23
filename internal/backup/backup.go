@@ -116,6 +116,9 @@ func (m *Manager) Refresh(ctx context.Context, name string, p config.Project) er
 	if err := m.migrate(ctx, p, cfg, db); err != nil {
 		return err
 	}
+	if err := m.assertPopulated(ctx, p, cfg, eng, db); err != nil {
+		return err
+	}
 
 	if err := m.dump(ctx, name, p, cfg, eng, db); err != nil {
 		return err

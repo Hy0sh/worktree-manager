@@ -34,6 +34,10 @@ func (m mongodb) DumpArgs(_, db string) []string {
 	return m.sh(`mongodump --archive --db=` + db)
 }
 
+func (m mongodb) ObjectCountArgs(_, db string) []string {
+	return m.sh(`mongosh --quiet --eval 'db.getSiblingDB("` + db + `").getCollectionNames().length'`)
+}
+
 // RestoreScript runs against the init phase's temporary mongod, which the
 // entrypoint starts without authentication on localhost.
 func (mongodb) RestoreScript(project string) string {

@@ -64,6 +64,30 @@ func TestRefreshCollectsTheMigratedSQLiteFile(t *testing.T) {
 	}
 }
 
+// Opening a sqlite database creates the file and writes nothing, so a
+// migration that built its schema in another database leaves an empty one
+// behind. Publishing it would bring every worktree up on an empty database.
+func TestRefreshSQLiteRefusesAnEmptyFile(t *testing.T) {
+	p := newProject(t)
+	p.Backup.DBEngine = "sqlite"
+	f := &execx.Fake{Handler: func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(c.String(), "manage.py migrate") {
+			if err := os.WriteFile(filepath.Join(p.Dir, ".wtm-snapshot-tmp.sqlite3"), nil, 0o644); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return okHandler(c)
+	}}
+	m := newManager(t, f)
+	err := m.Refresh(context.Background(), "myapp", p)
+	if err == nil || !strings.Contains(err.Error(), "empty") {
+		t.Fatalf("an empty file must be refused, got %v", err)
+	}
+	if _, statErr := os.Stat(m.DumpPath("myapp")); !os.IsNotExist(statErr) {
+		t.Fatal("no dump may be published on a failed refresh")
+	}
+}
+
 // Without the bind mount the migrated file stays inside the dead container:
 // the error has to say what to fix rather than report a missing file.
 func TestRefreshSQLiteExplainsAMissingBindMount(t *testing.T) {

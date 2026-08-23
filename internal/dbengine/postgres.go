@@ -24,6 +24,13 @@ func (postgres) DumpArgs(user, db string) []string {
 	return []string{"pg_dump", "-U", user, "-Fc", "--no-owner", "--no-privileges", "-d", db}
 }
 
+// ObjectCountArgs counts across every schema, not just public: a project can
+// migrate into named schemas and still be perfectly populated.
+func (postgres) ObjectCountArgs(user, db string) []string {
+	return []string{"psql", "-U", user, "-d", db, "-t", "-A", "-c",
+		"select count(*) from information_schema.tables where table_schema not in ('pg_catalog','information_schema')"}
+}
+
 // RestoreScript relies on docker-entrypoint-initdb.d only running on an empty
 // data directory: a fresh worktree restores, an existing one is left alone. It
 // also rules out any race with the application's own migrate, because the

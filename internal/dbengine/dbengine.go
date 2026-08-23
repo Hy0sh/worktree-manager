@@ -25,6 +25,10 @@ type Engine interface {
 	CreateTempDBArgs(user, db string) []string
 	// DumpArgs writes the dump of db to stdout.
 	DumpArgs(user, db string) []string
+	// ObjectCountArgs writes to stdout how many tables, or collections, db
+	// holds. A migration that never targeted the throwaway database leaves it
+	// at zero, which is the only way to tell that dump from a real one.
+	ObjectCountArgs(user, db string) []string
 	// RestoreScript is the docker-entrypoint-initdb.d body restoring the dump.
 	RestoreScript(project string) string
 }

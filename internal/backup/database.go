@@ -3,10 +3,12 @@ package backup
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/Hy0sh/worktree-manager/internal/config"
+	"github.com/Hy0sh/worktree-manager/internal/dbengine"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 )
 
@@ -70,6 +72,35 @@ func (m *Manager) waitFor(ctx context.Context, label string, defaultAttempts int
 		}
 	}
 	return fmt.Errorf("timed out waiting for %s (%d attempts): %w", label, attempts, last)
+}
+
+// assertPopulated refuses to dump a throwaway database no migration ever
+// reached. The {{database}} mechanism only works if the app honours the
+// variable it is mapped to; when it does not, the migrations run against the
+// project's own database and the throwaway one stays empty. Dumping it would
+// publish a snapshot that silently brings every worktree up on an empty
+// database, so the emptiness is reported here instead of at the first start.
+//
+// Only a count that reads as zero fails: a probe that cannot run, or whose
+// output is not a number, is a diagnosis wtm could not make, not a verdict.
+func (m *Manager) assertPopulated(ctx context.Context, p config.Project, cfg config.Backup, eng dbengine.Engine, db string) error {
+	res, err := m.execInDB(ctx, p, cfg, eng.ObjectCountArgs(cfg.DBUser, db))
+	if err != nil {
+		m.logf("warning: could not count what %s holds, dumping it as is: %v", db, err)
+		return nil
+	}
+	count, convErr := strconv.Atoi(strings.TrimSpace(res.Stdout))
+	if convErr != nil {
+		m.logf("warning: could not read how much %s holds, dumping it as is", db)
+		return nil
+	}
+	if count > 0 {
+		return nil
+	}
+	return fmt.Errorf("the migrations left %s empty, so its dump would bring every worktree up on an empty database.\n"+
+		"`%s` ran, but against another database than the throwaway one: map the variable the app reads to %s in the project's `backup.env`, "+
+		"as in --env DATABASE_URL='postgresql://user:pass@db:5432/%s'",
+		db, cfg.MigrateCommand, config.DatabasePlaceholder, config.DatabasePlaceholder)
 }
 
 // execInDB runs one of the engine's commands inside the database container.

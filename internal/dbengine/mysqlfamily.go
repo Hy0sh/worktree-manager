@@ -64,6 +64,12 @@ func (e mysqlFamily) DumpArgs(_, db string) []string {
 	return e.sh(e.dump + " --single-transaction --routines --triggers " + db)
 }
 
+// ObjectCountArgs asks for the count without headers or framing, so stdout is
+// the bare number the caller parses.
+func (e mysqlFamily) ObjectCountArgs(_, db string) []string {
+	return e.sh(e.client + ` -uroot -N -B -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema = '` + db + `';"`)
+}
+
 // RestoreScript runs during the image's init phase: the entrypoint has
 // already created root with its password, and the temporary server listens
 // on the local socket only.

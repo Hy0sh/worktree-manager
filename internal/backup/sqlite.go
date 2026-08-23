@@ -26,8 +26,18 @@ func (m *Manager) refreshFile(ctx context.Context, name string, p config.Project
 	if err := m.migrate(ctx, p, cfg, tmpDBFile); err != nil {
 		return err
 	}
-	if _, err := os.Stat(host); err != nil {
+	info, err := os.Stat(host)
+	if err != nil {
 		return fmt.Errorf("the migration left no %s in %s: the %s service must bind-mount the project directory for wtm to collect the database file", tmpDBFile, p.Dir, cfg.AppService)
+	}
+	// Opening a sqlite database creates the file and writes nothing into it, so
+	// an empty file is a migration that connected somewhere and built its
+	// schema elsewhere. Publishing it would bring every worktree up on an empty
+	// database, which only shows at the first start.
+	if info.Size() == 0 {
+		return fmt.Errorf("the migrations left %s empty, so its dump would bring every worktree up on an empty database.\n"+
+			"`%s` ran, but built nothing there: map the variable the app reads to %s in the project's `backup.env`",
+			tmpDBFile, cfg.MigrateCommand, config.DatabasePlaceholder)
 	}
 	if err := m.publishFile(host, name); err != nil {
 		return err
