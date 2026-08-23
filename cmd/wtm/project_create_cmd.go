@@ -32,7 +32,7 @@ func newProjectCreateCmd(a *app) *cobra.Command {
 			// its absence is what tells a scripted call from a bare one.
 			p, _ := u.Apply(config.Project{})
 			if u.Dir == nil {
-				stepped, err := f.stepper(a, p)
+				stepped, err := f.steppedUpdate(a, p)
 				if err != nil {
 					return err
 				}

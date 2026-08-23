@@ -21,7 +21,7 @@ func (m *Manager) migrate(ctx context.Context, p config.Project, cfg config.Back
 	if err != nil {
 		return err
 	}
-	override, err := writeMemOverride(cfg.AppService)
+	override, err := writeMemOverride(m.Root, cfg.AppService)
 	if err != nil {
 		return err
 	}
@@ -55,8 +55,14 @@ func (m *Manager) migrate(ctx context.Context, p config.Project, cfg config.Back
 
 // writeMemOverride lifts the memory cap for the disposable container only:
 // mem_limit 0 means unlimited, so the peak is bounded by the Docker VM alone.
-func writeMemOverride(service string) (string, error) {
-	f, err := os.CreateTemp("", "wtm-mem-*.yaml")
+// It lives under dir (wtm's own 0700 tree) rather than the shared system
+// temp directory, and the name is re-checked at generation like db_service
+// is in writeSnapshotOverride: config.json can be hand-edited.
+func writeMemOverride(dir, service string) (string, error) {
+	if err := config.ValidateIdentifier("application service", service); err != nil {
+		return "", err
+	}
+	f, err := os.CreateTemp(dir, "wtm-mem-*.yaml")
 	if err != nil {
 		return "", fmt.Errorf("temporary memory override: %w", err)
 	}

@@ -157,6 +157,16 @@ func (f *projectFlags) stepper(a *app, current config.Project) (config.ProjectUp
 	return runProjectStepper(newPrompter(a.in, a.out), current)
 }
 
+// steppedUpdate walks the questions then applies the same gate the flag path
+// gets in update(): answers typed at the prompt land in generated files too.
+func (f *projectFlags) steppedUpdate(a *app, current config.Project) (config.ProjectUpdate, error) {
+	u, err := f.stepper(a, current)
+	if err != nil {
+		return u, err
+	}
+	return u, validateUpdate(u)
+}
+
 // printChanges reports what the edit did, field by field, so adding a backup
 // to a project configured months ago is auditable at a glance.
 func printChanges(a *app, name string, changes []config.FieldChange) {

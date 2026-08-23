@@ -214,6 +214,29 @@ func TestStepperAsksAgainForADirectoryThatDoesNotExist(t *testing.T) {
 	}
 }
 
+// A prompt answer cannot hold a newline, so the realistic invalid identifier
+// is a space or an uppercase letter; the stepper must reject it the same way
+// the flag path does, through the shared validateUpdate gate.
+func TestStepperAnswersGetTheSameValidationAsFlags(t *testing.T) {
+	dir := repoWithCompose(t)
+	a := &app{in: strings.NewReader(strings.Join([]string{
+		dir, "main", "y",
+		"",           // database service
+		"",           // database engine, keep the detected one
+		"",           // database user
+		"my Backend", // invalid identifier for the migration service
+		"migrate",    // migration command
+		"",           // no deps command
+		"",           // end of the environment
+		"n",          // git-container
+	}, "\n") + "\n"), out: new(bytes.Buffer)}
+	f := &projectFlags{}
+	_, err := f.steppedUpdate(a, config.Project{})
+	if err == nil || !strings.Contains(err.Error(), "application service") {
+		t.Fatalf("prompt answers must pass the flag path's validation, got %v", err)
+	}
+}
+
 // Nothing to read means nothing to ask: the stepper stops instead of looping.
 func TestStepperStopsWhenTheInputIsClosed(t *testing.T) {
 	if _, err := runProjectStepper(newPrompter(strings.NewReader(""), new(bytes.Buffer)), config.Project{}); err == nil {

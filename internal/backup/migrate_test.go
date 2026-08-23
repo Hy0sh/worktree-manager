@@ -99,6 +99,27 @@ func TestRefreshMigratesInADisposableContainer(t *testing.T) {
 	}
 }
 
+// The service name lands in a generated compose document loaded with -f:
+// a newline would inject arbitrary keys, so it is checked at the point of
+// generation too, not only at registration (config.json can be hand-edited).
+func TestWriteMemOverrideRejectsANonIdentifierService(t *testing.T) {
+	if _, err := writeMemOverride(t.TempDir(), "backend:\n    privileged: true\n  x"); err == nil {
+		t.Fatal("expected an error")
+	}
+}
+
+func TestWriteMemOverrideStaysInTheGivenDirectory(t *testing.T) {
+	dir := t.TempDir()
+	path, err := writeMemOverride(dir, "backend")
+	if err != nil {
+		t.Fatalf("writeMemOverride: %v", err)
+	}
+	defer os.Remove(path)
+	if filepath.Dir(path) != dir {
+		t.Fatalf("override written to %s, want it under %s", path, dir)
+	}
+}
+
 // Dependencies installed at container startup do not exist in a fresh one.
 func TestRefreshRunsTheDepsCommandFirst(t *testing.T) {
 	f := &execx.Fake{Handler: okHandler}

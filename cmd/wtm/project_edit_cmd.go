@@ -33,7 +33,7 @@ func newProjectEditCmd(a *app) *cobra.Command {
 				return err
 			}
 			if u.IsEmpty() {
-				if u, err = f.stepper(a, current); err != nil {
+				if u, err = f.steppedUpdate(a, current); err != nil {
 					return err
 				}
 			}
