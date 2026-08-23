@@ -235,7 +235,8 @@ First tagged release. The whole worktree lifecycle behind one binary:
   identical so worktrees created with it keep working.
 - A project without a compose file is not an error, there is simply no stack.
 
-[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.4.2...HEAD
+[0.4.2]: https://github.com/Hy0sh/worktree-manager/compare/v0.4.1...v0.4.2
 [0.4.1]: https://github.com/Hy0sh/worktree-manager/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.3.0...v0.4.0
 [0.3.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.2.1...v0.3.0
