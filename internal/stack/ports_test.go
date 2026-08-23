@@ -117,6 +117,13 @@ func TestPortsOverrideRestatesEveryPortOfAnOverriddenService(t *testing.T) {
 	}
 }
 
+func TestPortsOverridePreservesTheInterfacePrefix(t *testing.T) {
+	out := PortsOverride([]Allocation{{Service: "db", HostIP: "127.0.0.1", Port: 25432, Container: "5432"}})
+	if !strings.Contains(out, `- "127.0.0.1:25432:5432"`) {
+		t.Fatalf("prefix lost:\n%s", out)
+	}
+}
+
 func TestStrideReadsTheProjectConfiguration(t *testing.T) {
 	dir := t.TempDir()
 	if got := Stride(dir); got != DefaultStride {

@@ -23,6 +23,7 @@ const DefaultStride = 1
 type Allocation struct {
 	Service   string
 	Var       string
+	HostIP    string
 	Port      int
 	Container string
 }
@@ -68,7 +69,7 @@ func Allocate(services []compose.ServicePort, index, stride, projectOffset int) 
 				index, port, other, label)
 		}
 		seen[port] = label
-		out = append(out, Allocation{Service: s.Service, Var: s.Var, Port: port, Container: s.Container})
+		out = append(out, Allocation{Service: s.Service, Var: s.Var, HostIP: s.HostIP, Port: port, Container: s.Container})
 	}
 	return out, nil
 }
@@ -133,7 +134,13 @@ func PortsOverride(allocations []Allocation) string {
 		}
 		fmt.Fprintf(&b, "  %s:\n    ports: !override\n", service)
 		for _, a := range byService[service] {
-			fmt.Fprintf(&b, "      - \"%d:%s\"\n", a.Port, a.Container)
+			// HostIP was matched against [\d.]+ on every path, so it cannot
+			// smuggle YAML syntax into the quoted scalar.
+			if a.HostIP != "" {
+				fmt.Fprintf(&b, "      - \"%s:%d:%s\"\n", a.HostIP, a.Port, a.Container)
+			} else {
+				fmt.Fprintf(&b, "      - \"%d:%s\"\n", a.Port, a.Container)
+			}
 		}
 	}
 	return b.String()

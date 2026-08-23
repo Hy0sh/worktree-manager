@@ -15,6 +15,7 @@ type ServicePort struct {
 	// Var is the environment variable wtc overrides, empty when the port is
 	// hardcoded and therefore not isolatable.
 	Var       string
+	HostIP    string // interface the project binds to (IPv4), empty when unset
 	Host      string // host port declared as the default
 	Container string // container side, which is what tells a web port apart
 }
@@ -30,10 +31,13 @@ var webPorts = map[string]bool{
 func (s ServicePort) IsWeb() bool { return webPorts[s.Container] }
 
 var (
-	paramShort = regexp.MustCompile(`^\$\{([A-Za-z_][A-Za-z0-9_]*):-(\d+)\}:(\d+)$`)
-	plainShort = regexp.MustCompile(`^(?:[\d.]+:)?(\d+):(\d+)$`)
+	paramShort = regexp.MustCompile(`^(?:([\d.]+):)?\$\{([A-Za-z_][A-Za-z0-9_]*):-(\d+)\}:(\d+)$`)
+	plainShort = regexp.MustCompile(`^(?:([\d.]+):)?(\d+):(\d+)$`)
 	paramValue = regexp.MustCompile(`^\$\{([A-Za-z_][A-Za-z0-9_]*):-(\d+)\}$`)
 	plainValue = regexp.MustCompile(`^\d+$`)
+	// hostIP is what the short-form regexes accept; the long form's host_ip
+	// is held to the same charset so PortsOverride can emit it verbatim.
+	hostIP = regexp.MustCompile(`^[\d.]+$`)
 )
 
 // ServicePorts lists the published ports per service, from that one file
@@ -116,10 +120,10 @@ func parsePortNode(service string, n *yaml.Node) (ServicePort, bool) {
 	case yaml.ScalarNode:
 		value := strings.TrimSpace(n.Value)
 		if m := paramShort.FindStringSubmatch(value); m != nil {
-			return ServicePort{Service: service, Var: m[1], Host: m[2], Container: m[3]}, true
+			return ServicePort{Service: service, HostIP: m[1], Var: m[2], Host: m[3], Container: m[4]}, true
 		}
 		if m := plainShort.FindStringSubmatch(value); m != nil {
-			return ServicePort{Service: service, Host: m[1], Container: m[2]}, true
+			return ServicePort{Service: service, HostIP: m[1], Host: m[2], Container: m[3]}, true
 		}
 	case yaml.MappingNode:
 		target := mapValue(n, "target")
@@ -129,6 +133,9 @@ func parsePortNode(service string, n *yaml.Node) (ServicePort, bool) {
 			return ServicePort{}, false
 		}
 		sp := ServicePort{Service: service, Container: target.Value}
+		if ip := mapValue(n, "host_ip"); ip != nil && hostIP.MatchString(ip.Value) {
+			sp.HostIP = ip.Value
+		}
 		if m := paramValue.FindStringSubmatch(published.Value); m != nil {
 			sp.Var, sp.Host = m[1], m[2]
 			return sp, true

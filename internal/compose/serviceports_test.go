@@ -53,8 +53,9 @@ volumes:
 	if p := byService["traefik"]; p.Var != "" || p.Host != "9080" || p.Container != "8080" {
 		t.Fatalf("traefik = %+v", p)
 	}
-	// A host interface prefix is dropped, the last two numbers are the ports.
-	if p := byService["api"]; p.Host != "3001" || p.Container != "3001" {
+	// A host interface prefix is preserved: rebasing must not widen a
+	// loopback-only binding to every interface.
+	if p := byService["api"]; p.HostIP != "127.0.0.1" || p.Host != "3001" || p.Container != "3001" {
 		t.Fatalf("api = %+v", p)
 	}
 	// `environment:` and `volumes:` must not be mistaken for port entries.
@@ -62,6 +63,33 @@ volumes:
 		if p.Service == "" || p.Container == "" {
 			t.Fatalf("bogus entry parsed: %+v", p)
 		}
+	}
+}
+
+func TestServicePortsKeepsThePrefixOfAVariablePort(t *testing.T) {
+	dir := t.TempDir()
+	path := write(t, dir, "compose.yaml", `services:
+  db:
+    ports:
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
+  cache:
+    ports:
+      - target: 6379
+        published: "6379"
+        host_ip: 127.0.0.1
+`)
+	ports, err := ServicePorts(path)
+	if err != nil {
+		t.Fatalf("ServicePorts: %v", err)
+	}
+	if len(ports) != 2 {
+		t.Fatalf("got %d ports, want 2: %+v", len(ports), ports)
+	}
+	if p := ports[0]; p.HostIP != "127.0.0.1" || p.Var != "DB_PORT" || p.Host != "5432" {
+		t.Fatalf("db = %+v", p)
+	}
+	if p := ports[1]; p.HostIP != "127.0.0.1" || p.Host != "6379" || p.Container != "6379" {
+		t.Fatalf("cache = %+v", p)
 	}
 }
 
