@@ -122,6 +122,22 @@ func Remove(ctx context.Context, o Options) error {
 	if err != nil {
 		return err
 	}
+	// Checked before anything is taken down: a refusal must leave the worktree
+	// exactly as it was, stack included. The worktree always holds untracked
+	// files this tool created (.env copies, .git-container, .db-snapshot), and
+	// git refuses to remove a worktree that has any. Only tracked changes
+	// represent work worth protecting, so check those and force past the rest.
+	if !o.Force {
+		changes, err := trackedChanges(ctx, o, wt.Path)
+		if err != nil {
+			return err
+		}
+		if changes != "" {
+			return fmt.Errorf("worktree %s has uncommitted changes:\n%s\ncommit them, or rerun with --force "+
+				"(the stack is still running)", wt.Path, changes)
+		}
+	}
+
 	stackKnown := false
 	if hasCompose(o.Project.Dir) {
 		switch err := o.resolveIndex(ctx, &wt, index.MustExist); {
@@ -134,20 +150,6 @@ func Remove(ctx context.Context, o Options) error {
 			if err := o.Stack.Down(ctx, o.projectName(wt), wt.Path); err != nil {
 				return fmt.Errorf("stopping the stack: %w", err)
 			}
-		}
-	}
-
-	// The worktree always holds untracked files this tool created (.env copies,
-	// .git-container, .db-snapshot), and git refuses to remove a worktree that
-	// has any. Only tracked changes represent work worth protecting, so check
-	// those and force past the rest.
-	if !o.Force {
-		changes, err := trackedChanges(ctx, o, wt.Path)
-		if err != nil {
-			return err
-		}
-		if changes != "" {
-			return fmt.Errorf("worktree %s has uncommitted changes:\n%s\ncommit them, or rerun with --force", wt.Path, changes)
 		}
 	}
 	if _, err := o.Runner.Run(ctx, execx.Cmd{

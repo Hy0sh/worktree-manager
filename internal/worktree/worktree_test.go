@@ -194,6 +194,14 @@ func TestRemoveRefusesWhenTrackedFilesAreModified(t *testing.T) {
 			t.Fatal("nothing should be removed when tracked files are modified")
 		}
 	}
+	// A refusal has to leave the worktree as it was: taking the stack down and
+	// then declining is the worst of both, and the developer's dev server is
+	// gone for a removal that never happened.
+	for _, l := range f.fake.Lines() {
+		if strings.Contains(l, "down") {
+			t.Fatalf("the stack must stay up when the removal is refused, ran: %s", l)
+		}
+	}
 }
 
 func TestRemoveWithForceIgnoresTrackedChanges(t *testing.T) {
