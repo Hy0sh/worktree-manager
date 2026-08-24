@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/Hy0sh/worktree-manager/internal/execx"
+	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
 
 // pruneEmptyParents drops the directories a slashed branch name created
@@ -138,4 +139,11 @@ func tracked(ctx context.Context, o Options, dir, name string) bool {
 		Args: []string{"-C", dir, "ls-files", "--error-unmatch", name},
 	})
 	return err == nil
+}
+
+func lockReason(wt stack.Worktree) string {
+	if wt.LockReason == "" {
+		return ""
+	}
+	return " (" + wt.LockReason + ")"
 }

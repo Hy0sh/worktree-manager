@@ -335,3 +335,40 @@ func TestCreateRefusesABranchEscapingTheWorktreeDirectory(t *testing.T) {
 		t.Fatal("a directory was created outside the project")
 	}
 }
+
+// Claude Code locks the worktrees it creates, and git refuses a locked one even
+// with a single --force, so the removal used to fail after the stack had
+// already been taken down.
+func TestRemoveRefusesALockedWorktree(t *testing.T) {
+	f := newFixture(t)
+	f.lockReason = "claude session compiled-riding-curry (pid 79510)"
+	err := Remove(context.Background(), f.opts("feat/x"))
+	if err == nil {
+		t.Fatal("expected a refusal")
+	}
+	if !strings.Contains(err.Error(), "pid 79510") || !strings.Contains(err.Error(), "--force") {
+		t.Fatalf("error should name the lock holder and mention --force, got %q", err.Error())
+	}
+	for _, l := range f.fake.Lines() {
+		if strings.Contains(l, "worktree remove") {
+			t.Fatal("nothing should be removed while the worktree is locked")
+		}
+		if strings.Contains(l, "down") {
+			t.Fatalf("the stack must stay up when the removal is refused, ran: %s", l)
+		}
+	}
+}
+
+func TestRemoveWithForceOverridesTheLock(t *testing.T) {
+	f := newFixture(t)
+	f.lockReason = "claude session compiled-riding-curry (pid 79510)"
+	o := f.opts("feat/x")
+	o.Force = true
+	if err := Remove(context.Background(), o); err != nil {
+		t.Fatalf("Remove --force: %v", err)
+	}
+	line := lastCall(f, "worktree remove")
+	if strings.Count(line, "--force") != 2 {
+		t.Fatalf("overriding a lock takes `remove -f -f`, got %q", line)
+	}
+}

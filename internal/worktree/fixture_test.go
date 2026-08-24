@@ -29,6 +29,7 @@ type fixture struct {
 	fetched      bool              // set when the fake handled a fetch
 	dockerLabels []string          // compose project labels `docker ps -a` reports
 	tracked      map[string]string // files the checkout carries, written by `worktree add`
+	lockReason   string            // set to have the listing report the worktree as locked
 }
 
 // hasTrackingRef answers `rev-parse refs/remotes/<remote>/<branch>` for the
@@ -102,8 +103,12 @@ func newFixture(t *testing.T) *fixture {
 			strings.Contains(line, "rev-parse --git-common-dir"):
 			return execx.Result{Stdout: filepath.Join(f.root, ".git") + "\n"}, nil
 		case strings.Contains(line, "worktree list --porcelain"):
+			lock := ""
+			if f.lockReason != "" {
+				lock = "locked " + f.lockReason + "\n"
+			}
 			return execx.Result{Stdout: "worktree " + f.root + "\nbranch refs/heads/develop\n\n" +
-				"worktree " + filepath.Join(f.root, ".worktrees", "feat", "x") + "\nbranch refs/heads/feat/x\n"}, nil
+				"worktree " + filepath.Join(f.root, ".worktrees", "feat", "x") + "\nbranch refs/heads/feat/x\n" + lock}, nil
 		case strings.Contains(line, "ps -a"):
 			return execx.Result{Stdout: strings.Join(f.dockerLabels, "\n") + "\n"}, nil
 		case strings.Contains(line, "volume ls"):

@@ -95,3 +95,20 @@ func TestProjectRemoveProceedsWhenGitCannotAnswer(t *testing.T) {
 		t.Fatal("the project should be gone")
 	}
 }
+
+// A `claude -w` worktree is not one wtm can remove, so it must not trap the
+// registry entry either.
+func TestProjectRemoveIgnoresWorktreesWtmDidNotCreate(t *testing.T) {
+	a := removeApp(t, func(root string) (execx.Result, error) {
+		return execx.Result{Stdout: "worktree " + root + "\nbranch refs/heads/main\n\n" +
+			"worktree " + filepath.Join(root, ".claude", "worktrees", "curry") +
+			"\nbranch refs/heads/worktree-curry\n"}, nil
+	})
+	cmd := newProjectRemoveCmd(a)
+	if err := cmd.RunE(cmd, []string{"myapp"}); err != nil {
+		t.Fatalf("removal should go through: %v", err)
+	}
+	if _, ok := a.cfg.Projects["myapp"]; ok {
+		t.Fatal("the entry should be gone")
+	}
+}

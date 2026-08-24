@@ -35,7 +35,7 @@ type Options struct {
 // `../..` escapes .worktrees entirely, and git only rejects such a refname
 // after directories have already been created for it.
 func (o Options) dest() (string, error) {
-	root := filepath.Join(o.Project.Dir, ".worktrees")
+	root := stack.WorktreesRoot(o.Project.Dir)
 	dest := filepath.Join(root, o.Branch)
 	if dest != root && !strings.HasPrefix(dest, root+string(os.PathSeparator)) {
 		return "", fmt.Errorf("invalid branch name %q: the worktree would land outside %s", o.Branch, root)
@@ -125,6 +125,11 @@ func Remove(ctx context.Context, o Options) error {
 	// protecting; git refuses to remove a worktree holding any untracked file,
 	// which this tool always put there, so the removal below forces past those.
 	if !o.Force {
+		if wt.Locked {
+			return fmt.Errorf("worktree %s is locked%s: unlock it (`git -C %s worktree unlock %s`), "+
+				"or rerun with --force (the stack is still running)",
+				wt.Path, lockReason(wt), o.Project.Dir, wt.Path)
+		}
 		changes, err := trackedChanges(ctx, o, wt.Path)
 		if err != nil {
 			return err
@@ -149,14 +154,20 @@ func Remove(ctx context.Context, o Options) error {
 			}
 		}
 	}
+	// The first --force covers the untracked files wtm itself put there; a lock
+	// takes a second one, which is git's own rule.
+	args := []string{"-C", o.Project.Dir, "worktree", "remove", "--force"}
+	if wt.Locked {
+		args = append(args, "--force")
+	}
 	if _, err := o.Runner.Run(ctx, execx.Cmd{
 		Name: "git",
-		Args: []string{"-C", o.Project.Dir, "worktree", "remove", "--force", wt.Path},
+		Args: append(args, wt.Path),
 		Live: true,
 	}); err != nil {
 		return fmt.Errorf("removing the worktree (the stack is already stopped): %w", err)
 	}
-	pruneEmptyParents(wt.Path, filepath.Join(o.Project.Dir, ".worktrees"))
+	pruneEmptyParents(wt.Path, stack.WorktreesRoot(o.Project.Dir))
 	o.logf("worktree removed: %s (branch %s kept)", wt.Path, o.Branch)
 	if stackKnown {
 		removeVolumes(ctx, o, wt)

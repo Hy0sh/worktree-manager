@@ -3,6 +3,8 @@ package stack
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/Hy0sh/worktree-manager/internal/execx"
@@ -17,10 +19,21 @@ type Worktree struct {
 	Pos    int
 	Path   string
 	Branch string
+	// git refuses to remove a locked worktree even with one --force. A lock can
+	// carry no reason, so the flag cannot be inferred from LockReason.
+	Locked     bool
+	LockReason string
 }
 
-// Worktrees lists the linked worktrees in git's own order, main repository
-// excluded.
+// WorktreesRoot is where a repository's wtm worktrees live. What git lists
+// outside it, a `claude -w` worktree under .claude/worktrees or a manual `git
+// worktree add` anywhere else, has none of what every wtm command needs: no
+// stable index, no provisioned .env, no stack.
+func WorktreesRoot(repoDir string) string {
+	return filepath.Join(repoDir, ".worktrees")
+}
+
+// Worktrees lists the worktrees wtm manages, in git's own order.
 func (c *Client) Worktrees(ctx context.Context) ([]Worktree, error) {
 	res, err := c.Runner.Run(ctx, execx.Cmd{
 		Name: "git",
@@ -29,11 +42,14 @@ func (c *Client) Worktrees(ctx context.Context) ([]Worktree, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listing worktrees: %w", err)
 	}
+	root := WorktreesRoot(c.Dir) + string(os.PathSeparator)
 	var (
-		out   []Worktree
-		first = true
-		path  string
-		br    string
+		out    []Worktree
+		first  = true
+		path   string
+		br     string
+		locked bool
+		reason string
 	)
 	flush := func() {
 		if path == "" {
@@ -41,10 +57,11 @@ func (c *Client) Worktrees(ctx context.Context) ([]Worktree, error) {
 		}
 		if first {
 			first = false // the first block is the main repository
-		} else {
-			out = append(out, Worktree{Pos: len(out) + 1, Path: path, Branch: br})
+		} else if strings.HasPrefix(path, root) {
+			out = append(out, Worktree{Pos: len(out) + 1, Path: path, Branch: br,
+				Locked: locked, LockReason: reason})
 		}
-		path, br = "", ""
+		path, br, locked, reason = "", "", false, ""
 	}
 	for _, line := range strings.Split(res.Stdout, "\n") {
 		switch {
@@ -53,6 +70,10 @@ func (c *Client) Worktrees(ctx context.Context) ([]Worktree, error) {
 			path = strings.TrimPrefix(line, "worktree ")
 		case strings.HasPrefix(line, "branch "):
 			br = strings.TrimPrefix(strings.TrimPrefix(line, "branch "), "refs/heads/")
+		case line == "locked":
+			locked = true
+		case strings.HasPrefix(line, "locked "):
+			locked, reason = true, strings.TrimPrefix(line, "locked ")
 		}
 	}
 	flush()

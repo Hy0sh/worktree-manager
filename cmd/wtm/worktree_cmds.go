@@ -104,6 +104,6 @@ func newRemoveCmd(a *app) *cobra.Command {
 			return worktree.Remove(cmd.Context(), o)
 		},
 	}
-	cmd.Flags().BoolVar(&force, "force", false, "remove even if tracked files are modified")
+	cmd.Flags().BoolVar(&force, "force", false, "remove even if tracked files are modified or the worktree is locked")
 	return cmd
 }

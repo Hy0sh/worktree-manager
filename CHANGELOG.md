@@ -6,6 +6,22 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Fixed
+
+- `wtm list` and the completion no longer show worktrees wtm did not create, and
+  `wtm project remove` is no longer trapped by one. Only `<repo>/.worktrees/`
+  holds what every command needs (a stable index, a provisioned `.env`, a
+  stack), so a `claude -w` worktree under `.claude/worktrees` was listed with a
+  `down` status for a stack that never existed, and since 0.4.5 it also blocked
+  the removal of the registry entry while demanding a `wtm remove` that could do
+  nothing for it. Those worktrees now belong to whatever created them.
+- `wtm remove` can remove a locked worktree, which it never could: git refuses
+  one even with a single `--force`, and overriding a lock takes `remove -f -f`.
+  The lock is read from the listing and checked before anything is taken down,
+  alongside the tracked changes: without `--force` the removal is refused,
+  naming the lock holder and leaving the stack up, and with it the second
+  `--force` goes through.
+
 ## [0.4.5] - 2026-08-23
 
 ### Changed
