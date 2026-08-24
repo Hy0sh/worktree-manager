@@ -6,6 +6,16 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Fixed
+
+- A worktree whose HEAD was detached, by a `git checkout <rev>` made inside it,
+  is no longer a listing with an empty `BRANCH`, no index and no way back: git
+  names no branch for it, and every command looks a worktree up by branch. The
+  branch is now read off the path, which wtm alone chose as
+  `<repo>/.worktrees/<branch>`, so the index, the status and `wtm up|stop|remove
+  <branch>` work again, `wtm list` shows `<branch> (detached <rev>)`, and the
+  commands that act on the worktree say what runs there before doing so.
+
 ## [0.4.6] - 2026-08-24
 
 ### Fixed

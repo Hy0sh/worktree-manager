@@ -37,7 +37,11 @@ func newListCmd(a *app) *cobra.Command {
 				if e.Index > 0 {
 					idx = strconv.Itoa(e.Index)
 				}
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", idx, e.Branch, e.Status, e.Path)
+				branch := e.Branch
+				if e.Detached {
+					branch = fmt.Sprintf("%s (detached %s)", branch, e.ShortHead())
+				}
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", idx, branch, e.Status, e.Path)
 			}
 			return w.Flush()
 		},

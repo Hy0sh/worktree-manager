@@ -1,6 +1,7 @@
 package stack
 
 import (
+	"bytes"
 	"context"
 	"strings"
 	"testing"
@@ -136,5 +137,52 @@ func TestWorktreesSkipsWhatWtmDidNotCreate(t *testing.T) {
 	}
 	if wts[0].Branch != "feat/x" || wts[0].Pos != 1 {
 		t.Fatalf("positions must stay contiguous over the kept worktrees, got %+v", wts[0])
+	}
+}
+
+// A detached HEAD makes git print `detached` where the branch line would be.
+// wtm always creates <root>/<branch>, so the path still says which branch the
+// worktree belongs to, and that is what every command looks it up by.
+func TestWorktreesDeriveTheBranchOfADetachedWorktree(t *testing.T) {
+	f := &execx.Fake{Handler: func(c execx.Cmd) (execx.Result, error) {
+		return execx.Result{Stdout: "worktree /repo\nHEAD abc123\nbranch refs/heads/main\n\n" +
+			"worktree /repo/.worktrees/refactor/x\nHEAD 37a276b48e77282392e06e890cc8c8b6ea18aec2\ndetached\n\n" +
+			"worktree /repo/.worktrees/feat/y\nHEAD def456\nbranch refs/heads/feat/y\n"}, nil
+	}}
+	c := &Client{Runner: f, Dir: "/repo"}
+	wts, err := c.Worktrees(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wts) != 2 {
+		t.Fatalf("expected 2 linked worktrees, got %+v", wts)
+	}
+	if !wts[0].Detached || wts[0].Branch != "refactor/x" {
+		t.Fatalf("a detached worktree keeps the branch of its path, got %+v", wts[0])
+	}
+	if wts[0].Head != "37a276b48e77282392e06e890cc8c8b6ea18aec2" {
+		t.Fatalf("head = %q", wts[0].Head)
+	}
+	if wts[1].Detached || wts[1].Branch != "feat/y" || wts[1].Head != "def456" {
+		t.Fatalf("detachment must not leak into the next worktree, got %+v", wts[1])
+	}
+}
+
+func TestFindByBranchFindsADetachedWorktreeAndSaysSo(t *testing.T) {
+	var out bytes.Buffer
+	f := &execx.Fake{Handler: func(c execx.Cmd) (execx.Result, error) {
+		return execx.Result{Stdout: "worktree /repo\nbranch refs/heads/main\n\n" +
+			"worktree /repo/.worktrees/refactor/x\nHEAD 37a276b48e772823\ndetached\n"}, nil
+	}}
+	c := &Client{Runner: f, Dir: "/repo", Out: &out}
+	wt, err := c.FindByBranch(context.Background(), "refactor/x")
+	if err != nil {
+		t.Fatalf("FindByBranch: %v", err)
+	}
+	if wt.Path != "/repo/.worktrees/refactor/x" {
+		t.Fatalf("path = %q", wt.Path)
+	}
+	if !strings.Contains(out.String(), "detached HEAD") || !strings.Contains(out.String(), "37a276b4,") {
+		t.Fatalf("running a command there works on another commit: it must be said, abbreviated, got %q", out.String())
 	}
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io"
 
 	"github.com/Hy0sh/worktree-manager/internal/worktree"
 	"github.com/spf13/cobra"
@@ -78,7 +79,10 @@ func newPathCmd(a *app) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			path, err := worktree.Path(cmd.Context(), a.options(name, p, rest[0]))
+			o := a.options(name, p, rest[0])
+			// This one line is meant to be substituted: `cd $(wtm path feat/x)`.
+			o.Stack.Out = io.Discard
+			path, err := worktree.Path(cmd.Context(), o)
 			if err != nil {
 				return err
 			}

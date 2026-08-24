@@ -23,6 +23,19 @@ type Worktree struct {
 	// carry no reason, so the flag cannot be inferred from LockReason.
 	Locked     bool
 	LockReason string
+	// Detached says HEAD points straight at Head instead of at a branch. git
+	// then names no branch, so Branch is derived from the path: wtm always
+	// creates <root>/<branch>.
+	Detached bool
+	Head     string
+}
+
+// ShortHead abbreviates Head the way git prints it in its own listings.
+func (w Worktree) ShortHead() string {
+	if len(w.Head) > 8 {
+		return w.Head[:8]
+	}
+	return w.Head
 }
 
 // WorktreesRoot is where a repository's wtm worktrees live. What git lists
@@ -50,6 +63,8 @@ func (c *Client) Worktrees(ctx context.Context) ([]Worktree, error) {
 		br     string
 		locked bool
 		reason string
+		det    bool
+		head   string
 	)
 	flush := func() {
 		if path == "" {
@@ -58,16 +73,23 @@ func (c *Client) Worktrees(ctx context.Context) ([]Worktree, error) {
 		if first {
 			first = false // the first block is the main repository
 		} else if strings.HasPrefix(path, root) {
+			if det {
+				br = filepath.ToSlash(strings.TrimPrefix(path, root))
+			}
 			out = append(out, Worktree{Pos: len(out) + 1, Path: path, Branch: br,
-				Locked: locked, LockReason: reason})
+				Locked: locked, LockReason: reason, Detached: det, Head: head})
 		}
-		path, br, locked, reason = "", "", false, ""
+		path, br, locked, reason, det, head = "", "", false, "", false, ""
 	}
 	for _, line := range strings.Split(res.Stdout, "\n") {
 		switch {
 		case strings.HasPrefix(line, "worktree "):
 			flush()
 			path = strings.TrimPrefix(line, "worktree ")
+		case strings.HasPrefix(line, "HEAD "):
+			head = strings.TrimPrefix(line, "HEAD ")
+		case line == "detached":
+			det = true
 		case strings.HasPrefix(line, "branch "):
 			br = strings.TrimPrefix(strings.TrimPrefix(line, "branch "), "refs/heads/")
 		case line == "locked":
@@ -87,6 +109,10 @@ func (c *Client) FindByBranch(ctx context.Context, branch string) (Worktree, err
 	}
 	for _, wt := range wts {
 		if wt.Branch == branch {
+			if wt.Detached && c.Out != nil {
+				fmt.Fprintf(c.Out, "note: %s is on a detached HEAD at %s, not on branch %s\n",
+					wt.Path, wt.ShortHead(), branch)
+			}
 			return wt, nil
 		}
 	}
