@@ -6,6 +6,8 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+## [0.4.8] - 2026-08-25
+
 ### Fixed
 
 - `wtm remove` drops the images compose built for the stack, which nothing ever
