@@ -23,7 +23,7 @@ func newRootCmd() *cobra.Command {
 		Use:   "wtm",
 		Short: "Manages git worktrees and the docker stack of each one",
 		Long: "Creates git worktrees for registered projects, copies the environment\n" +
-			"files into them, restores the central Postgres dump, and starts their\n" +
+			"files into them, restores the central database dump, and starts their\n" +
 			"docker stack on its own set of ports.\n\n" +
 			"Creation goes through `wtm create`: no bare invocation ever touches a\n" +
 			"repository, so a typo cannot silently create a branch.",

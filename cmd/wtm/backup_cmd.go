@@ -9,7 +9,7 @@ import (
 )
 
 func newBackupCmd(a *app) *cobra.Command {
-	cmd := &cobra.Command{Use: "backup", Short: "Manages the pre-migrated Postgres backup of projects"}
+	cmd := &cobra.Command{Use: "backup", Short: "Manages the pre-migrated database backup of projects"}
 
 	list := &cobra.Command{
 		Use:           "list",

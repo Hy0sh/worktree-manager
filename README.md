@@ -316,10 +316,11 @@ just the schema, but everything the migrations create, permissions and
 reference data among them. It stops there. Seed data is not in it, because
 seeds change far more often than migrations and are quick to replay, whereas
 the migration history is not. A fresh worktree therefore starts with a
-migrated database and still gets seeded, through `wtm exec`. It says so on
-its own: a stack whose database is brand new prints a reminder, once, with the
-command to run. Measured on a real project, seeding took 33 seconds against
-the twenty minutes the migration history costs.
+migrated database and still gets seeded, by its `post_create` or by hand
+through `wtm exec`. Without a `post_create`, it says so on its own: a stack
+whose database is brand new prints a reminder, once, with the command to run.
+Measured on a real project, seeding took 33 seconds against the twenty minutes
+the migration history costs.
 
 Nothing is asked of the project. wtm links `.db-snapshot` to the central
 backup directory, writes a restore script next to the dump, and generates a
@@ -345,10 +346,10 @@ with a warning.
 Putting the mount in the project's compose instead would tie the behaviour
 to the branch the worktree was cut from, since that file is versioned.
 
-The dump carries the schema and the migration table, never data, so a fresh
-worktree still needs its own seed. `wtm exec` is the way in: reaching the
-container by hand means knowing the compose project name derived from the
-repository, the index and the branch, which is internal knowledge.
+A fresh worktree still needs its seed, which the dump deliberately leaves out.
+`post_create` plays it on its own, and `wtm exec` is the way in by hand: either
+beats reaching the container yourself, which means knowing the compose project
+name derived from the repository, the index and the branch.
 
 The official postgres, mysql, mariadb and mongo images all run
 `docker-entrypoint-initdb.d` only on an empty data directory, which gives the
