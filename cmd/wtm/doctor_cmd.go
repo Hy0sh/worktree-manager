@@ -169,6 +169,11 @@ func newDoctorCmd(a *app) *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			fmt.Fprintf(a.out, "version  %s\n", version())
+			if latest := a.newerRelease(cmd.Context()); latest != "" {
+				fmt.Fprintf(a.out, "         %s is published, upgrade with "+
+					"`go install github.com/Hy0sh/worktree-manager/cmd/wtm@latest`\n", latest)
+			}
 			fmt.Fprintf(a.out, "config   %s\n", a.cfgPath)
 			fmt.Fprintf(a.out, "backups  %s\n", a.backups)
 			if u, err := dockermem.Read(cmd.Context(), a.runner); err == nil && u.Total > 0 {

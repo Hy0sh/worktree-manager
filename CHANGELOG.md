@@ -6,6 +6,19 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Added
+
+- `wtm doctor` opens on the version of the running binary, and says when a newer
+  one is published. The number comes from the Go module proxy, which answers
+  what `go install ...@latest` would resolve and needs no token, where the
+  GitHub API rate-limits anonymous callers. A `wtm upgrade` command was the
+  other option and was dropped: it would have been a wrapper around one
+  `go install` line, and knowing one is behind is the part nothing provided.
+  The check follows the rule that made this idea unacceptable when it was first
+  raised: a read command never blocks on the network, so it has a two second
+  budget, degrades to silence on a timeout, an unreachable proxy or an answer it
+  cannot read, and says nothing about a build made from a working copy.
+
 ## [0.4.8] - 2026-08-25
 
 ### Fixed

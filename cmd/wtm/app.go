@@ -22,6 +22,9 @@ type app struct {
 	runner  execx.Runner
 	out     io.Writer
 	in      io.Reader
+	// latestURL is the module proxy `wtm doctor` asks for the published
+	// version. Empty in tests, which keeps every one of them offline.
+	latestURL string
 }
 
 func (a *app) load() error {
@@ -39,6 +42,7 @@ func (a *app) load() error {
 	a.runner = execx.OSRunner{}
 	a.out = os.Stdout
 	a.in = os.Stdin
+	a.latestURL = latestModuleURL
 	return nil
 }
 
