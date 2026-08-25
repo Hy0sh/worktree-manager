@@ -48,6 +48,40 @@ func removeVolumes(ctx context.Context, o Options, wt stack.Worktree) {
 	o.logf("%d volume(s) removed (%s)", len(volumes), project)
 }
 
+// stackImages lists the images compose built for this stack. Compose labels
+// what it builds with the project name; a pulled image carries no such label,
+// so the postgres the main stack also runs can never be caught here.
+func stackImages(ctx context.Context, o Options, wt stack.Worktree) []string {
+	res, err := o.Runner.Run(ctx, execx.Cmd{
+		Name: "docker",
+		Args: []string{"images", "-q", "--filter", "label=com.docker.compose.project=" + o.projectName(wt)},
+	})
+	if err != nil {
+		return nil
+	}
+	return strings.Fields(res.Stdout)
+}
+
+// removeImages drops what the stack built once the worktree is gone. `docker
+// compose down` keeps images as it keeps volumes, and a worktree stack builds
+// its own copy of every service image under its own project name: without this
+// every removed worktree leaves gigabytes behind that nothing ever reuses.
+func removeImages(ctx context.Context, o Options, wt stack.Worktree) {
+	images := stackImages(ctx, o, wt)
+	if len(images) == 0 {
+		return
+	}
+	project := o.projectName(wt)
+	if _, err := o.Runner.Run(ctx, execx.Cmd{
+		Name: "docker",
+		Args: append([]string{"rmi"}, images...),
+	}); err != nil {
+		o.logf("warning: %d image(s) of %s could not be removed: %v", len(images), project, err)
+		return
+	}
+	o.logf("%d image(s) removed (%s)", len(images), project)
+}
+
 func start(ctx context.Context, o Options, dest string) error {
 	// A repository without a compose file simply has no stack. The worktree is
 	// still perfectly usable, so this is a note and not a failure.

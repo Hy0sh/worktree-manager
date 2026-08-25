@@ -60,6 +60,35 @@ func (a *app) reportPortClashes() {
 	fmt.Fprintln(a.out, "  raise `port_offset` for one project in config.json and recreate its worktrees, whose .env carry the old ports")
 }
 
+// repoWorktrees pairs a registered project's repository name with the compose
+// project of every worktree it still has. A project whose git cannot answer is
+// left out: assuming everything it owns is orphan would be worse.
+type repoWorktrees struct {
+	Repo string
+	Live []string
+}
+
+func (a *app) liveProjects(ctx context.Context) []repoWorktrees {
+	var out []repoWorktrees
+	for _, name := range a.cfg.Names() {
+		p := a.cfg.Projects[name]
+		client := &stack.Client{Runner: a.runner, Dir: p.Dir}
+		worktrees, err := client.Worktrees(ctx)
+		if err != nil {
+			continue
+		}
+		repo := filepath.Base(p.Dir)
+		live := make([]string, 0, len(worktrees))
+		for _, wt := range worktrees {
+			if idx := p.WorktreeIndices[wt.Branch]; idx > 0 {
+				live = append(live, stack.ProjectName(repo, idx, wt.Branch))
+			}
+		}
+		out = append(out, repoWorktrees{Repo: repo, Live: live})
+	}
+	return out
+}
+
 // reportOrphanVolumes lists the volumes of worktrees that no longer exist.
 // They squat the indices their stacks were created at, which pushes every new
 // worktree further out, and nothing else ever mentions them.
@@ -70,21 +99,8 @@ func (a *app) reportOrphanVolumes(ctx context.Context) {
 	}
 	all := strings.Fields(res.Stdout)
 	var orphans []string
-	for _, name := range a.cfg.Names() {
-		p := a.cfg.Projects[name]
-		client := &stack.Client{Runner: a.runner, Dir: p.Dir}
-		worktrees, err := client.Worktrees(ctx)
-		if err != nil {
-			continue // git could not answer: assuming everything is orphan would be worse
-		}
-		repo := filepath.Base(p.Dir)
-		live := make([]string, 0, len(worktrees))
-		for _, wt := range worktrees {
-			if idx := p.WorktreeIndices[wt.Branch]; idx > 0 {
-				live = append(live, stack.ProjectName(repo, idx, wt.Branch))
-			}
-		}
-		orphans = append(orphans, orphanVolumes(all, repo, live)...)
+	for _, rw := range a.liveProjects(ctx) {
+		orphans = append(orphans, orphanVolumes(all, rw.Repo, rw.Live)...)
 	}
 	if len(orphans) == 0 {
 		return
@@ -95,6 +111,54 @@ func (a *app) reportOrphanVolumes(ctx context.Context) {
 		fmt.Fprintf(a.out, "  %s\n", name)
 	}
 	fmt.Fprintf(a.out, "  drop them with `docker volume rm %s`\n", strings.Join(orphans, " "))
+}
+
+// reportOrphanImages lists what worktrees that no longer exist had compose
+// build for them. A stack builds one image per service, so this list is several
+// times longer than the volume one for the same removed worktrees.
+func (a *app) reportOrphanImages(ctx context.Context) {
+	res, err := a.runner.Run(ctx, execx.Cmd{
+		Name: "docker",
+		Args: []string{"images", "--format", "{{.Repository}}"},
+	})
+	if err != nil {
+		return
+	}
+	all := strings.Fields(res.Stdout)
+	var orphans []string
+	for _, rw := range a.liveProjects(ctx) {
+		orphans = append(orphans, orphanImages(all, rw.Repo, rw.Live)...)
+	}
+	if len(orphans) == 0 {
+		return
+	}
+	fmt.Fprintln(a.out)
+	fmt.Fprintf(a.out, "%d image(s) built for removed worktrees, several GB each:\n", len(orphans))
+	for _, name := range orphans {
+		fmt.Fprintf(a.out, "  %s\n", name)
+	}
+	fmt.Fprintf(a.out, "  drop them with `docker rmi %s`\n", strings.Join(orphans, " "))
+}
+
+// buildCache is what buildkit keeps between builds. It is reported and never
+// removed: the cache is shared by every project on the machine and buildkit
+// attributes none of it, so only the developer can decide it is expendable.
+// `docker system df` also has the number but walks the whole image store for
+// it, which took a minute on a machine busy building; `buildx du` prints its
+// Private/Reclaimable/Total summary in under a second.
+func (a *app) buildCache(ctx context.Context) string {
+	res, err := a.runner.Run(ctx, execx.Cmd{Name: "docker", Args: []string{"buildx", "du"}})
+	if err != nil {
+		return ""
+	}
+	for _, line := range strings.Split(res.Stdout, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) != 2 || fields[0] != "Total:" {
+			continue
+		}
+		return fmt.Sprintf("%s of build cache (`docker builder prune`)", fields[1])
+	}
+	return ""
 }
 
 func newDoctorCmd(a *app) *cobra.Command {
@@ -113,6 +177,9 @@ func newDoctorCmd(a *app) *cobra.Command {
 				if msg := u.Warning(); msg != "" {
 					fmt.Fprintln(a.out, msg)
 				}
+			}
+			if line := a.buildCache(cmd.Context()); line != "" {
+				fmt.Fprintf(a.out, "cache    %s\n", line)
 			}
 			if len(a.cfg.Projects) == 0 {
 				return nil
@@ -134,6 +201,7 @@ func newDoctorCmd(a *app) *cobra.Command {
 			}
 			a.reportPortClashes()
 			a.reportOrphanVolumes(cmd.Context())
+			a.reportOrphanImages(cmd.Context())
 			return nil
 		},
 	}

@@ -171,6 +171,7 @@ func Remove(ctx context.Context, o Options) error {
 	o.logf("worktree removed: %s (branch %s kept)", wt.Path, o.Branch)
 	if stackKnown {
 		removeVolumes(ctx, o, wt)
+		removeImages(ctx, o, wt)
 	}
 	if err := o.Resolver.Release(o.Branch); err != nil {
 		o.logf("warning: the index of %s could not be released: %v", o.Branch, err)

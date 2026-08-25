@@ -6,6 +6,21 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Fixed
+
+- `wtm remove` drops the images compose built for the stack, which nothing ever
+  did: `docker compose down` keeps them exactly as it keeps volumes, and every
+  worktree builds its own copy of every service image under its own project
+  name. One machine had 138 of them for 35 worktrees long removed, and dropping
+  them freed 12 GB, the rest of their weight being layers the live images share.
+  Only what compose labelled with the stack's project goes: a pulled image
+  carries no such label, so the `postgres` the main stack also runs cannot be
+  caught.
+- `wtm doctor` reports those images for the worktrees that no longer exist, next
+  to the volumes it already reported, and the size of the build cache. The cache
+  is only ever reported: buildkit attributes none of it to a project, so nothing
+  but the developer can decide it is expendable.
+
 ## [0.4.7] - 2026-08-24
 
 ### Fixed

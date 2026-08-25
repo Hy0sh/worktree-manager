@@ -61,6 +61,21 @@ func portClashes(holders []portHolder) []string {
 // with higher ports. live holds the compose project name of every worktree that
 // still exists, and compose names a volume "<project>_<volume>".
 func orphanVolumes(all []string, repoName string, live []string) []string {
+	return unclaimed(all, repoName, "_", live)
+}
+
+// orphanImages returns the images compose built for worktree stacks of repoName
+// that no live worktree accounts for. Compose names a built image
+// "<project>-<service>", so the repository name is enough to attribute it; an
+// untagged leftover of a rebuild has none and stays for `docker image prune`.
+func orphanImages(all []string, repoName string, live []string) []string {
+	return unclaimed(all, repoName, "-", live)
+}
+
+// unclaimed keeps the names built on a worktree project of repoName that none of
+// the live projects owns. sep is what compose puts between the project and the
+// resource: "_" for a volume, "-" for an image repository.
+func unclaimed(all []string, repoName, sep string, live []string) []string {
 	prefix := repoName + "-wt-"
 	var out []string
 	for _, name := range all {
@@ -69,7 +84,7 @@ func orphanVolumes(all []string, repoName string, live []string) []string {
 		}
 		claimed := false
 		for _, project := range live {
-			if strings.HasPrefix(name, project+"_") {
+			if strings.HasPrefix(name, project+sep) {
 				claimed = true
 				break
 			}

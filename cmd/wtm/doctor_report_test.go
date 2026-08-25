@@ -67,3 +67,27 @@ func TestOrphanVolumesReportsAllWhenNothingIsLive(t *testing.T) {
 		t.Fatalf("orphans = %v", orphans)
 	}
 }
+
+func TestOrphanImagesKeepsWhatALiveWorktreeOwns(t *testing.T) {
+	all := []string{
+		"gallia-utopia-wt-1-worktree-parsed-frontend",
+		"gallia-utopia-wt-2-fix-migration-frontend",
+		"gallia-utopia-wt-2-fix-migration-celery_worker",
+		"other-project-wt-1-feat-x-api", // another repository's, not ours to report
+		"gallia-utopia-frontend",        // the main stack, not a worktree
+		"postgres",
+	}
+	orphans := orphanImages(all, "gallia-utopia", []string{"gallia-utopia-wt-1-worktree-parsed"})
+	want := []string{
+		"gallia-utopia-wt-2-fix-migration-celery_worker",
+		"gallia-utopia-wt-2-fix-migration-frontend",
+	}
+	if len(orphans) != len(want) {
+		t.Fatalf("orphans = %v, want %v", orphans, want)
+	}
+	for i := range want {
+		if orphans[i] != want[i] {
+			t.Fatalf("orphans = %v, want %v", orphans, want)
+		}
+	}
+}
