@@ -6,6 +6,8 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-08-25
+
 ### Added
 
 - `post_create` (`--post-create`) is the command a project plays in its
