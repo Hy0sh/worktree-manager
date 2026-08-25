@@ -122,7 +122,7 @@ wtm create feat/my-branch --no-start        # without starting the stack
 wtm list                                    # worktrees wtm created for this project
 wtm start feat/my-branch                    # bring a stopped stack back up
 wtm stop feat/my-branch
-wtm remove feat/my-branch                   # local branch kept
+wtm remove feat/my-branch                   # stack, volumes and built images go, branch kept
 wtm remove feat/my-branch --force           # despite modified tracked files, or a lock
 
 # inside the worktree's containers
@@ -286,9 +286,16 @@ worktree.
 wtm doctor
 ```
 
-Shows the config and backups paths, the memory actually used by the Docker
-VM, the port stride of each registered project, and any compose file whose
-ports are hardcoded and therefore cannot be isolated.
+Reports, in order: the version running and whether a newer one is published,
+the config and backups paths, the memory actually used by the Docker VM, the
+size of the build cache, then per project its port stride, offset and database
+engine. Below that come the problems nothing else mentions: the ports two
+projects would both publish, and what removed worktrees left behind, their
+volumes (which squat the indices their ports came from) and the images their
+stacks built. Each of those lines carries the command that drops them.
+
+The build cache is only ever reported. Buildkit attributes none of it to a
+project, so only you can decide it is expendable.
 
 Before starting a stack, the tool compares the Docker VM's measured usage
 against its capacity and warns (without blocking) if one more stack risks
