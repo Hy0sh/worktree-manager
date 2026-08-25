@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
-	"time"
 
 	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/dbengine"
@@ -55,22 +54,7 @@ func (m *Manager) waitFor(ctx context.Context, label string, defaultAttempts int
 	if interval <= 0 && m.MaxWaitAttempts == 0 {
 		interval = defaultWaitInterval
 	}
-	var last error
-	for i := 0; i < attempts; i++ {
-		if _, err := m.Runner.Run(ctx, probe); err == nil {
-			return nil
-		} else {
-			last = err
-		}
-		if i < attempts-1 && interval > 0 {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(interval):
-			}
-		}
-	}
-	return fmt.Errorf("timed out waiting for %s (%d attempts): %w", label, attempts, last)
+	return execx.WaitFor(ctx, m.Runner, label, attempts, interval, probe)
 }
 
 // assertPopulated refuses to dump a throwaway database no migration reached.

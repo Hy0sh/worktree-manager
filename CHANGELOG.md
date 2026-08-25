@@ -8,6 +8,18 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ### Added
 
+- `post_create` (`--post-create`) is the command a project plays in its
+  application service once a new worktree's stack answers. The dump carries what
+  the migrations create and never seed data, so a fresh worktree came up migrated
+  and empty and every developer seeded it by hand, usually by reaching for the
+  project's own reset script: on gallia that script drops the schema and migrates
+  again, which throws away the restored dump and pays for the migrations wtm
+  exists to skip. The database is waited for with the probe `backup refresh`
+  already used, extracted as `execx.WaitFor`. A failure is a warning naming the
+  `wtm exec` line that replays it: the worktree exists and works, and losing it
+  over a seed would be the worse outcome. The note telling you to seed by hand no
+  longer prints when a `post_create` is about to do it.
+
 - `wtm doctor` opens on the version of the running binary, and says when a newer
   one is published. The number comes from the Go module proxy, which answers
   what `go install ...@latest` would resolve and needs no token, where the
@@ -18,6 +30,20 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   raised: a read command never blocks on the network, so it has a two second
   budget, degrades to silence on a timeout, an unreachable proxy or an answer it
   cannot read, and says nothing about a build made from a working copy.
+
+### Fixed
+
+- `wtm run` sets `COMPOSE_PROJECT_NAME` and `COMPOSE_FILE`, so a script of the
+  project calling `docker compose` reaches the worktree's stack. It used to
+  reach a project named after the directory it ran from, which exists nowhere:
+  `docker compose exec` found no container, and `docker compose up` created a
+  third stack on the project's default ports, colliding with the main one. The
+  file list matters as much as the name, since `.wtm-ports.yaml` and
+  `.wtm-snapshot.yaml` are not named `override` and compose loads neither on its
+  own. The index is read from the registry, not resolved: `wtm run` stays on the
+  host and keeps working with docker stopped.
+- The README called the same placeholder `my-project` under `project create` and
+  `my-app` everywhere else, which read as two different things.
 
 ## [0.4.8] - 2026-08-25
 

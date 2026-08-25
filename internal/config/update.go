@@ -10,6 +10,7 @@ type ProjectUpdate struct {
 	BaseBranch   *string
 	Dump         *bool
 	GitContainer *bool
+	PostCreate   *string
 
 	DBService      *string
 	DBUser         *string
@@ -27,7 +28,7 @@ type ProjectUpdate struct {
 // "change this one field" from "walk me through the settings".
 func (u ProjectUpdate) IsEmpty() bool {
 	return u.Dir == nil && u.BaseBranch == nil && u.Dump == nil &&
-		u.GitContainer == nil && !u.touchesBackup()
+		u.GitContainer == nil && u.PostCreate == nil && !u.touchesBackup()
 }
 
 type FieldChange struct {
@@ -59,6 +60,7 @@ func (u ProjectUpdate) Apply(p Project) (Project, []FieldChange) {
 	str("base_branch", &p.BaseBranch, u.BaseBranch)
 	boolean("dump", &p.Dump, u.Dump)
 	boolean("git_container", &p.GitContainer, u.GitContainer)
+	str("post_create", &p.PostCreate, u.PostCreate)
 
 	if !u.touchesBackup() {
 		return p, changes

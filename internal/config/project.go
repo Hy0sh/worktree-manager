@@ -22,7 +22,12 @@ type Project struct {
 	// Deriving it from git's listing order, which resorts alphabetically, would
 	// renumber running stacks: the index feeds ports and the compose project name.
 	WorktreeIndices map[string]int `json:"worktree_indices,omitempty"`
-	Backup          *Backup        `json:"backup,omitempty"`
+	// PostCreate runs in the application container once a new worktree's stack
+	// answers. The dump carries what the migrations create and never seed data,
+	// so this is where a project puts what makes a fresh worktree usable, e.g.
+	// "python manage.py seed_data && python manage.py create_dev_users".
+	PostCreate string  `json:"post_create,omitempty"`
+	Backup     *Backup `json:"backup,omitempty"`
 }
 
 // Defaults for the most common docker compose layout.

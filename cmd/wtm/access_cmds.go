@@ -45,8 +45,12 @@ func newRunCmd(a *app) *cobra.Command {
 		Long: "Runs a command on your machine with the worktree as working directory,\n" +
 			"for editors, agents and anything else working on the files rather than\n" +
 			"inside the running stack (that is what `wtm exec` is for).\n\n" +
+			"COMPOSE_PROJECT_NAME and COMPOSE_FILE are set, so a script of the project\n" +
+			"calling `docker compose` reaches this worktree's stack and not a stack\n" +
+			"named after the directory.\n\n" +
 			"  wtm run feat/my-branch -- claude\n" +
-			"  wtm run feat/my-branch -- git status",
+			"  wtm run feat/my-branch -- git status\n" +
+			"  wtm run feat/my-branch -- scripts/some-compose-script.sh",
 		Args:              cobra.MinimumNArgs(2),
 		ValidArgsFunction: a.completeTargets,
 		SilenceUsage:      true,

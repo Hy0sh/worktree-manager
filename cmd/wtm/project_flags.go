@@ -26,6 +26,7 @@ type projectFlags struct {
 	appService   string
 	deps         string
 	migrate      string
+	postCreate   string
 	env          []string
 	noInput      bool
 }
@@ -42,6 +43,7 @@ func (f *projectFlags) bind(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.appService, "app-service", "", "compose service that runs the migrations (e.g. backend, api, php-nginx)")
 	cmd.Flags().StringVar(&f.deps, "deps", "", "dependency install command before migration (e.g. 'poetry install --no-root --with dev')")
 	cmd.Flags().StringVar(&f.migrate, "migrate", "", "migration command (e.g. 'python manage.py migrate', 'npx prisma migrate deploy')")
+	cmd.Flags().StringVar(&f.postCreate, "post-create", "", "command run in the application container after a new worktree starts (e.g. 'python manage.py seed_data')")
 	cmd.Flags().StringArrayVar(&f.env, "env", nil, "variable passed to the migration container, repeatable, replaces the whole set (e.g. --env DB_NAME="+config.DatabasePlaceholder+")")
 	cmd.Flags().BoolVar(&f.noInput, "no-input", false, "fail instead of asking, for scripts and CI")
 }
@@ -81,6 +83,7 @@ func (f *projectFlags) update(cmd *cobra.Command) (config.ProjectUpdate, error) 
 		{"app-service", &f.appService, &u.AppService},
 		{"deps", &f.deps, &u.DepsCommand},
 		{"migrate", &f.migrate, &u.MigrateCommand},
+		{"post-create", &f.postCreate, &u.PostCreate},
 	} {
 		if changed(pair.name) {
 			*pair.into = pair.value

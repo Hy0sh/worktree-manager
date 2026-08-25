@@ -76,7 +76,11 @@ func Create(ctx context.Context, o Options) error {
 		o.logf("stack not started (--no-start), run `wtm create %s` without the flag to start it", o.Branch)
 		return nil
 	}
-	return start(ctx, o, dest)
+	if err := start(ctx, o, dest); err != nil {
+		return err
+	}
+	postCreate(ctx, o)
+	return nil
 }
 
 // Start brings an existing worktree's stack back up. Without it, restarting a

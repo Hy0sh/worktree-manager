@@ -104,13 +104,13 @@ wtm backup refresh <TAB>     # registered project names
 
 ```sh
 # register a project (once)
-wtm project create my-project                             # asks, step by step
-wtm project create my-project --dir ~/dev/projects/my-project --base develop
+wtm project create my-app                                 # asks, step by step
+wtm project create my-app --dir ~/dev/projects/my-app --base develop
 wtm project list
 
 # change a registered project, its backup settings included
-wtm project edit my-project                               # asks, step by step
-wtm project edit my-project --dump --app-service backend
+wtm project edit my-app                                   # asks, step by step
+wtm project edit my-app --dump --app-service backend
 
 # create a worktree + start its stack
 wtm create my-app feat/my-branch            # base = the project's own
@@ -130,9 +130,11 @@ wtm exec feat/my-branch -- python manage.py seed_data
 wtm exec feat/my-branch -- bash
 wtm exec feat/my-branch --service db -- psql -U postgres
 
-# on your machine, from the worktree directory
+# on your machine, from the worktree directory, with COMPOSE_PROJECT_NAME
+# and COMPOSE_FILE pointing at this worktree's stack
 wtm run feat/my-branch -- claude
 wtm run feat/my-branch -- git status
+wtm run feat/my-branch -- scripts/some-compose-script.sh
 cd $(wtm path feat/my-branch)
 
 # database backup
@@ -193,6 +195,21 @@ wtm project create platform --dir ~/dev/projects/platform \
 
 `{{database}}` gets replaced by the temporary database's name. `--db-service`
 defaults to `db` and `--db-user` defaults to `postgres`.
+
+## Seeding a fresh worktree
+
+The dump carries what the migrations create and never seed data, so a new
+worktree comes up migrated and empty. `--post-create` is the command that makes
+it usable, played in the application service once the database answers:
+
+```sh
+wtm project edit my-app --post-create 'python manage.py seed_data && python manage.py create_dev_users'
+```
+
+Do not point it at a script that resets the database: dropping the schema to
+migrate it again throws away the restored dump and pays for the migrations wtm
+exists to skip. Seed only. A failing command is a warning and not a failed
+creation, and the warning names the `wtm exec` line that replays it.
 
 Postgres, MySQL, MariaDB, MongoDB and SQLite are supported. The engine is
 read from the database service's image in the compose file and offered as the

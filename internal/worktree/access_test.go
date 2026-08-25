@@ -2,7 +2,9 @@ package worktree
 
 import (
 	"context"
+	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -83,5 +85,49 @@ func TestRunExecutesOnTheHostFromTheWorktree(t *testing.T) {
 		if strings.Contains(l, "docker") {
 			t.Fatalf("Run must not go through docker, got %q", l)
 		}
+	}
+}
+
+// A project's own script calling `docker compose` used to reach a stack named
+// after the directory it ran from, which does not exist. The file list is part
+// of the answer: `.wtm-ports.yaml` and `.wtm-snapshot.yaml` are not named
+// `override`, so compose ignores them unless it is told.
+func TestRunPointsComposeAtTheWorktreeStack(t *testing.T) {
+	f := newFixture(t)
+	o := f.opts("feat/x")
+	o.Project.WorktreeIndices = map[string]int{"feat/x": 1}
+	if err := Run(context.Background(), o, []string{"scripts/reset.sh"}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	env := f.fake.Calls[len(f.fake.Calls)-1].Env
+	want := "COMPOSE_PROJECT_NAME=" + stack.ProjectName(filepath.Base(f.root), 1, "feat/x")
+	if !slices.Contains(env, want) {
+		t.Fatalf("env = %v, want %q", env, want)
+	}
+	var files string
+	for _, e := range env {
+		if after, ok := strings.CutPrefix(e, "COMPOSE_FILE="); ok {
+			files = after
+		}
+	}
+	if !strings.HasSuffix(files, filepath.Join(".worktrees", "feat", "x", "compose.yaml")) {
+		t.Fatalf("COMPOSE_FILE = %q, want the worktree's own compose file", files)
+	}
+}
+
+// A repository without a compose file has no stack to point at, and `wtm run`
+// is still the way to open an editor or an agent on the worktree.
+func TestRunSetsNothingWithoutAStack(t *testing.T) {
+	f := newFixture(t)
+	if err := os.Remove(filepath.Join(f.root, "compose.yaml")); err != nil {
+		t.Fatal(err)
+	}
+	o := f.opts("feat/x")
+	o.Project.WorktreeIndices = map[string]int{"feat/x": 1}
+	if err := Run(context.Background(), o, []string{"claude"}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if env := f.fake.Calls[len(f.fake.Calls)-1].Env; len(env) != 0 {
+		t.Fatalf("env = %v, want none", env)
 	}
 }

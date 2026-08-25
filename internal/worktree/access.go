@@ -3,9 +3,12 @@ package worktree
 import (
 	"context"
 	"fmt"
+	"os"
+	"strings"
 
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 	"github.com/Hy0sh/worktree-manager/internal/index"
+	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
 
 // Exec runs a command inside the worktree's application container. Doing it by
@@ -58,7 +61,35 @@ func Run(ctx context.Context, o Options, command []string) error {
 		Name:        command[0],
 		Args:        command[1:],
 		Dir:         wt.Path,
+		Env:         composeEnv(o, wt),
 		Interactive: true,
 	})
 	return err
+}
+
+// composeEnv is what makes a project's own `docker compose` line address the
+// worktree's stack instead of a stack named after the directory it runs from.
+// The file list matters as much as the project: the overrides wtm generates are
+// not named `override`, so compose would load neither the port remapping nor
+// the snapshot mount. A `-f` the command passes itself still wins, which is
+// compose's own precedence. Nothing is set for a project without a stack.
+func composeEnv(o Options, wt stack.Worktree) []string {
+	if !hasCompose(o.Project.Dir) {
+		return nil
+	}
+	// The index comes from the registry and not from the resolver: `wtm run`
+	// runs on the host, must work with docker stopped, and a recorded index is
+	// exactly what says a stack was once started here.
+	wt.Index = o.Project.WorktreeIndices[o.Branch]
+	if wt.Index <= 0 {
+		return nil
+	}
+	files, err := composeFiles(o, wt.Path)
+	if err != nil {
+		return nil
+	}
+	return []string{
+		"COMPOSE_PROJECT_NAME=" + o.projectName(wt),
+		"COMPOSE_FILE=" + strings.Join(files, string(os.PathListSeparator)),
+	}
 }

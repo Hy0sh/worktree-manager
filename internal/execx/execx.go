@@ -10,6 +10,7 @@ import (
 	"os"
 	"os/exec"
 	"strings"
+	"time"
 )
 
 type Cmd struct {
@@ -131,4 +132,26 @@ func or(w, fallback io.Writer) io.Writer {
 		return w
 	}
 	return fallback
+}
+
+// WaitFor runs probe until it succeeds, which is how a container is told to be
+// ready: docker reports one started long before what runs inside it answers.
+// The last failure is wrapped, since it is the only thing that says why.
+func WaitFor(ctx context.Context, r Runner, label string, attempts int, interval time.Duration, probe Cmd) error {
+	var last error
+	for i := 0; i < attempts; i++ {
+		if _, err := r.Run(ctx, probe); err == nil {
+			return nil
+		} else {
+			last = err
+		}
+		if i < attempts-1 && interval > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(interval):
+			}
+		}
+	}
+	return fmt.Errorf("timed out waiting for %s (%d attempts): %w", label, attempts, last)
 }

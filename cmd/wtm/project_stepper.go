@@ -41,6 +41,14 @@ func runProjectStepper(p *prompter, current config.Project) (config.ProjectUpdat
 		}
 	}
 
+	// Asked outside the backup block: the dump carries the schema and never the
+	// seed data, so a project seeds a fresh worktree whether it has one or not.
+	postCreate, err := p.ask("command to run in the application container after a new worktree starts", current.PostCreate)
+	if err != nil {
+		return u, err
+	}
+	u.PostCreate = &postCreate
+
 	gitContainer, err := p.askYesNo("create the .git-container symlinks? (only for projects bind-mounting the git-dir)", current.GitContainer)
 	if err != nil {
 		return u, err

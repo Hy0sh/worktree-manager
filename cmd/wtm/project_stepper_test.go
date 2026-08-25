@@ -47,6 +47,7 @@ func TestStepperFillsAProjectFromScratch(t *testing.T) {
 		"",                         // no deps command
 		"DB_NAME={{database}}",     // environment
 		"",                         // end of the environment
+		"manage.py seed_data",      // post_create
 		"y",                        // git-container
 	}, "\n") + "\n")
 
@@ -58,6 +59,9 @@ func TestStepperFillsAProjectFromScratch(t *testing.T) {
 
 	if p.Dir != dir || p.BaseBranch != "main" || !p.Dump || !p.GitContainer {
 		t.Fatalf("project = %+v", p)
+	}
+	if p.PostCreate != "manage.py seed_data" {
+		t.Fatalf("post_create = %q", p.PostCreate)
 	}
 	b := p.BackupConfig()
 	if b.DBService != config.DefaultDBService || b.DBUser != config.DefaultDBUser {
@@ -99,7 +103,7 @@ func TestStepperOnlyChangesWhatIsAnswered(t *testing.T) {
 		},
 	}
 	in := strings.NewReader(strings.Join([]string{
-		"", "", "", "", "", "appuser", "", "", "", "", "",
+		"", "", "", "", "", "appuser", "", "", "", "", "", "",
 	}, "\n") + "\n")
 
 	u, err := runProjectStepper(newPrompter(in, new(bytes.Buffer)), current)
@@ -132,6 +136,7 @@ func TestStepperDetectsTheEngineFromTheComposeImage(t *testing.T) {
 		"migrate", // migration command
 		"",        // deps
 		"",        // environment end
+		"",        // post_create
 		"n",       // git-container
 	}, "\n") + "\n")
 
@@ -155,7 +160,7 @@ func TestStepperAsksAgainForAnUnknownEngine(t *testing.T) {
 		"oracle",  // unknown engine
 		"mariadb", // corrected
 		"",        // database user
-		"backend", "migrate", "", "", "n",
+		"backend", "migrate", "", "", "", "n",
 	}, "\n") + "\n")
 
 	u, err := runProjectStepper(newPrompter(in, &out), config.Project{})
@@ -181,7 +186,7 @@ func TestStepperAsksForTheFileInsteadOfTheUserOnSQLite(t *testing.T) {
 		"sqlite",     // engine
 		"../evil.db", // escaping file path, re-asked
 		"var/app.db", // corrected
-		"backend", "migrate", "", "", "n",
+		"backend", "migrate", "", "", "", "n",
 	}, "\n") + "\n")
 
 	u, err := runProjectStepper(newPrompter(in, &out), config.Project{})
@@ -206,7 +211,7 @@ func TestStepperAsksForTheFileInsteadOfTheUserOnSQLite(t *testing.T) {
 func TestStepperAsksAgainForADirectoryThatDoesNotExist(t *testing.T) {
 	dir := repoWithCompose(t)
 	var out bytes.Buffer
-	in := strings.NewReader(filepath.Join(dir, "nope") + "\n" + dir + "\nmain\nn\nn\n")
+	in := strings.NewReader(filepath.Join(dir, "nope") + "\n" + dir + "\nmain\nn\n\nn\n")
 
 	u, err := runProjectStepper(newPrompter(in, &out), config.Project{})
 	if err != nil {
@@ -234,6 +239,7 @@ func TestStepperAnswersGetTheSameValidationAsFlags(t *testing.T) {
 		"migrate",    // migration command
 		"",           // no deps command
 		"",           // end of the environment
+		"",           // post_create
 		"n",          // git-container
 	}, "\n") + "\n"), out: new(bytes.Buffer)}
 	f := &projectFlags{}
@@ -250,7 +256,7 @@ func TestStepperRefusesADirectoryThatIsNotAGitRepository(t *testing.T) {
 	plain := t.TempDir()
 	repo := repoWithCompose(t)
 	var out bytes.Buffer
-	in := strings.NewReader(plain + "\n" + repo + "\nmain\nn\nn\n")
+	in := strings.NewReader(plain + "\n" + repo + "\nmain\nn\n\nn\n")
 
 	u, err := runProjectStepper(newPrompter(in, &out), config.Project{})
 	if err != nil {
