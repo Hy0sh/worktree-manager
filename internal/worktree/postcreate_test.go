@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
@@ -57,12 +58,71 @@ func TestCreateSurvivesAFailingPostCreate(t *testing.T) {
 	var out bytes.Buffer
 	o := f.opts("feat/x")
 	o.Out = &out
-	o.Project.PostCreate = "manage.py seed_data"
+	o.Project.PostCreate = "manage.py seed_data && manage.py create_users"
 	o.Project.Backup = &config.Backup{AppService: "backend"}
 	if err := Create(context.Background(), o); err != nil {
 		t.Fatalf("Create must not fail over a seed: %v", err)
 	}
-	if !strings.Contains(out.String(), "wtm exec feat/x -- manage.py seed_data") {
-		t.Fatalf("the warning should name the replay:\n%s", out.String())
+	want := `wtm exec feat/x -- sh -c 'manage.py seed_data && manage.py create_users'`
+	if !strings.Contains(out.String(), want) {
+		t.Fatalf("the replay must be pastable, want %s in:\n%s", want, out.String())
+	}
+}
+
+// Stacks install their dependencies from the service `command:` at boot, so a
+// started container cannot run a management command yet.
+func TestCreateWaitsForTheAppToBeHealthy(t *testing.T) {
+	f := newFixture(t)
+	appReadyInterval = 0
+	t.Cleanup(func() { appReadyInterval = time.Second })
+	health := []string{"starting", "starting", "healthy"}
+	inner := f.fake.Handler
+	f.fake.Handler = func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(c.String(), ".Health") {
+			out := health[0]
+			if len(health) > 1 {
+				health = health[1:]
+			}
+			return execx.Result{Stdout: out + "\n"}, nil
+		}
+		if strings.Contains(c.String(), "exec -T backend sh -c") && len(health) > 1 {
+			t.Errorf("post_create ran while the app was %q", health[0])
+		}
+		return inner(c)
+	}
+	var out bytes.Buffer
+	o := f.opts("feat/x")
+	o.Out = &out
+	o.Project.PostCreate = "manage.py seed_data"
+	o.Project.Backup = &config.Backup{AppService: "backend"}
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if last := f.fake.Lines()[len(f.fake.Lines())-1]; !strings.Contains(last, "exec -T backend sh -c") {
+		t.Fatalf("post_create should have run once healthy, last call = %q", last)
+	}
+	// Minutes of silence read as a hung wtm.
+	if !strings.Contains(out.String(), "waiting for backend to report itself healthy") {
+		t.Fatalf("the wait should say what it waits on:\n%s", out.String())
+	}
+}
+
+// Without a healthcheck there is nothing to wait on, and skipping the seed
+// would be worse than running it early: say so and run it.
+func TestCreateWarnsWhenTheAppHasNoHealthcheck(t *testing.T) {
+	f := newFixture(t)
+	var out bytes.Buffer
+	o := f.opts("feat/x")
+	o.Out = &out
+	o.Project.PostCreate = "manage.py seed_data"
+	o.Project.Backup = &config.Backup{AppService: "backend"}
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if !strings.Contains(out.String(), "backend declares no healthcheck") {
+		t.Fatalf("the warning should name the missing healthcheck:\n%s", out.String())
+	}
+	if last := f.fake.Lines()[len(f.fake.Lines())-1]; !strings.Contains(last, "exec -T backend sh -c") {
+		t.Fatalf("post_create should still have run, last call = %q", last)
 	}
 }

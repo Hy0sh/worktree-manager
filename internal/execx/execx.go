@@ -29,11 +29,29 @@ type Cmd struct {
 	Interactive bool
 }
 
+// String renders the command the way a shell would take it back, because wtm
+// prints commands for the user to replay: joining the arguments raw turns
+// `sh -c "a && b"` into two commands and a path with a space into two
+// arguments.
 func (c Cmd) String() string {
-	if len(c.Args) == 0 {
-		return c.Name
+	parts := make([]string, 0, len(c.Args)+1)
+	parts = append(parts, ShellQuote(c.Name))
+	for _, a := range c.Args {
+		parts = append(parts, ShellQuote(a))
 	}
-	return c.Name + " " + strings.Join(c.Args, " ")
+	return strings.Join(parts, " ")
+}
+
+// ShellQuote wraps s in single quotes unless every character is one a shell
+// takes literally, which covers paths, flags and key=value.
+func ShellQuote(s string) string {
+	const safe = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-/:=@+,"
+	if s != "" && strings.IndexFunc(s, func(r rune) bool { return !strings.ContainsRune(safe, r) }) < 0 {
+		return s
+	}
+	// The only escape a POSIX shell has for a single quote inside single
+	// quotes: close, emit an escaped one, reopen.
+	return "'" + strings.ReplaceAll(s, "'", `'\''`) + "'"
 }
 
 type Result struct {

@@ -6,6 +6,22 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Fixed
+
+- `post_create` waits for the application service to report itself healthy, and
+  no longer for the database alone. A stack that installs its dependencies from
+  its `command:` (`poetry install`, `npm ci`) has a container docker calls
+  started well before it can run a management command, so the seed died on
+  `ModuleNotFoundError: No module named 'django'` while the install was still
+  running. A service that declares no `healthcheck:` leaves nothing to wait for:
+  the command runs as it did before, and a warning names what is missing.
+- Commands printed in a failure message are quoted the way a shell takes them
+  back. A `post_create` chaining two commands with `&&` was reported as
+  `sh -c python manage.py seed && python manage.py users`, which reads as a
+  quoting bug that is not there, and its `wtm exec` replay line pasted bare left
+  the tail of the chain to the user's own shell instead of the container. The
+  replay now names `sh -c` explicitly, since that is how the command is played.
+
 ## [0.6.0] - 2026-08-27
 
 ### Added

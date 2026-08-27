@@ -74,3 +74,30 @@ func TestFakeRecordsCallsAndWritesStdout(t *testing.T) {
 		t.Fatalf("sink = %q", sink.String())
 	}
 }
+
+// The replay messages wtm prints are meant to be pasted back into a shell.
+func TestCmdStringQuotesWhatAShellWouldSplit(t *testing.T) {
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"-c", "seed && users"}, `sh -c 'seed && users'`},
+		{[]string{"/a path/x"}, `sh '/a path/x'`},
+		{[]string{"-c", "echo it's here"}, `sh -c 'echo it'\''s here'`},
+		{[]string{"compose", "-p", "app-wt-1", "exec", "-T", "backend"}, "sh compose -p app-wt-1 exec -T backend"},
+	} {
+		if got := (Cmd{Name: "sh", Args: tc.args}).String(); got != tc.want {
+			t.Errorf("String() =\n  %s\nwant\n  %s", got, tc.want)
+		}
+	}
+}
+
+func TestFailureNamesACommandAShellTakesBack(t *testing.T) {
+	_, err := OSRunner{}.Run(context.Background(), Cmd{Name: "sh", Args: []string{"-c", "exit 1 && nope"}})
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if !strings.Contains(err.Error(), `sh -c 'exit 1 && nope'`) {
+		t.Fatalf("error should quote the command, got %q", err.Error())
+	}
+}

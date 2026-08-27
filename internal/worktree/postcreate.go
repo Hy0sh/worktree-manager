@@ -2,6 +2,8 @@ package worktree
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 
 	"github.com/Hy0sh/worktree-manager/internal/dbengine"
@@ -16,6 +18,13 @@ const (
 	dbReadyAttempts = 60
 	dbReadyInterval = time.Second
 )
+
+// Installing dependencies at boot takes longer than a database answering, and
+// a healthcheck adds its own start_period on top.
+const appReadyAttempts = 180
+
+// A variable, so the tests do not sleep through the wait.
+var appReadyInterval = time.Second
 
 // postCreate plays the project's post_create command in the application
 // container of a brand new worktree. Every failure here is a warning and not an
@@ -44,7 +53,12 @@ func postCreate(ctx context.Context, o Options) {
 	}
 	if err := waitForDatabase(ctx, o, wt, cfg.DBService, cfg.DBUser, cfg.DBEngine); err != nil {
 		o.logf("warning: post_create was not run: %v", err)
-		o.logf("         replay it with `wtm exec %s -- %s`", o.Branch, o.Project.PostCreate)
+		o.logf("%s", replayLine(o))
+		return
+	}
+	if err := waitForApp(ctx, o, wt, cfg.AppService); err != nil {
+		o.logf("warning: post_create was not run: %v", err)
+		o.logf("%s", replayLine(o))
 		return
 	}
 	o.logf("post_create: %s", o.Project.PostCreate)
@@ -56,8 +70,62 @@ func postCreate(ctx context.Context, o Options) {
 		Live: true,
 	}); err != nil {
 		o.logf("warning: post_create failed: %v", err)
-		o.logf("         replay it with `wtm exec %s -- %s`", o.Branch, o.Project.PostCreate)
+		o.logf("%s", replayLine(o))
 	}
+}
+
+// The command runs through `sh -c`, so the line offered to the user has to as
+// well: a chained post_create pasted bare would leave its tail to the user's
+// own shell instead of the container.
+func replayLine(o Options) string {
+	return "         replay it with `wtm exec " + o.Branch + " -- sh -c " +
+		execx.ShellQuote(o.Project.PostCreate) + "`"
+}
+
+// waitForApp holds until the application container reports itself healthy.
+// Stacks routinely install their dependencies from the service `command:`, so
+// a container docker calls started cannot run a management command yet, and a
+// declared healthcheck is the only thing that knows when it can. Compose
+// reports an empty health for a service without one, which is not a failure:
+// running the seed early beats not running it.
+func waitForApp(ctx context.Context, o Options, wt stack.Worktree, service string) error {
+	probe := execx.Cmd{
+		Name: "docker",
+		Args: []string{"compose", "-p", o.projectName(wt), "ps", "--format", "{{.Health}}", service},
+		Dir:  wt.Path,
+	}
+	for i := 0; i < appReadyAttempts; i++ {
+		res, err := o.Runner.Run(ctx, probe)
+		if err != nil {
+			return err
+		}
+		health := ""
+		if f := strings.Fields(res.Stdout); len(f) > 0 {
+			health = f[0]
+		}
+		switch health {
+		case "healthy":
+			return nil
+		case "":
+			o.logf("warning: %s declares no healthcheck: post_create runs as soon as the "+
+				"database answers, ahead of a stack that installs at boot", service)
+			return nil
+		}
+		// Waiting on an install can take minutes, and silence there reads as a
+		// hung wtm.
+		if i == 0 {
+			o.logf("waiting for %s to report itself healthy", service)
+		}
+		if i < appReadyAttempts-1 && appReadyInterval > 0 {
+			select {
+			case <-ctx.Done():
+				return ctx.Err()
+			case <-time.After(appReadyInterval):
+			}
+		}
+	}
+	return fmt.Errorf("timed out waiting for %s to report itself healthy (%d attempts)",
+		service, appReadyAttempts)
 }
 
 // waitForDatabase holds until the engine answers, using the same probe

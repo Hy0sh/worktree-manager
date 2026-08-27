@@ -200,11 +200,18 @@ defaults to `db` and `--db-user` defaults to `postgres`.
 
 The dump carries what the migrations create and never seed data, so a new
 worktree comes up migrated and empty. `--post-create` is the command that makes
-it usable, played in the application service once the database answers:
+it usable, played in the application service once the database answers and that
+service reports itself healthy:
 
 ```sh
 wtm project edit my-app --post-create 'python manage.py seed_data && python manage.py create_dev_users'
 ```
+
+Health is what wtm waits on, because a container docker calls started is not
+one that can run a management command: a stack installing its dependencies from
+its `command:` (a `poetry install` or an `npm ci` at boot) answers minutes
+later. A service declaring no `healthcheck:` leaves wtm nothing to wait for, so
+the command runs as soon as the database answers and a warning says so.
 
 Do not point it at a script that resets the database: dropping the schema to
 migrate it again throws away the restored dump and pays for the migrations wtm
