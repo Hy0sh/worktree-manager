@@ -13,8 +13,12 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   its `command:` (`poetry install`, `npm ci`) has a container docker calls
   started well before it can run a management command, so the seed died on
   `ModuleNotFoundError: No module named 'django'` while the install was still
-  running. A service that declares no `healthcheck:` leaves nothing to wait for:
-  the command runs as it did before, and a warning names what is missing.
+  running. A service that declares no `healthcheck:` is waited on by its first
+  published port instead, read through `/proc/net/tcp` in the container's own
+  network namespace: the host side of a published port accepts a connection long
+  before anything listens behind it, so it proves nothing. Only a service with
+  neither, a queue worker for instance, leaves nothing to wait for: there the
+  command runs as it did before and a warning names what is missing.
 - Commands printed in a failure message are quoted the way a shell takes them
   back. A `post_create` chaining two commands with `&&` was reported as
   `sh -c python manage.py seed && python manage.py users`, which reads as a

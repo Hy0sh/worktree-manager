@@ -207,11 +207,14 @@ service reports itself healthy:
 wtm project edit my-app --post-create 'python manage.py seed_data && python manage.py create_dev_users'
 ```
 
-Health is what wtm waits on, because a container docker calls started is not
-one that can run a management command: a stack installing its dependencies from
-its `command:` (a `poetry install` or an `npm ci` at boot) answers minutes
-later. A service declaring no `healthcheck:` leaves wtm nothing to wait for, so
-the command runs as soon as the database answers and a warning says so.
+wtm waits, because a container docker calls started is not one that can run a
+management command: a stack installing its dependencies from its `command:` (a
+`poetry install` or an `npm ci` at boot) answers minutes later. A declared
+`healthcheck:` is what it waits on. A service without one is waited on by its
+first published port, read inside the container, since the host side of that
+port accepts a connection while nothing listens behind it yet. A service with
+neither, a queue worker for instance, leaves nothing to wait for: the command
+runs as soon as the database answers, and a warning says so.
 
 Do not point it at a script that resets the database: dropping the schema to
 migrate it again throws away the restored dump and pays for the migrations wtm

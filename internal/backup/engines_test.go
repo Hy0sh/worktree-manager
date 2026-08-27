@@ -47,7 +47,7 @@ func TestRefreshSkipsCreateForMongo(t *testing.T) {
 		t.Fatalf("mongo must not create the temporary database:\n%s", all)
 	}
 	for _, want := range []string{
-		"mongosh --quiet --eval 'db.runCommand({ping:1})'",
+		"mongosh --quiet --eval '\\''db.runCommand({ping:1})'\\''",
 		"dropDatabase()",
 		"mongodump --archive --db=myapp_snapshot_tmp",
 	} {

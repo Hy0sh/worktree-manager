@@ -3,7 +3,6 @@ package execx
 import (
 	"context"
 	"io"
-	"strings"
 )
 
 type Call struct {
@@ -13,11 +12,10 @@ type Call struct {
 	Env  []string
 }
 
+// Line renders the call the way Cmd.String does, so an assertion reads exactly
+// what a failure message would show.
 func (c Call) Line() string {
-	if len(c.Args) == 0 {
-		return c.Name
-	}
-	return c.Name + " " + strings.Join(c.Args, " ")
+	return Cmd{Name: c.Name, Args: c.Args}.String()
 }
 
 // Fake records commands and replies with whatever Handler returns. It lives in

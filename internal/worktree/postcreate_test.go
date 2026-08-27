@@ -26,7 +26,7 @@ func TestCreatePlaysPostCreateInTheAppContainer(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 	project := stack.ProjectName(filepath.Base(f.root), 1, "feat/x")
-	want := "docker compose -p " + project + " exec -T backend sh -c manage.py seed_data"
+	want := "docker compose -p " + project + " exec -T backend sh -c 'manage.py seed_data'"
 	if last := f.fake.Lines()[len(f.fake.Lines())-1]; last != want {
 		t.Fatalf("last call =\n  %q\nwant\n  %q", last, want)
 	}
@@ -50,7 +50,7 @@ func TestCreateSurvivesAFailingPostCreate(t *testing.T) {
 	f := newFixture(t)
 	inner := f.fake.Handler
 	f.fake.Handler = func(c execx.Cmd) (execx.Result, error) {
-		if strings.Contains(c.String(), "exec -T backend sh -c") {
+		if strings.Contains(c.String(), "sh -c 'manage.py") {
 			return execx.Result{ExitCode: 1}, errors.New("seed_data: no such command")
 		}
 		return inner(c)
@@ -107,10 +107,53 @@ func TestCreateWaitsForTheAppToBeHealthy(t *testing.T) {
 	}
 }
 
-// Without a healthcheck there is nothing to wait on, and skipping the seed
-// would be worse than running it early: say so and run it.
-func TestCreateWarnsWhenTheAppHasNoHealthcheck(t *testing.T) {
+// A queue worker publishes no port and declares no healthcheck, so there is
+// nothing to wait on. Skipping the seed would be worse than running it early:
+// say so and run it.
+func TestCreateWarnsWhenNothingSaysTheAppIsReady(t *testing.T) {
 	f := newFixture(t)
+	var out bytes.Buffer
+	o := f.opts("feat/x")
+	o.Out = &out
+	o.Project.PostCreate = "manage.py seed_data"
+	o.Project.Backup = &config.Backup{AppService: "worker"}
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if !strings.Contains(out.String(), "worker declares no healthcheck and publishes no port") {
+		t.Fatalf("the warning should name what is missing:\n%s", out.String())
+	}
+	if last := f.fake.Lines()[len(f.fake.Lines())-1]; !strings.Contains(last, "exec -T worker sh -c") {
+		t.Fatalf("post_create should still have run, last call = %q", last)
+	}
+}
+
+// The host side of a published port accepts a connection before anything
+// listens inside the container, so readiness is read in the container's own
+// network namespace.
+func TestCreateWaitsForTheAppToListenWithoutAHealthcheck(t *testing.T) {
+	f := newFixture(t)
+	appReadyInterval = 0
+	t.Cleanup(func() { appReadyInterval = time.Second })
+	misses := 2
+	inner := f.fake.Handler
+	f.fake.Handler = func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(c.String(), "/proc/net/tcp") {
+			// The container-side port of the fixture's backend, in hex.
+			if !strings.Contains(c.String(), ":1F40 ") {
+				t.Errorf("the probe should look for port 8000, got %q", c.String())
+			}
+			if misses > 0 {
+				misses--
+				return execx.Result{ExitCode: 1}, errors.New("no match")
+			}
+			return execx.Result{}, nil
+		}
+		if strings.Contains(c.String(), "sh -c 'manage.py") && misses > 0 {
+			t.Error("post_create ran before the app listened")
+		}
+		return inner(c)
+	}
 	var out bytes.Buffer
 	o := f.opts("feat/x")
 	o.Out = &out
@@ -119,10 +162,10 @@ func TestCreateWarnsWhenTheAppHasNoHealthcheck(t *testing.T) {
 	if err := Create(context.Background(), o); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if !strings.Contains(out.String(), "backend declares no healthcheck") {
-		t.Fatalf("the warning should name the missing healthcheck:\n%s", out.String())
+	if last := f.fake.Lines()[len(f.fake.Lines())-1]; !strings.Contains(last, "sh -c 'manage.py") {
+		t.Fatalf("post_create should have run once listening, last call = %q", last)
 	}
-	if last := f.fake.Lines()[len(f.fake.Lines())-1]; !strings.Contains(last, "exec -T backend sh -c") {
-		t.Fatalf("post_create should still have run, last call = %q", last)
+	if !strings.Contains(out.String(), "waiting for backend to listen on 8000") {
+		t.Fatalf("the wait should name the port:\n%s", out.String())
 	}
 }

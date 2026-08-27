@@ -3,6 +3,7 @@ package worktree
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -83,39 +84,98 @@ func replayLine(o Options) string {
 		execx.ShellQuote(o.Project.PostCreate) + "`"
 }
 
-// waitForApp holds until the application container reports itself healthy.
-// Stacks routinely install their dependencies from the service `command:`, so
-// a container docker calls started cannot run a management command yet, and a
-// declared healthcheck is the only thing that knows when it can. Compose
-// reports an empty health for a service without one, which is not a failure:
-// running the seed early beats not running it.
+// waitForApp holds until the application container can answer. A healthcheck
+// is the best signal, and the only one a compose file states on purpose; a
+// service without one still publishes a port wtm remapped itself, and a
+// listening socket is the next best thing.
 func waitForApp(ctx context.Context, o Options, wt stack.Worktree, service string) error {
-	probe := execx.Cmd{
+	health, err := appHealth(ctx, o, wt, service)
+	if err != nil {
+		return err
+	}
+	if health != "" {
+		return waitUntil(ctx, o, service+" to report itself healthy", func() (bool, error) {
+			h, err := appHealth(ctx, o, wt, service)
+			return h == "healthy", err
+		})
+	}
+	port := publishedPort(o, wt, service)
+	if port == "" {
+		o.logf("warning: %s declares no healthcheck and publishes no port: post_create "+
+			"runs as soon as the database answers, ahead of a stack that installs at boot", service)
+		return nil
+	}
+	return waitUntil(ctx, o, service+" to listen on "+port+" (it declares no healthcheck)",
+		func() (bool, error) { return listening(ctx, o, wt, service, port) })
+}
+
+// appHealth is empty for a service that declares no healthcheck, which is how
+// compose reports the absence of one.
+func appHealth(ctx context.Context, o Options, wt stack.Worktree, service string) (string, error) {
+	res, err := o.Runner.Run(ctx, execx.Cmd{
 		Name: "docker",
 		Args: []string{"compose", "-p", o.projectName(wt), "ps", "--format", "{{.Health}}", service},
 		Dir:  wt.Path,
+	})
+	if err != nil {
+		return "", err
 	}
+	if f := strings.Fields(res.Stdout); len(f) > 0 {
+		return f[0], nil
+	}
+	return "", nil
+}
+
+// publishedPort is the container side of the service's first published port,
+// the one its `command:` is expected to serve. A service publishing none (a
+// queue worker) has nothing to wait on.
+func publishedPort(o Options, wt stack.Worktree, service string) string {
+	allocs, err := allocations(o, wt)
+	if err != nil {
+		return ""
+	}
+	for _, a := range allocs {
+		if a.Service == service {
+			return a.Container
+		}
+	}
+	return ""
+}
+
+// listening asks the container's own network namespace, because the host side
+// of a published port proves nothing: docker accepts a connection there while
+// nothing inside listens yet. /proc/net/tcp answers without any tool the image
+// may not ship.
+func listening(ctx context.Context, o Options, wt stack.Worktree, service, port string) (bool, error) {
+	n, err := strconv.Atoi(port)
+	if err != nil {
+		return false, fmt.Errorf("port %q of service %s is not a number", port, service)
+	}
+	// Columns are `local_address rem_address st`, where 0A is LISTEN and a
+	// listener has no peer. tcp6 states the local address over 32 hex digits.
+	pattern := fmt.Sprintf(":%04X [0-9A-F]+:0000 0A", n)
+	_, err = o.Runner.Run(ctx, execx.Cmd{
+		Name: "docker",
+		Args: []string{"compose", "-p", o.projectName(wt), "exec", "-T", service,
+			"sh", "-c", "grep -qE '" + pattern + "' /proc/net/tcp /proc/net/tcp6"},
+		Dir: wt.Path,
+	})
+	return err == nil, nil
+}
+
+// waitUntil polls ready, naming what it waits on the first time the answer is
+// no: minutes of silence read as a hung wtm.
+func waitUntil(ctx context.Context, o Options, what string, ready func() (bool, error)) error {
 	for i := 0; i < appReadyAttempts; i++ {
-		res, err := o.Runner.Run(ctx, probe)
+		ok, err := ready()
 		if err != nil {
 			return err
 		}
-		health := ""
-		if f := strings.Fields(res.Stdout); len(f) > 0 {
-			health = f[0]
-		}
-		switch health {
-		case "healthy":
-			return nil
-		case "":
-			o.logf("warning: %s declares no healthcheck: post_create runs as soon as the "+
-				"database answers, ahead of a stack that installs at boot", service)
+		if ok {
 			return nil
 		}
-		// Waiting on an install can take minutes, and silence there reads as a
-		// hung wtm.
 		if i == 0 {
-			o.logf("waiting for %s to report itself healthy", service)
+			o.logf("waiting for %s", what)
 		}
 		if i < appReadyAttempts-1 && appReadyInterval > 0 {
 			select {
@@ -125,8 +185,7 @@ func waitForApp(ctx context.Context, o Options, wt stack.Worktree, service strin
 			}
 		}
 	}
-	return fmt.Errorf("timed out waiting for %s to report itself healthy (%d attempts)",
-		service, appReadyAttempts)
+	return fmt.Errorf("timed out waiting for %s (%d attempts)", what, appReadyAttempts)
 }
 
 // waitForDatabase holds until the engine answers, using the same probe
