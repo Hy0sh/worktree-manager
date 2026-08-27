@@ -131,10 +131,16 @@ func start(ctx context.Context, o Options, dest string) error {
 		o.logf("note: the database was restored from the dump and holds no seed data yet,")
 		o.logf("      seed it with `wtm exec %s -- <your seed command>`", o.Branch)
 	}
+	logEndpoints(o, wt)
+	return nil
+}
+
+// logEndpoints lists the addresses of the stack. postCreate prints them a
+// second time, since a seed's output buries them.
+func logEndpoints(o Options, wt stack.Worktree) {
 	for _, line := range endpoints(o, wt) {
 		o.logf("  %s", line)
 	}
-	return nil
 }
 
 func hasCompose(projectDir string) bool {

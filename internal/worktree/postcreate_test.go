@@ -169,3 +169,52 @@ func TestCreateWaitsForTheAppToListenWithoutAHealthcheck(t *testing.T) {
 		t.Fatalf("the wait should name the port:\n%s", out.String())
 	}
 }
+
+// The seed's own output scrolls the addresses out of sight, and they are what
+// the developer came for.
+func TestCreateRestatesTheAddressesAfterPostCreate(t *testing.T) {
+	f := newFixture(t)
+	var out bytes.Buffer
+	o := f.opts("feat/x")
+	o.Out = &out
+	o.Project.PostCreate = "manage.py seed_data"
+	o.Project.Backup = &config.Backup{AppService: "backend"}
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	seed := strings.Index(out.String(), "post_create: manage.py seed_data")
+	if seed < 0 {
+		t.Fatalf("post_create should have run:\n%s", out.String())
+	}
+	after := out.String()[seed:]
+	if !strings.Contains(after, "stack ready (worktree 1, feat/x)") || !strings.Contains(after, "backend  ") {
+		t.Fatalf("the addresses should be restated after the seed:\n%s", after)
+	}
+}
+
+// A wait of minutes with a single line at the top of it reads as a hung wtm.
+func TestTheWaitKeepsSayingWhatItWaitsOn(t *testing.T) {
+	f := newFixture(t)
+	appReadyInterval = 0
+	t.Cleanup(func() { appReadyInterval = time.Second })
+	misses := 31
+	inner := f.fake.Handler
+	f.fake.Handler = func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(c.String(), "/proc/net/tcp") && misses > 0 {
+			misses--
+			return execx.Result{ExitCode: 1}, errors.New("no match")
+		}
+		return inner(c)
+	}
+	var out bytes.Buffer
+	o := f.opts("feat/x")
+	o.Out = &out
+	o.Project.PostCreate = "manage.py seed_data"
+	o.Project.Backup = &config.Backup{AppService: "backend"}
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if !strings.Contains(out.String(), "still waiting for backend to listen on 8000") {
+		t.Fatalf("a long wait should keep saying so:\n%s", out.String())
+	}
+}

@@ -19,6 +19,11 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   before anything listens behind it, so it proves nothing. Only a service with
   neither, a queue worker for instance, leaves nothing to wait for: there the
   command runs as it did before and a warning names what is missing.
+- A `create` that seeds no longer buries the addresses of the stack: the seed's
+  output can be hundreds of lines, so the list is printed again once the command
+  is done. And a wait that holds says so every thirty seconds, with the time
+  elapsed, instead of leaving a single line at the top of several minutes of
+  silence.
 - Commands printed in a failure message are quoted the way a shell takes them
   back. A `post_create` chaining two commands with `&&` was reported as
   `sh -c python manage.py seed && python manage.py users`, which reads as a

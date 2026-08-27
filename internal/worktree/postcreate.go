@@ -28,6 +28,9 @@ const appReadyAttempts = 600
 // A variable, so the tests do not sleep through the wait.
 var appReadyInterval = time.Second
 
+// How often the wait repeats itself while it holds.
+const stillWaiting = 30
+
 // postCreate plays the project's post_create command in the application
 // container of a brand new worktree. Every failure here is a warning and not an
 // error: the worktree exists and works, and losing it over a seed that did not
@@ -74,6 +77,10 @@ func postCreate(ctx context.Context, o Options) {
 		o.logf("warning: post_create failed: %v", err)
 		o.logf("%s", replayLine(o))
 	}
+	// The command's own output has scrolled the addresses out of sight, and
+	// they are what the developer opened the worktree for.
+	o.logf("stack ready (worktree %d, %s)", wt.Index, o.Branch)
+	logEndpoints(o, wt)
 }
 
 // The command runs through `sh -c`, so the line offered to the user has to as
@@ -164,7 +171,8 @@ func listening(ctx context.Context, o Options, wt stack.Worktree, service, port 
 }
 
 // waitUntil polls ready, naming what it waits on the first time the answer is
-// no: minutes of silence read as a hung wtm.
+// no, then again every stillWaiting attempts: minutes of silence read as a hung
+// wtm.
 func waitUntil(ctx context.Context, o Options, what string, ready func() (bool, error)) error {
 	for i := 0; i < appReadyAttempts; i++ {
 		ok, err := ready()
@@ -174,8 +182,11 @@ func waitUntil(ctx context.Context, o Options, what string, ready func() (bool, 
 		if ok {
 			return nil
 		}
-		if i == 0 {
+		switch {
+		case i == 0:
 			o.logf("waiting for %s", what)
+		case i%stillWaiting == 0:
+			o.logf("still waiting for %s (%s)", what, time.Duration(i)*appReadyInterval)
 		}
 		if i < appReadyAttempts-1 && appReadyInterval > 0 {
 			select {
