@@ -214,7 +214,18 @@ func TestTheWaitKeepsSayingWhatItWaitsOn(t *testing.T) {
 	if err := Create(context.Background(), o); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if !strings.Contains(out.String(), "still waiting for backend to listen on 8000") {
-		t.Fatalf("a long wait should keep saying so:\n%s", out.String())
+	var repeat string
+	for _, l := range strings.Split(out.String(), "\n") {
+		if strings.HasPrefix(l, "still waiting") {
+			repeat = l
+			break
+		}
+	}
+	if !strings.HasPrefix(repeat, "still waiting for backend to listen on 8000 (") {
+		t.Fatalf("a long wait should keep saying so, got %q in:\n%s", repeat, out.String())
+	}
+	// The reason belongs to the first line only, not to every reminder.
+	if strings.Contains(repeat, "healthcheck") {
+		t.Fatalf("the reminder should stay short, got %q", repeat)
 	}
 }

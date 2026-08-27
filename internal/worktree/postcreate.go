@@ -101,7 +101,7 @@ func waitForApp(ctx context.Context, o Options, wt stack.Worktree, service strin
 		return err
 	}
 	if health != "" {
-		return waitUntil(ctx, o, service+" to report itself healthy", func() (bool, error) {
+		return waitUntil(ctx, o, service+" to report itself healthy", "", func() (bool, error) {
 			h, err := appHealth(ctx, o, wt, service)
 			return h == "healthy", err
 		})
@@ -112,7 +112,7 @@ func waitForApp(ctx context.Context, o Options, wt stack.Worktree, service strin
 			"runs as soon as the database answers, ahead of a stack that installs at boot", service)
 		return nil
 	}
-	return waitUntil(ctx, o, service+" to listen on "+port+" (it declares no healthcheck)",
+	return waitUntil(ctx, o, service+" to listen on "+port, " (it declares no healthcheck)",
 		func() (bool, error) { return listening(ctx, o, wt, service, port) })
 }
 
@@ -172,8 +172,8 @@ func listening(ctx context.Context, o Options, wt stack.Worktree, service, port 
 
 // waitUntil polls ready, naming what it waits on the first time the answer is
 // no, then again every stillWaiting attempts: minutes of silence read as a hung
-// wtm.
-func waitUntil(ctx context.Context, o Options, what string, ready func() (bool, error)) error {
+// wtm. why explains the wait, and belongs to that first line alone.
+func waitUntil(ctx context.Context, o Options, what, why string, ready func() (bool, error)) error {
 	for i := 0; i < appReadyAttempts; i++ {
 		ok, err := ready()
 		if err != nil {
@@ -184,7 +184,7 @@ func waitUntil(ctx context.Context, o Options, what string, ready func() (bool, 
 		}
 		switch {
 		case i == 0:
-			o.logf("waiting for %s", what)
+			o.logf("waiting for %s%s", what, why)
 		case i%stillWaiting == 0:
 			o.logf("still waiting for %s (%s)", what, time.Duration(i)*appReadyInterval)
 		}
