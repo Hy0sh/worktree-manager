@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -11,18 +12,22 @@ import (
 func newProjectCreateCmd(a *app) *cobra.Command {
 	f := &projectFlags{}
 	cmd := &cobra.Command{
-		Use:   "create <name>",
+		Use:   "create [name]",
 		Short: "Registers a project",
 		Long: "Registers a project. Called without --dir, it asks for what it needs\n" +
 			"one question at a time instead of expecting every flag to be known;\n" +
-			"any flag already given becomes the answer offered by default.",
-		Args:          needArgs(1, 1, "name the project, as in `wtm project create my-app`: that name is how every other command refers to it"),
+			"any flag already given becomes the answer offered by default. The\n" +
+			"name is one of the questions, and defaults to the directory's own.",
+		Args:          needArgs(0, 1, "name the project, as in `wtm project create my-app`"),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			name := args[0]
-			if err := config.ValidateIdentifier("project name", name); err != nil {
-				return err
+			name := ""
+			if len(args) == 1 {
+				name = args[0]
+				if err := config.ValidateIdentifier("project name", name); err != nil {
+					return err
+				}
 			}
 			u, err := f.update(cmd)
 			if err != nil {
@@ -37,6 +42,17 @@ func newProjectCreateCmd(a *app) *cobra.Command {
 					return err
 				}
 				p, _ = stepped.Apply(p)
+			}
+			// Asked once the directory is known, whether it came from a flag or
+			// from the stepper, because that is what the answer defaults to.
+			if name == "" {
+				if f.noInput {
+					return fmt.Errorf("name the project, as in `wtm project create my-app`, " +
+						"or drop --no-input to be asked")
+				}
+				if name, err = askName(newPrompter(a.in, a.out), filepath.Base(p.Dir)); err != nil {
+					return err
+				}
 			}
 			// The stepper asks for the engine; a flags-only registration gets
 			// the same compose-image detection here.

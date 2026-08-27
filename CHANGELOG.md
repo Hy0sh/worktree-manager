@@ -17,6 +17,17 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   not ask, since registering a project should not have to answer for a setting
   this rare.
 
+### Changed
+
+- `wtm project create` asks for the name instead of refusing the call, offering
+  the directory's own as the default answer. It was the one thing the stepper
+  did not ask for, being the key of the registry rather than a field of the
+  project, so a bare `wtm project create` failed where every other missing
+  setting led to a question. The name is still validated before anything is
+  registered, a directory whose name would not do as a project name is not
+  offered, and `--no-input` says what to pass rather than waiting on a stdin
+  nobody will type into.
+
 ### Fixed
 
 - A command called without its arguments says what is missing and shows a call

@@ -104,7 +104,8 @@ wtm backup refresh <TAB>     # registered project names
 
 ```sh
 # register a project (once)
-wtm project create my-app                                 # asks, step by step
+wtm project create                                        # asks, the name included
+wtm project create my-app                                 # asks for the rest
 wtm project create my-app --dir ~/dev/projects/my-app --base develop
 wtm project list
 

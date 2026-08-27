@@ -186,6 +186,28 @@ func askEngine(p *prompter, dir, dbService, current string) (string, error) {
 // askDir keeps asking until the answer is a directory that exists: a typo
 // caught here costs one line, caught at the first `wtm create` it costs a
 // puzzled minute.
+// askName asks for the name every other command uses. It is the key of the
+// registry rather than a field of the project, which is why it is asked here
+// and not by the stepper: the directory has to be known first, since that is
+// what the answer defaults to.
+func askName(p *prompter, current string) (string, error) {
+	if config.ValidateIdentifier("project name", current) != nil {
+		current = "" // a directory whose name would not do as a project name
+	}
+	for {
+		answer, err := p.askRequired("project name", current)
+		if err != nil {
+			return "", err
+		}
+		if err := config.ValidateIdentifier("project name", answer); err == nil {
+			return answer, nil
+		} else {
+			p.logf("  %v", err)
+			current = ""
+		}
+	}
+}
+
 func askDir(p *prompter, current string) (string, error) {
 	for {
 		answer, err := p.askRequired("repository directory", current)
