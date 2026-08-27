@@ -17,7 +17,7 @@ func newExecCmd(a *app) *cobra.Command {
 			"compose project name for you.\n\n" +
 			"  wtm exec feat/my-branch -- python manage.py seed_data\n" +
 			"  wtm exec feat/my-branch -- bash",
-		Args:              cobra.MinimumNArgs(2),
+		Args:              needArgs(2, -1, "name the branch and the command, as in `wtm exec feat/my-branch -- python manage.py shell`"),
 		ValidArgsFunction: a.completeTargets,
 		SilenceUsage:      true,
 		SilenceErrors:     true,
@@ -51,7 +51,7 @@ func newRunCmd(a *app) *cobra.Command {
 			"  wtm run feat/my-branch -- claude\n" +
 			"  wtm run feat/my-branch -- git status\n" +
 			"  wtm run feat/my-branch -- scripts/some-compose-script.sh",
-		Args:              cobra.MinimumNArgs(2),
+		Args:              needArgs(2, -1, "name the branch and the command, as in `wtm run feat/my-branch -- claude`"),
 		ValidArgsFunction: a.completeTargets,
 		SilenceUsage:      true,
 		SilenceErrors:     true,
@@ -74,7 +74,7 @@ func newPathCmd(a *app) *cobra.Command {
 		Use:               "path [project] <branch>",
 		Short:             "Prints the worktree directory",
 		Long:              "Prints the path so a shell can compose with it: `cd $(wtm path feat/my-branch)`.",
-		Args:              cobra.RangeArgs(1, 2),
+		Args:              needArgs(1, 2, "name the branch, as in `wtm path feat/my-branch`"),
 		ValidArgsFunction: a.completeTargets,
 		SilenceUsage:      true,
 		SilenceErrors:     true,

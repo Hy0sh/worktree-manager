@@ -18,7 +18,7 @@ func newCreateCmd(a *app) *cobra.Command {
 			"otherwise it is a branch of the project of the current directory.\n" +
 			"An existing branch is reused, local or on a remote (tracked, fetched if\n" +
 			"needed), and <base> is then ignored.",
-		Args:              cobra.RangeArgs(1, 3),
+		Args:              needArgs(1, 3, "name the branch to create, as in `wtm create feat/my-branch`"),
 		ValidArgsFunction: a.completeProjects,
 		SilenceUsage:      true,
 		SilenceErrors:     true,
@@ -53,7 +53,7 @@ func newStartCmd(a *app) *cobra.Command {
 	return &cobra.Command{
 		Use:               "start [project] <branch>",
 		Short:             "Starts the stack of an existing worktree",
-		Args:              cobra.RangeArgs(1, 2),
+		Args:              needArgs(1, 2, "name the branch to start, as in `wtm start feat/my-branch`"),
 		ValidArgsFunction: a.completeTargets,
 		SilenceUsage:      true,
 		SilenceErrors:     true,
@@ -71,7 +71,7 @@ func newStopCmd(a *app) *cobra.Command {
 	return &cobra.Command{
 		Use:               "stop [project] <branch>",
 		Short:             "Stops the worktree's stack, without removing it",
-		Args:              cobra.RangeArgs(1, 2),
+		Args:              needArgs(1, 2, "name the branch to stop, as in `wtm stop feat/my-branch`"),
 		ValidArgsFunction: a.completeTargets,
 		SilenceUsage:      true,
 		SilenceErrors:     true,
@@ -90,7 +90,7 @@ func newRemoveCmd(a *app) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:               "remove [project] <branch>",
 		Short:             "Stops the stack then removes the worktree (branch kept)",
-		Args:              cobra.RangeArgs(1, 2),
+		Args:              needArgs(1, 2, "name the branch to remove, as in `wtm remove feat/my-branch`"),
 		ValidArgsFunction: a.completeTargets,
 		SilenceUsage:      true,
 		SilenceErrors:     true,

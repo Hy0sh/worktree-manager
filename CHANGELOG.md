@@ -19,6 +19,11 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ### Fixed
 
+- A command called without its arguments says what is missing and shows a call
+  that works, instead of counting what it received: `wtm project create` answered
+  `accepts 1 arg(s), received 0`, which names neither the project nor the form of
+  the command. Ten commands were doing it. A test walks the command tree, so one
+  added later cannot go back to counting.
 - `post_create` waits for the application service to report itself healthy, and
   no longer for the database alone. A stack that installs its dependencies from
   its `command:` (`poetry install`, `npm ci`) has a container docker calls

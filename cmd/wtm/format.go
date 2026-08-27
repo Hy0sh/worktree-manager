@@ -3,13 +3,32 @@ package main
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
 
+	"github.com/spf13/cobra"
+
 	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/gitx"
 )
+
+// needArgs answers a missing argument with the call that would have worked.
+// cobra's own message ("accepts between 1 and 3 arg(s), received 0") counts
+// what it got and never names what it wanted. max below zero means no ceiling.
+func needArgs(min, max int, missing string) cobra.PositionalArgs {
+	return func(cmd *cobra.Command, given []string) error {
+		if len(given) < min {
+			return errors.New(missing)
+		}
+		if max >= 0 && len(given) > max {
+			return fmt.Errorf("too many arguments for `%s`, see `%s --help`",
+				cmd.CommandPath(), cmd.CommandPath())
+		}
+		return nil
+	}
+}
 
 // projectArg reads an explicit project name, or falls back to the current one.
 func (a *app) projectArg(args []string) (string, config.Project, error) {

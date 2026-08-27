@@ -16,7 +16,7 @@ func newProjectCreateCmd(a *app) *cobra.Command {
 		Long: "Registers a project. Called without --dir, it asks for what it needs\n" +
 			"one question at a time instead of expecting every flag to be known;\n" +
 			"any flag already given becomes the answer offered by default.",
-		Args:          cobra.ExactArgs(1),
+		Args:          needArgs(1, 1, "name the project, as in `wtm project create my-app`: that name is how every other command refers to it"),
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {

@@ -18,7 +18,7 @@ func newProjectEditCmd(a *app) *cobra.Command {
 			"settings one question at a time, each defaulting to the current value.\n\n" +
 			"The port offset and the recorded worktree indices are never touched:\n" +
 			"re-registering a project would renumber every stack it has running.",
-		Args:              cobra.ExactArgs(1),
+		Args:              needArgs(1, 1, "name the project to edit, as in `wtm project edit my-app`, or `wtm project list` to see the registered ones"),
 		ValidArgsFunction: a.completeProjects,
 		SilenceUsage:      true,
 		SilenceErrors:     true,

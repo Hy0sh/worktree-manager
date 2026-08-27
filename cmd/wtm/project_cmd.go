@@ -67,7 +67,7 @@ func newProjectRemoveCmd(a *app) *cobra.Command {
 		Use:               "remove <name>",
 		ValidArgsFunction: a.completeProjects,
 		Short:             "Removes a project from the registry (worktrees and repository untouched)",
-		Args:              cobra.ExactArgs(1),
+		Args:              needArgs(1, 1, "name the project to remove, as in `wtm project remove my-app`"),
 		SilenceUsage:      true,
 		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
