@@ -19,9 +19,10 @@ const (
 	dbReadyInterval = time.Second
 )
 
-// Installing dependencies at boot takes longer than a database answering, and
-// a healthcheck adds its own start_period on top.
-const appReadyAttempts = 180
+// Installing dependencies at boot takes longer than a database answering, and a
+// project declaring a start_period of several minutes is being reasonable: wtm
+// must not give up before docker does.
+const appReadyAttempts = 600
 
 // A variable, so the tests do not sleep through the wait.
 var appReadyInterval = time.Second
