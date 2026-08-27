@@ -7,29 +7,56 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/dbengine"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 	"github.com/Hy0sh/worktree-manager/internal/index"
 	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
 
-// A restore is minutes of work on a large dump, and the database only answers
-// once it has finished.
+// Bounds a project can override with ready_timeout and ready_interval.
 const (
-	dbReadyAttempts = 60
-	dbReadyInterval = time.Second
+	// A restore is minutes of work on a large dump, and the database only
+	// answers once it has finished.
+	dbReadyTimeout = time.Minute
+	// Installing dependencies at boot takes longer than a database answering,
+	// and a project declaring a start_period of several minutes is being
+	// reasonable: wtm must not give up before docker does.
+	appReadyTimeout = 10 * time.Minute
+	readyInterval   = time.Second
+	// How often the wait repeats itself while it holds, whatever the interval.
+	stillWaiting = 30 * time.Second
 )
 
-// Installing dependencies at boot takes longer than a database answering, and a
-// project declaring a start_period of several minutes is being reasonable: wtm
-// must not give up before docker does.
-const appReadyAttempts = 600
+// wait is how long a service gets, how often it is asked, and after how many
+// attempts the wait repeats itself.
+type wait struct {
+	attempts int
+	interval time.Duration
+	every    int
+}
 
-// A variable, so the tests do not sleep through the wait.
-var appReadyInterval = time.Second
-
-// How often the wait repeats itself while it holds.
-const stillWaiting = 30
+// readyWait reads the project's bounds, falling back to the given default. A
+// malformed duration is ignored rather than failing a create halfway through:
+// the flags reject one at the source.
+func readyWait(p config.Project, defaultTimeout time.Duration) wait {
+	timeout, interval := defaultTimeout, readyInterval
+	if d, err := time.ParseDuration(p.ReadyTimeout); err == nil && d > 0 {
+		timeout = d
+	}
+	if d, err := time.ParseDuration(p.ReadyInterval); err == nil && d > 0 {
+		interval = d
+	}
+	attempts := int(timeout / interval)
+	if attempts < 1 {
+		attempts = 1
+	}
+	every := int(stillWaiting / interval)
+	if every < 1 {
+		every = 1
+	}
+	return wait{attempts, interval, every}
+}
 
 // postCreate plays the project's post_create command in the application
 // container of a brand new worktree. Every failure here is a warning and not an
@@ -96,12 +123,13 @@ func replayLine(o Options) string {
 // service without one still publishes a port wtm remapped itself, and a
 // listening socket is the next best thing.
 func waitForApp(ctx context.Context, o Options, wt stack.Worktree, service string) error {
+	w := readyWait(o.Project, appReadyTimeout)
 	health, err := appHealth(ctx, o, wt, service)
 	if err != nil {
 		return err
 	}
 	if health != "" {
-		return waitUntil(ctx, o, service+" to report itself healthy", "", func() (bool, error) {
+		return waitUntil(ctx, o, w, service+" to report itself healthy", "", func() (bool, error) {
 			h, err := appHealth(ctx, o, wt, service)
 			return h == "healthy", err
 		})
@@ -112,7 +140,7 @@ func waitForApp(ctx context.Context, o Options, wt stack.Worktree, service strin
 			"runs as soon as the database answers, ahead of a stack that installs at boot", service)
 		return nil
 	}
-	return waitUntil(ctx, o, service+" to listen on "+port, " (it declares no healthcheck)",
+	return waitUntil(ctx, o, w, service+" to listen on "+port, " (it declares no healthcheck)",
 		func() (bool, error) { return listening(ctx, o, wt, service, port) })
 }
 
@@ -173,8 +201,8 @@ func listening(ctx context.Context, o Options, wt stack.Worktree, service, port 
 // waitUntil polls ready, naming what it waits on the first time the answer is
 // no, then again every stillWaiting attempts: minutes of silence read as a hung
 // wtm. why explains the wait, and belongs to that first line alone.
-func waitUntil(ctx context.Context, o Options, what, why string, ready func() (bool, error)) error {
-	for i := 0; i < appReadyAttempts; i++ {
+func waitUntil(ctx context.Context, o Options, w wait, what, why string, ready func() (bool, error)) error {
+	for i := 0; i < w.attempts; i++ {
 		ok, err := ready()
 		if err != nil {
 			return err
@@ -185,18 +213,19 @@ func waitUntil(ctx context.Context, o Options, what, why string, ready func() (b
 		switch {
 		case i == 0:
 			o.logf("waiting for %s%s", what, why)
-		case i%stillWaiting == 0:
-			o.logf("still waiting for %s (%s)", what, time.Duration(i)*appReadyInterval)
+		case i%w.every == 0:
+			o.logf("still waiting for %s (%s)", what, time.Duration(i)*w.interval)
 		}
-		if i < appReadyAttempts-1 && appReadyInterval > 0 {
+		if i < w.attempts-1 {
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case <-time.After(appReadyInterval):
+			case <-time.After(w.interval):
 			}
 		}
 	}
-	return fmt.Errorf("timed out waiting for %s (%d attempts)", what, appReadyAttempts)
+	return fmt.Errorf("timed out waiting for %s after %s", what,
+		time.Duration(w.attempts)*w.interval)
 }
 
 // waitForDatabase holds until the engine answers, using the same probe
@@ -210,7 +239,8 @@ func waitForDatabase(ctx context.Context, o Options, wt stack.Worktree, service,
 	if err != nil {
 		return err
 	}
-	return execx.WaitFor(ctx, o.Runner, "the database of "+o.Branch, dbReadyAttempts, dbReadyInterval, execx.Cmd{
+	w := readyWait(o.Project, dbReadyTimeout)
+	return execx.WaitFor(ctx, o.Runner, "the database of "+o.Branch, w.attempts, w.interval, execx.Cmd{
 		Name: "docker",
 		Args: append([]string{"compose", "-p", o.projectName(wt), "exec", "-T", service}, eng.ReadyArgs(user)...),
 		Dir:  wt.Path,

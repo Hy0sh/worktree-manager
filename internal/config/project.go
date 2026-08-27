@@ -26,8 +26,15 @@ type Project struct {
 	// answers. The dump carries what the migrations create and never seed data,
 	// so this is where a project puts what makes a fresh worktree usable, e.g.
 	// "python manage.py seed_data && python manage.py create_dev_users".
-	PostCreate string  `json:"post_create,omitempty"`
-	Backup     *Backup `json:"backup,omitempty"`
+	PostCreate string `json:"post_create,omitempty"`
+	// ReadyTimeout and ReadyInterval bound the wait a new worktree grants each
+	// service before post_create runs: how long it may take to answer, and how
+	// often it is asked. Durations, as in "2m" and "10s". Empty means the
+	// built-in bounds, which are not the same for a database as for an
+	// application installing its dependencies at boot.
+	ReadyTimeout  string  `json:"ready_timeout,omitempty"`
+	ReadyInterval string  `json:"ready_interval,omitempty"`
+	Backup        *Backup `json:"backup,omitempty"`
 }
 
 // Defaults for the most common docker compose layout.

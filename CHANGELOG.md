@@ -6,6 +6,17 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Added
+
+- `ready_timeout` and `ready_interval` (`--ready-timeout`, `--ready-interval`)
+  bound the wait a new worktree grants each service before `post_create` runs.
+  Durations, as in `--ready-timeout 2m --ready-interval 10s`. The built-in
+  bounds are unchanged when they are unset: a minute for the database, ten for
+  the application, asked every second. A malformed duration is refused by the
+  flag rather than discovered halfway through a `create`, and the stepper does
+  not ask, since registering a project should not have to answer for a setting
+  this rare.
+
 ### Fixed
 
 - `post_create` waits for the application service to report itself healthy, and

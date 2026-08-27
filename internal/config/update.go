@@ -12,6 +12,9 @@ type ProjectUpdate struct {
 	GitContainer *bool
 	PostCreate   *string
 
+	ReadyTimeout  *string
+	ReadyInterval *string
+
 	DBService      *string
 	DBUser         *string
 	DBEngine       *string
@@ -29,7 +32,8 @@ type ProjectUpdate struct {
 // "change this one field" from "walk me through the settings".
 func (u ProjectUpdate) IsEmpty() bool {
 	return u.Dir == nil && u.BaseBranch == nil && u.Dump == nil &&
-		u.GitContainer == nil && u.PostCreate == nil && !u.touchesBackup()
+		u.GitContainer == nil && u.PostCreate == nil && u.ReadyTimeout == nil &&
+		u.ReadyInterval == nil && !u.touchesBackup()
 }
 
 type FieldChange struct {
@@ -62,6 +66,8 @@ func (u ProjectUpdate) Apply(p Project) (Project, []FieldChange) {
 	boolean("dump", &p.Dump, u.Dump)
 	boolean("git_container", &p.GitContainer, u.GitContainer)
 	str("post_create", &p.PostCreate, u.PostCreate)
+	str("ready_timeout", &p.ReadyTimeout, u.ReadyTimeout)
+	str("ready_interval", &p.ReadyInterval, u.ReadyInterval)
 
 	if !u.touchesBackup() {
 		return p, changes

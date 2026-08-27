@@ -21,6 +21,7 @@ func TestCreatePlaysPostCreateInTheAppContainer(t *testing.T) {
 	o := f.opts("feat/x")
 	o.Project.Dump = true
 	o.Project.PostCreate = "manage.py seed_data"
+	o.Project.ReadyTimeout, o.Project.ReadyInterval = "1s", "1ms"
 	o.Project.Backup = &config.Backup{AppService: "backend"}
 	if err := Create(context.Background(), o); err != nil {
 		t.Fatalf("Create: %v", err)
@@ -73,8 +74,6 @@ func TestCreateSurvivesAFailingPostCreate(t *testing.T) {
 // started container cannot run a management command yet.
 func TestCreateWaitsForTheAppToBeHealthy(t *testing.T) {
 	f := newFixture(t)
-	appReadyInterval = 0
-	t.Cleanup(func() { appReadyInterval = time.Second })
 	health := []string{"starting", "starting", "healthy"}
 	inner := f.fake.Handler
 	f.fake.Handler = func(c execx.Cmd) (execx.Result, error) {
@@ -94,6 +93,7 @@ func TestCreateWaitsForTheAppToBeHealthy(t *testing.T) {
 	o := f.opts("feat/x")
 	o.Out = &out
 	o.Project.PostCreate = "manage.py seed_data"
+	o.Project.ReadyTimeout, o.Project.ReadyInterval = "1s", "1ms"
 	o.Project.Backup = &config.Backup{AppService: "backend"}
 	if err := Create(context.Background(), o); err != nil {
 		t.Fatalf("Create: %v", err)
@@ -133,8 +133,6 @@ func TestCreateWarnsWhenNothingSaysTheAppIsReady(t *testing.T) {
 // network namespace.
 func TestCreateWaitsForTheAppToListenWithoutAHealthcheck(t *testing.T) {
 	f := newFixture(t)
-	appReadyInterval = 0
-	t.Cleanup(func() { appReadyInterval = time.Second })
 	misses := 2
 	inner := f.fake.Handler
 	f.fake.Handler = func(c execx.Cmd) (execx.Result, error) {
@@ -158,6 +156,7 @@ func TestCreateWaitsForTheAppToListenWithoutAHealthcheck(t *testing.T) {
 	o := f.opts("feat/x")
 	o.Out = &out
 	o.Project.PostCreate = "manage.py seed_data"
+	o.Project.ReadyTimeout, o.Project.ReadyInterval = "1s", "1ms"
 	o.Project.Backup = &config.Backup{AppService: "backend"}
 	if err := Create(context.Background(), o); err != nil {
 		t.Fatalf("Create: %v", err)
@@ -178,6 +177,7 @@ func TestCreateRestatesTheAddressesAfterPostCreate(t *testing.T) {
 	o := f.opts("feat/x")
 	o.Out = &out
 	o.Project.PostCreate = "manage.py seed_data"
+	o.Project.ReadyTimeout, o.Project.ReadyInterval = "1s", "1ms"
 	o.Project.Backup = &config.Backup{AppService: "backend"}
 	if err := Create(context.Background(), o); err != nil {
 		t.Fatalf("Create: %v", err)
@@ -194,38 +194,41 @@ func TestCreateRestatesTheAddressesAfterPostCreate(t *testing.T) {
 
 // A wait of minutes with a single line at the top of it reads as a hung wtm.
 func TestTheWaitKeepsSayingWhatItWaitsOn(t *testing.T) {
-	f := newFixture(t)
-	appReadyInterval = 0
-	t.Cleanup(func() { appReadyInterval = time.Second })
-	misses := 31
-	inner := f.fake.Handler
-	f.fake.Handler = func(c execx.Cmd) (execx.Result, error) {
-		if strings.Contains(c.String(), "/proc/net/tcp") && misses > 0 {
-			misses--
-			return execx.Result{ExitCode: 1}, errors.New("no match")
-		}
-		return inner(c)
-	}
 	var out bytes.Buffer
-	o := f.opts("feat/x")
-	o.Out = &out
-	o.Project.PostCreate = "manage.py seed_data"
-	o.Project.Backup = &config.Backup{AppService: "backend"}
-	if err := Create(context.Background(), o); err != nil {
-		t.Fatalf("Create: %v", err)
+	o := Options{Out: &out}
+	w := wait{attempts: 40, interval: time.Millisecond, every: 10}
+	err := waitUntil(context.Background(), o, w, "backend to listen on 8000",
+		" (it declares no healthcheck)", func() (bool, error) { return false, nil })
+	if err == nil {
+		t.Fatal("a wait that never succeeds must time out")
 	}
-	var repeat string
-	for _, l := range strings.Split(out.String(), "\n") {
-		if strings.HasPrefix(l, "still waiting") {
-			repeat = l
-			break
-		}
+	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
+	if len(lines) != 4 {
+		t.Fatalf("want one line then a reminder every 10 attempts, got:\n%s", out.String())
 	}
-	if !strings.HasPrefix(repeat, "still waiting for backend to listen on 8000 (") {
-		t.Fatalf("a long wait should keep saying so, got %q in:\n%s", repeat, out.String())
+	if lines[0] != "waiting for backend to listen on 8000 (it declares no healthcheck)" {
+		t.Fatalf("first line = %q", lines[0])
 	}
-	// The reason belongs to the first line only, not to every reminder.
-	if strings.Contains(repeat, "healthcheck") {
-		t.Fatalf("the reminder should stay short, got %q", repeat)
+	// The reason belongs to that first line, not to every reminder.
+	if lines[1] != "still waiting for backend to listen on 8000 (10ms)" {
+		t.Fatalf("reminder = %q", lines[1])
+	}
+	if !strings.Contains(err.Error(), "after 40ms") {
+		t.Fatalf("the timeout should name the elapsed bound, got %v", err)
+	}
+}
+
+// The bounds a project sets replace the built-in ones.
+func TestReadyWaitTakesTheProjectBounds(t *testing.T) {
+	if got := readyWait(config.Project{}, appReadyTimeout); got.attempts != 600 || got.interval != time.Second || got.every != 30 {
+		t.Fatalf("defaults = %+v", got)
+	}
+	p := config.Project{ReadyTimeout: "2m", ReadyInterval: "10s"}
+	if got := readyWait(p, appReadyTimeout); got.attempts != 12 || got.interval != 10*time.Second || got.every != 3 {
+		t.Fatalf("2m every 10s = %+v, want 12 attempts of 10s, a reminder every 3", got)
+	}
+	// A duration the flags would have rejected must not shorten the wait.
+	if got := readyWait(config.Project{ReadyTimeout: "nonsense"}, dbReadyTimeout); got.attempts != 60 {
+		t.Fatalf("a malformed timeout should fall back, got %+v", got)
 	}
 }

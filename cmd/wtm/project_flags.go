@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -15,21 +16,23 @@ import (
 // create and edit share them: the same project has the same fields whether it
 // is being registered or amended.
 type projectFlags struct {
-	dir          string
-	base         string
-	dump         bool
-	gitContainer bool
-	dbService    string
-	dbUser       string
-	dbEngine     string
-	dbPath       string
-	appService   string
-	deps         string
-	migrate      string
-	migrations   string
-	postCreate   string
-	env          []string
-	noInput      bool
+	dir           string
+	base          string
+	dump          bool
+	gitContainer  bool
+	dbService     string
+	dbUser        string
+	dbEngine      string
+	dbPath        string
+	appService    string
+	deps          string
+	migrate       string
+	migrations    string
+	postCreate    string
+	readyTimeout  string
+	readyInterval string
+	env           []string
+	noInput       bool
 }
 
 func (f *projectFlags) bind(cmd *cobra.Command) {
@@ -46,6 +49,8 @@ func (f *projectFlags) bind(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.migrate, "migrate", "", "migration command (e.g. 'python manage.py migrate', 'npx prisma migrate deploy')")
 	cmd.Flags().StringVar(&f.migrations, "migrations-path", "", "git pathspec of the migration files, used to spot a stale dump (default: "+config.DefaultMigrationsPath+", which matches Django, Prisma and MikroORM)")
 	cmd.Flags().StringVar(&f.postCreate, "post-create", "", "command run in the application container after a new worktree starts (e.g. 'python manage.py seed_data')")
+	cmd.Flags().StringVar(&f.readyTimeout, "ready-timeout", "", "how long a service may take to answer before post_create runs, e.g. 2m (default: 1m for the database, 10m for the application)")
+	cmd.Flags().StringVar(&f.readyInterval, "ready-interval", "", "how often it is asked, e.g. 10s (default: 1s)")
 	cmd.Flags().StringArrayVar(&f.env, "env", nil, "variable passed to the migration container, repeatable, replaces the whole set (e.g. --env DB_NAME="+config.DatabasePlaceholder+")")
 	cmd.Flags().BoolVar(&f.noInput, "no-input", false, "fail instead of asking, for scripts and CI")
 }
@@ -87,6 +92,8 @@ func (f *projectFlags) update(cmd *cobra.Command) (config.ProjectUpdate, error) 
 		{"migrate", &f.migrate, &u.MigrateCommand},
 		{"migrations-path", &f.migrations, &u.MigrationsPath},
 		{"post-create", &f.postCreate, &u.PostCreate},
+		{"ready-timeout", &f.readyTimeout, &u.ReadyTimeout},
+		{"ready-interval", &f.readyInterval, &u.ReadyInterval},
 	} {
 		if changed(pair.name) {
 			*pair.into = pair.value
@@ -122,6 +129,23 @@ func validateUpdate(u config.ProjectUpdate) error {
 	if u.DBPath != nil && *u.DBPath != "" {
 		if err := config.ValidateRelativePath("db_path", *u.DBPath); err != nil {
 			return err
+		}
+	}
+	// A create must not discover a malformed duration halfway through, once the
+	// worktree and its stack are already up.
+	for flag, value := range map[string]*string{
+		"ready-timeout":  u.ReadyTimeout,
+		"ready-interval": u.ReadyInterval,
+	} {
+		if value == nil || *value == "" {
+			continue
+		}
+		d, err := time.ParseDuration(*value)
+		if err != nil {
+			return fmt.Errorf("--%s %q is not a duration (e.g. 90s, 2m, 1h30m)", flag, *value)
+		}
+		if d <= 0 {
+			return fmt.Errorf("--%s must be positive, got %s", flag, d)
 		}
 	}
 	return nil

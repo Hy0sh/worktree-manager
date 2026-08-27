@@ -216,6 +216,18 @@ port accepts a connection while nothing listens behind it yet. A service with
 neither, a queue worker for instance, leaves nothing to wait for: the command
 runs as soon as the database answers, and a warning says so.
 
+Both waits are bounded, and a project can say by how much:
+
+```sh
+wtm project edit my-app --ready-timeout 2m --ready-interval 10s
+```
+
+`ready_timeout` is how long each service gets, `ready_interval` how often it is
+asked. Left unset, a database gets a minute and an application ten, asked every
+second, and a wait that holds repeats itself every thirty seconds with the time
+elapsed. A timeout is not a failed creation: the worktree stands, and the
+warning names the `wtm exec` line that replays the command.
+
 Do not point it at a script that resets the database: dropping the schema to
 migrate it again throws away the restored dump and pays for the migrations wtm
 exists to skip. Seed only. A failing command is a warning and not a failed
