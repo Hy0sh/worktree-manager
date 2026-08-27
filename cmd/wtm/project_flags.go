@@ -26,6 +26,7 @@ type projectFlags struct {
 	appService   string
 	deps         string
 	migrate      string
+	migrations   string
 	postCreate   string
 	env          []string
 	noInput      bool
@@ -43,6 +44,7 @@ func (f *projectFlags) bind(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.appService, "app-service", "", "compose service that runs the migrations (e.g. backend, api, php-nginx)")
 	cmd.Flags().StringVar(&f.deps, "deps", "", "dependency install command before migration (e.g. 'poetry install --no-root --with dev')")
 	cmd.Flags().StringVar(&f.migrate, "migrate", "", "migration command (e.g. 'python manage.py migrate', 'npx prisma migrate deploy')")
+	cmd.Flags().StringVar(&f.migrations, "migrations-path", "", "git pathspec of the migration files, used to spot a stale dump (default: "+config.DefaultMigrationsPath+", which matches Django, Prisma and MikroORM)")
 	cmd.Flags().StringVar(&f.postCreate, "post-create", "", "command run in the application container after a new worktree starts (e.g. 'python manage.py seed_data')")
 	cmd.Flags().StringArrayVar(&f.env, "env", nil, "variable passed to the migration container, repeatable, replaces the whole set (e.g. --env DB_NAME="+config.DatabasePlaceholder+")")
 	cmd.Flags().BoolVar(&f.noInput, "no-input", false, "fail instead of asking, for scripts and CI")
@@ -83,6 +85,7 @@ func (f *projectFlags) update(cmd *cobra.Command) (config.ProjectUpdate, error) 
 		{"app-service", &f.appService, &u.AppService},
 		{"deps", &f.deps, &u.DepsCommand},
 		{"migrate", &f.migrate, &u.MigrateCommand},
+		{"migrations-path", &f.migrations, &u.MigrationsPath},
 		{"post-create", &f.postCreate, &u.PostCreate},
 	} {
 		if changed(pair.name) {
@@ -173,7 +176,7 @@ func (f *projectFlags) stepper(a *app, current config.Project) (config.ProjectUp
 	if f.noInput {
 		return config.ProjectUpdate{}, fmt.Errorf("nothing to do: pass the settings as flags, or drop --no-input to be asked")
 	}
-	return runProjectStepper(newPrompter(a.in, a.out), current)
+	return runProjectStepper(newPrompter(a.in, a.out), current, a.cfg.BaseBranchFor(config.Project{}))
 }
 
 // steppedUpdate walks the questions then applies the same gate the flag path

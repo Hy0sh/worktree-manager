@@ -241,6 +241,12 @@ indices, which is what re-registering a project would do: every running stack
 would change ports and compose project name. The settings can also be reviewed
 directly in `config.json`.
 
+The base branch is the one question whose empty answer records nothing: a
+project that names none follows `default_base_branch` from `config.json`, and
+`develop` when that is unset too. Answering it pins the project instead
+(`--base` does the same), which is what you want for the odd repository that
+branches off something else.
+
 `--git-container` is only useful for projects whose compose bind-mounts the
 git-dir into a container; left off, it creates nothing.
 
@@ -248,8 +254,11 @@ git-dir into a container; left off, it creates nothing.
 commits touching migrations since the revision recorded next to it, and `create`
 says so when replaying that delta would cost time. A stale dump still works, the
 application simply migrates on top of it, so this is never a blocker. The
-migration files are found through `migrations_path`, whose default matches
-Django, Prisma and MikroORM alike.
+migration files are found through `migrations_path` (`--migrations-path`),
+whose default matches Django, Prisma and MikroORM alike. A layout it does not
+match, `db/migrate/*` for Rails or `src/main/resources/db/migration/*` for
+Flyway, has to say so: no commit ever touches the default pathspec there, so
+every dump would be reported as up to date forever.
 
 ## How ports are isolated
 

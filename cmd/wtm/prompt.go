@@ -48,6 +48,19 @@ func (p *prompter) ask(question, current string) (string, error) {
 	return answer, nil
 }
 
+// askInherited asks for a value the project leaves unset, showing what applies
+// as long as it stays that way. An empty answer returns "", never the inherited
+// value: recording that would pin the project to whatever the registry's
+// default said the day the question was answered.
+func (p *prompter) askInherited(question, inherited string) (string, error) {
+	fmt.Fprintf(p.out, "%s [inherited: %s]: ", question, inherited)
+	if !p.in.Scan() {
+		fmt.Fprintln(p.out)
+		return "", errNoInput
+	}
+	return strings.TrimSpace(p.in.Text()), nil
+}
+
 // askRequired keeps asking until something is typed, since a stepper that
 // silently registers a project without a directory helps nobody.
 func (p *prompter) askRequired(question, current string) (string, error) {

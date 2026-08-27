@@ -6,6 +6,26 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Added
+
+- `migrations_path` (`--migrations-path`) is now asked for by the stepper and
+  settable by flag. It decides whether `backup list` and `create` report a dump
+  as stale, and its default pathspec matches Django, Prisma and MikroORM alone:
+  a Rails project (`db/migrate/*`) or a Flyway one had its dump called up to
+  date forever, since no commit ever touches `*migrations/*` there. Editing
+  `config.json` by hand was the only way in. The answer is recorded only when it
+  differs from the default, so an edit of a project registered earlier does not
+  report a change it did not make.
+
+### Fixed
+
+- The stepper no longer pins `base_branch` on a project that inherits it. It
+  offered the inherited branch as the default answer and wrote it straight back,
+  so every project registered through the questions ended up with its own
+  `base_branch` and `default_base_branch` applied to nobody. An empty answer now
+  records nothing, and the prompt says what is being inherited
+  (`base branch [inherited: main]`).
+
 ## [0.5.0] - 2026-08-25
 
 ### Added

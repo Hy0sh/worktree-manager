@@ -96,3 +96,18 @@ func TestApplyClearsAValueOnPurpose(t *testing.T) {
 		t.Fatalf("changes = %+v", changes)
 	}
 }
+
+// migrations_path decides whether a dump is reported as stale, and the flag
+// path is the only way in for a project whose migrations sit outside the
+// default pathspec.
+func TestApplyRecordsTheMigrationsPath(t *testing.T) {
+	p := Project{Backup: &Backup{AppService: "api", MigrateCommand: "rails db:migrate"}}
+	edited, changes := ProjectUpdate{MigrationsPath: str("db/migrate/*")}.Apply(p)
+
+	if edited.BackupConfig().MigrationsPath != "db/migrate/*" {
+		t.Fatalf("backup = %+v", edited.Backup)
+	}
+	if len(changes) != 1 || changes[0].Field != "migrations_path" {
+		t.Fatalf("changes = %+v", changes)
+	}
+}

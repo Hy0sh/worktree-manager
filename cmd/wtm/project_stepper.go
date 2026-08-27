@@ -15,7 +15,9 @@ import (
 // rather than expecting the ten flags of `project create` to be known in
 // advance. Every answer defaults to what the project already carries, so an
 // edit is a series of empty lines plus the one field being changed.
-func runProjectStepper(p *prompter, current config.Project) (config.ProjectUpdate, error) {
+// inheritedBase is what applies while the project names no base branch of its
+// own, i.e. the registry's default_base_branch or the fallback.
+func runProjectStepper(p *prompter, current config.Project, inheritedBase string) (config.ProjectUpdate, error) {
 	var u config.ProjectUpdate
 
 	dir, err := askDir(p, current.Dir)
@@ -24,11 +26,9 @@ func runProjectStepper(p *prompter, current config.Project) (config.ProjectUpdat
 	}
 	u.Dir = &dir
 
-	base, err := p.ask("base branch", or(current.BaseBranch, config.FallbackBaseBranch))
-	if err != nil {
+	if err := askBaseBranch(p, current.BaseBranch, inheritedBase, &u); err != nil {
 		return u, err
 	}
-	u.BaseBranch = &base
 
 	dump, err := p.askYesNo("enable the database backup?", current.Dump)
 	if err != nil {
@@ -43,7 +43,7 @@ func runProjectStepper(p *prompter, current config.Project) (config.ProjectUpdat
 
 	// Asked outside the backup block: the dump carries the schema and never the
 	// seed data, so a project seeds a fresh worktree whether it has one or not.
-	postCreate, err := p.ask("command to run in the application container after a new worktree starts", current.PostCreate)
+	postCreate, err := p.ask("command to run in the application container after a new worktree starts (e.g. manage.py seed_data)", current.PostCreate)
 	if err != nil {
 		return u, err
 	}
@@ -55,6 +55,29 @@ func runProjectStepper(p *prompter, current config.Project) (config.ProjectUpdat
 	}
 	u.GitContainer = &gitContainer
 	return u, nil
+}
+
+// askBaseBranch records an answer only when one is typed. Offering the
+// inherited branch as a default and writing it back would pin the project to
+// whatever default_base_branch said the day it was registered, which is how
+// that setting came to apply to nobody.
+func askBaseBranch(p *prompter, current, inherited string, u *config.ProjectUpdate) error {
+	if current != "" {
+		base, err := p.ask("base branch", current)
+		if err != nil {
+			return err
+		}
+		u.BaseBranch = &base
+		return nil
+	}
+	base, err := p.askInherited("base branch", inherited)
+	if err != nil {
+		return err
+	}
+	if base != "" {
+		u.BaseBranch = &base
+	}
+	return nil
 }
 
 // askBackup only runs when the backup is on: asking for a migration command a
@@ -70,9 +93,9 @@ func askBackup(p *prompter, dir string, project config.Project, u *config.Projec
 	if err != nil {
 		return err
 	}
-	recorded := ""
+	recorded, recordedPath := "", ""
 	if project.Backup != nil {
-		recorded = project.Backup.DBEngine
+		recorded, recordedPath = project.Backup.DBEngine, project.Backup.MigrationsPath
 	}
 	engine, err := askEngine(p, dir, dbService, recorded)
 	if err != nil {
@@ -98,19 +121,26 @@ func askBackup(p *prompter, dir string, project config.Project, u *config.Projec
 			return err
 		}
 	}
-	appService, err := p.askRequired("  service running the migrations", current.AppService)
+	appService, err := p.askRequired("  service running the migrations (e.g. backend, api, php-nginx)", current.AppService)
 	if err != nil {
 		return err
 	}
-	migrate, err := p.askRequired("  migration command", current.MigrateCommand)
+	migrate, err := p.askRequired("  migration command (e.g. python manage.py migrate)", current.MigrateCommand)
 	if err != nil {
 		return err
 	}
-	deps, err := p.ask("  dependency install command, if the image does not carry them", current.DepsCommand)
+	// The default matches Django, Prisma and MikroORM, and nothing else: a
+	// project whose migrations live elsewhere would have its dump reported as
+	// up to date forever, since no commit ever touches that pathspec.
+	migrations, err := p.ask("  git pathspec of the migration files, used to spot a stale dump (e.g. db/migrate/*)", or(current.MigrationsPath, config.DefaultMigrationsPath))
 	if err != nil {
 		return err
 	}
-	env, err := p.askPairs("  environment telling the app which database to target", current.Env)
+	deps, err := p.ask("  dependency install command, if the image does not carry them (e.g. poetry install --no-root)", current.DepsCommand)
+	if err != nil {
+		return err
+	}
+	env, err := p.askPairs("  environment telling the app which database to target (e.g. DB_NAME="+config.DatabasePlaceholder+")", current.Env)
 	if err != nil {
 		return err
 	}
@@ -121,6 +151,12 @@ func askBackup(p *prompter, dir string, project config.Project, u *config.Projec
 		u.DBUser = &dbUser
 	}
 	u.MigrateCommand, u.DepsCommand, u.Env = &migrate, &deps, env
+	// Recorded only once it says something the default does not: writing the
+	// default back would report a change on every project registered before
+	// the question existed, and fill its entry with the value it already had.
+	if migrations != config.DefaultMigrationsPath || recordedPath != "" {
+		u.MigrationsPath = &migrations
+	}
 	return nil
 }
 

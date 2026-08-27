@@ -44,6 +44,7 @@ func TestStepperFillsAProjectFromScratch(t *testing.T) {
 		"",                         // database user, keep the default
 		"backend",                  // service running the migrations
 		"python manage.py migrate", // migration command
+		"",                         // migrations pathspec, keep the default
 		"",                         // no deps command
 		"DB_NAME={{database}}",     // environment
 		"",                         // end of the environment
@@ -51,9 +52,14 @@ func TestStepperFillsAProjectFromScratch(t *testing.T) {
 		"y",                        // git-container
 	}, "\n") + "\n")
 
-	u, err := runProjectStepper(newPrompter(in, &out), config.Project{})
+	u, err := runProjectStepper(newPrompter(in, &out), config.Project{}, config.FallbackBaseBranch)
 	if err != nil {
 		t.Fatalf("stepper: %v", err)
+	}
+	// An answered default is not a setting: the pathspec stays out of the
+	// registry so a later change of default still reaches this project.
+	if u.MigrationsPath != nil {
+		t.Fatalf("migrations_path should not be recorded when the default is kept, got %q", *u.MigrationsPath)
 	}
 	p, _ := u.Apply(config.Project{})
 
@@ -103,10 +109,10 @@ func TestStepperOnlyChangesWhatIsAnswered(t *testing.T) {
 		},
 	}
 	in := strings.NewReader(strings.Join([]string{
-		"", "", "", "", "", "appuser", "", "", "", "", "", "",
+		"", "", "", "", "", "appuser", "", "", "", "", "", "", "",
 	}, "\n") + "\n")
 
-	u, err := runProjectStepper(newPrompter(in, new(bytes.Buffer)), current)
+	u, err := runProjectStepper(newPrompter(in, new(bytes.Buffer)), current, config.FallbackBaseBranch)
 	if err != nil {
 		t.Fatalf("stepper: %v", err)
 	}
@@ -134,13 +140,14 @@ func TestStepperDetectsTheEngineFromTheComposeImage(t *testing.T) {
 		"",        // database user
 		"backend", // service running the migrations
 		"migrate", // migration command
+		"",        // migrations pathspec
 		"",        // deps
 		"",        // environment end
 		"",        // post_create
 		"n",       // git-container
 	}, "\n") + "\n")
 
-	u, err := runProjectStepper(newPrompter(in, new(bytes.Buffer)), config.Project{})
+	u, err := runProjectStepper(newPrompter(in, new(bytes.Buffer)), config.Project{}, config.FallbackBaseBranch)
 	if err != nil {
 		t.Fatalf("stepper: %v", err)
 	}
@@ -160,10 +167,10 @@ func TestStepperAsksAgainForAnUnknownEngine(t *testing.T) {
 		"oracle",  // unknown engine
 		"mariadb", // corrected
 		"",        // database user
-		"backend", "migrate", "", "", "", "n",
+		"backend", "migrate", "", "", "", "", "n",
 	}, "\n") + "\n")
 
-	u, err := runProjectStepper(newPrompter(in, &out), config.Project{})
+	u, err := runProjectStepper(newPrompter(in, &out), config.Project{}, config.FallbackBaseBranch)
 	if err != nil {
 		t.Fatalf("stepper: %v", err)
 	}
@@ -186,10 +193,10 @@ func TestStepperAsksForTheFileInsteadOfTheUserOnSQLite(t *testing.T) {
 		"sqlite",     // engine
 		"../evil.db", // escaping file path, re-asked
 		"var/app.db", // corrected
-		"backend", "migrate", "", "", "", "n",
+		"backend", "migrate", "", "", "", "", "n",
 	}, "\n") + "\n")
 
-	u, err := runProjectStepper(newPrompter(in, &out), config.Project{})
+	u, err := runProjectStepper(newPrompter(in, &out), config.Project{}, config.FallbackBaseBranch)
 	if err != nil {
 		t.Fatalf("stepper: %v", err)
 	}
@@ -213,7 +220,7 @@ func TestStepperAsksAgainForADirectoryThatDoesNotExist(t *testing.T) {
 	var out bytes.Buffer
 	in := strings.NewReader(filepath.Join(dir, "nope") + "\n" + dir + "\nmain\nn\n\nn\n")
 
-	u, err := runProjectStepper(newPrompter(in, &out), config.Project{})
+	u, err := runProjectStepper(newPrompter(in, &out), config.Project{}, config.FallbackBaseBranch)
 	if err != nil {
 		t.Fatalf("stepper: %v", err)
 	}
@@ -230,13 +237,14 @@ func TestStepperAsksAgainForADirectoryThatDoesNotExist(t *testing.T) {
 // the flag path does, through the shared validateUpdate gate.
 func TestStepperAnswersGetTheSameValidationAsFlags(t *testing.T) {
 	dir := repoWithCompose(t)
-	a := &app{in: strings.NewReader(strings.Join([]string{
+	a := &app{cfg: &config.Config{}, in: strings.NewReader(strings.Join([]string{
 		dir, "main", "y",
 		"",           // database service
 		"",           // database engine, keep the detected one
 		"",           // database user
 		"my Backend", // invalid identifier for the migration service
 		"migrate",    // migration command
+		"",           // migrations pathspec
 		"",           // no deps command
 		"",           // end of the environment
 		"",           // post_create
@@ -258,7 +266,7 @@ func TestStepperRefusesADirectoryThatIsNotAGitRepository(t *testing.T) {
 	var out bytes.Buffer
 	in := strings.NewReader(plain + "\n" + repo + "\nmain\nn\n\nn\n")
 
-	u, err := runProjectStepper(newPrompter(in, &out), config.Project{})
+	u, err := runProjectStepper(newPrompter(in, &out), config.Project{}, config.FallbackBaseBranch)
 	if err != nil {
 		t.Fatalf("stepper: %v", err)
 	}
@@ -272,7 +280,72 @@ func TestStepperRefusesADirectoryThatIsNotAGitRepository(t *testing.T) {
 
 // Nothing to read means nothing to ask: the stepper stops instead of looping.
 func TestStepperStopsWhenTheInputIsClosed(t *testing.T) {
-	if _, err := runProjectStepper(newPrompter(strings.NewReader(""), new(bytes.Buffer)), config.Project{}); err == nil {
+	if _, err := runProjectStepper(newPrompter(strings.NewReader(""), new(bytes.Buffer)), config.Project{}, config.FallbackBaseBranch); err == nil {
 		t.Fatal("a closed input should end the stepper")
+	}
+}
+
+// A project that names no base branch of its own must keep inheriting: the
+// stepper used to offer the inherited value as its default and record it back,
+// which pinned every project to whatever applied the day it was registered and
+// left default_base_branch applying to nobody.
+func TestStepperKeepsTheBaseBranchInheritedWhenNothingIsTyped(t *testing.T) {
+	dir := repoWithCompose(t)
+	var out bytes.Buffer
+	in := strings.NewReader(dir + "\n\nn\n\nn\n")
+
+	u, err := runProjectStepper(newPrompter(in, &out), config.Project{}, "main")
+	if err != nil {
+		t.Fatalf("stepper: %v", err)
+	}
+	if u.BaseBranch != nil {
+		t.Fatalf("base_branch should stay unset, got %q", *u.BaseBranch)
+	}
+	// What applies has to be visible, or the empty answer is a guess.
+	if !strings.Contains(out.String(), "inherited: main") {
+		t.Fatalf("the inherited branch should be shown:\n%s", out.String())
+	}
+}
+
+// Typing one still records it: inheriting is the default, not the only option.
+func TestStepperRecordsATypedBaseBranch(t *testing.T) {
+	dir := repoWithCompose(t)
+	in := strings.NewReader(dir + "\nrelease\nn\n\nn\n")
+
+	u, err := runProjectStepper(newPrompter(in, new(bytes.Buffer)), config.Project{}, "main")
+	if err != nil {
+		t.Fatalf("stepper: %v", err)
+	}
+	if u.BaseBranch == nil || *u.BaseBranch != "release" {
+		t.Fatalf("base_branch = %v", u.BaseBranch)
+	}
+}
+
+// The pathspec decides whether a dump is reported as stale, and the default
+// matches Django, Prisma and MikroORM alone: a Rails or Flyway layout had no
+// way in but config.json.
+func TestStepperRecordsAMigrationsPathThatDiffersFromTheDefault(t *testing.T) {
+	dir := repoWithCompose(t)
+	in := strings.NewReader(strings.Join([]string{
+		dir, "main", "y",
+		"",        // database service
+		"",        // database engine
+		"",        // database user
+		"backend", // service running the migrations
+		"rails db:migrate",
+		"db/migrate/*", // migrations pathspec
+		"", "", "", "n",
+	}, "\n") + "\n")
+
+	u, err := runProjectStepper(newPrompter(in, new(bytes.Buffer)), config.Project{}, config.FallbackBaseBranch)
+	if err != nil {
+		t.Fatalf("stepper: %v", err)
+	}
+	if u.MigrationsPath == nil || *u.MigrationsPath != "db/migrate/*" {
+		t.Fatalf("migrations_path = %v", u.MigrationsPath)
+	}
+	p, _ := u.Apply(config.Project{})
+	if p.BackupConfig().MigrationsPath != "db/migrate/*" {
+		t.Fatalf("backup = %+v", p.BackupConfig())
 	}
 }
