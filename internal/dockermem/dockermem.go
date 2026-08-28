@@ -1,32 +1,48 @@
-// Package dockermem measures what the Docker VM actually has and uses.
+// Package dockermem measures the memory a stack has to fit into, and what is
+// already in it.
 //
 // Declared limits are useless for this: one my-app stack declares more
 // than 13 GB of mem_limit across its services yet runs in about 2 GB, because
 // mem_limit is a ceiling and not a reservation. Only measurement tells you
 // whether one more stack fits.
+//
+// Where that memory lives decides what counts as used. Docker Desktop holds a
+// budget of its own, so the containers are all of it; a native Linux docker
+// shares the machine with the user's session, so the desktop and the browser
+// count too. See Usage.Shared.
 package dockermem
 
 import (
 	"context"
 	"fmt"
+	"os"
 	"strconv"
 	"strings"
 
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 )
 
-// WarnRatio is the share of the Docker VM above which starting one more stack
-// is worth a warning.
+// WarnRatio is the share of the available memory above which starting one more
+// stack is worth a warning.
 const WarnRatio = 0.85
 
 type Usage struct {
-	Total int64 // bytes available to the VM
-	Used  int64 // bytes used by every running container
+	Total int64 // bytes the containers have to fit into
+	Used  int64 // bytes already used, by the containers alone unless Shared
 	// StackUsed excludes one-off `compose run` containers: a migration
 	// container peaking at 6 GB is not what a stack costs, and counting it
 	// would triple the estimate.
 	StackUsed int64
 	Projects  int // distinct compose projects, one-offs excluded
+	// Shared says the daemon runs on the very machine wtm does, which is a
+	// native Linux docker. There the containers compete with the user's own
+	// session for one pool of RAM, so Used is what the whole machine uses and
+	// not the sum of the containers: a desktop holding 6 GB is pressure the
+	// containers cannot see, and ignoring it made the warning fire long after
+	// the machine had started to thrash. Docker Desktop, on macOS or through
+	// WSL2, gives the containers a budget of their own, where that sum IS the
+	// pressure.
+	Shared bool
 }
 
 // PerProject is the average cost of a running stack, the best available
@@ -51,13 +67,32 @@ func (u Usage) Warning() string {
 	if !u.Tight() {
 		return ""
 	}
+	if u.Shared {
+		// Naming what the stacks account for keeps the number actionable: the
+		// rest of the pressure is the user's own session, and no `wtm stop`
+		// will free it.
+		return fmt.Sprintf("warning: this machine uses %s of its %s, %d stack(s) accounting for %s; "+
+			"one more (~%s estimated) would bring the total to ~%s. Stop a stack "+
+			"(`wtm stop <branch>`, or `wtm stop --all`), or free memory elsewhere.",
+			Human(u.Used), Human(u.Total), u.Projects, Human(u.StackUsed),
+			Human(u.PerProject()), Human(u.Projected()))
+	}
 	return fmt.Sprintf("warning: %d stack(s) already use %s out of the %s of the Docker VM; "+
 		"one more (~%s estimated) would bring the total to ~%s. Stop a stack (`wtm stop <branch>`) "+
 		"or increase Docker Desktop's RAM if it gets tight.",
 		u.Projects, Human(u.Used), Human(u.Total), Human(u.PerProject()), Human(u.Projected()))
 }
 
+// procMemInfo is where a Linux kernel publishes the machine's own memory.
+const procMemInfo = "/proc/meminfo"
+
 func Read(ctx context.Context, runner execx.Runner) (Usage, error) {
+	return read(ctx, runner, procMemInfo)
+}
+
+// read takes the path of the local kernel's meminfo so the suite never depends
+// on the machine it runs on; empty skips the check.
+func read(ctx context.Context, runner execx.Runner, meminfo string) (Usage, error) {
 	var u Usage
 
 	res, err := runner.Run(ctx, execx.Cmd{Name: "docker", Args: []string{"info", "--format", "{{.MemTotal}}"}})
@@ -116,7 +151,66 @@ func Read(ctx context.Context, runner execx.Runner) (Usage, error) {
 			u.StackUsed += n
 		}
 	}
+	// One kernel for both: the daemon reports the same total the local
+	// /proc/meminfo does. A VM (Docker Desktop, on any host) reports its own
+	// budget, and a remote daemon somebody else's machine, so the totals differ
+	// and the sum of the containers stays the right measure.
+	if used, total, ok := hostMemory(meminfo); ok && sameMachine(u.Total, total) {
+		u.Used = used
+		u.Shared = true
+	}
 	return u, nil
+}
+
+// sameMachine allows a little slack: the two numbers come from the same kernel
+// but travel through docker's own formatting.
+func sameMachine(reported, local int64) bool {
+	if reported <= 0 || local <= 0 {
+		return false
+	}
+	diff := reported - local
+	if diff < 0 {
+		diff = -diff
+	}
+	return float64(diff) < float64(local)*0.01
+}
+
+// hostMemory reads what the machine uses and what it has. MemAvailable is the
+// kernel's own estimate of what a new workload could claim without swapping,
+// which is the question being asked here; MemFree would ignore the caches the
+// kernel gives back under pressure.
+func hostMemory(path string) (used, total int64, ok bool) {
+	if path == "" {
+		return 0, 0, false
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return 0, 0, false
+	}
+	var available int64
+	for _, line := range strings.Split(string(data), "\n") {
+		key, rest, found := strings.Cut(line, ":")
+		if !found {
+			continue
+		}
+		if key != "MemTotal" && key != "MemAvailable" {
+			continue
+		}
+		// Every size in this file is printed in kB, whatever the field.
+		n, err := strconv.ParseInt(strings.TrimSpace(strings.TrimSuffix(strings.TrimSpace(rest), "kB")), 10, 64)
+		if err != nil {
+			return 0, 0, false
+		}
+		if key == "MemTotal" {
+			total = n * 1024
+		} else {
+			available = n * 1024
+		}
+	}
+	if total <= 0 || available <= 0 || available > total {
+		return 0, 0, false
+	}
+	return total - available, total, true
 }
 
 var units = []struct {

@@ -90,10 +90,19 @@ func start(ctx context.Context, o Options, dest string) error {
 		return nil
 	}
 	// Advisory only: the measurement can fail for a dozen harmless reasons and
-	// the user knows their machine better than an extrapolation does.
+	// the user knows their machine better than an extrapolation does. Which is
+	// why a person is asked rather than refused, and a script is not asked at
+	// all: an average over the running stacks is not a fact worth failing on.
 	if u, err := dockermem.Read(ctx, o.Runner); err == nil {
 		if msg := u.Warning(); msg != "" {
 			o.logf("%s", msg)
+			// The escape belongs to the question: an automation that allocated
+			// a terminal without anybody behind it hangs here, and the only
+			// trace its operator will find is this line.
+			if o.Confirm != nil && !o.Confirm("start the stack anyway? (--ignore-memory never asks)") {
+				o.logf("stack not started: free some memory, then `wtm start %s`", o.Branch)
+				return errStackNotStarted
+			}
 		}
 	}
 	wt, err := o.Stack.FindByBranch(ctx, o.Branch)

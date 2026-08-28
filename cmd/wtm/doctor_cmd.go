@@ -177,8 +177,18 @@ func newDoctorCmd(a *app) *cobra.Command {
 			fmt.Fprintf(a.out, "config   %s\n", a.cfgPath)
 			fmt.Fprintf(a.out, "backups  %s\n", a.backups)
 			if u, err := dockermem.Read(cmd.Context(), a.runner); err == nil && u.Total > 0 {
-				fmt.Fprintf(a.out, "docker   %s used out of %s, %d stack(s) running (~%s per stack)\n",
-					dockermem.Human(u.Used), dockermem.Human(u.Total), u.Projects, dockermem.Human(u.PerProject()))
+				// A native Linux docker shares the machine's memory, so Used
+				// covers the desktop too and the line has to say whose it is.
+				if u.Shared {
+					fmt.Fprintf(a.out, "memory   %s used out of %s on this machine, %d stack(s) "+
+						"accounting for %s (~%s per stack)\n",
+						dockermem.Human(u.Used), dockermem.Human(u.Total), u.Projects,
+						dockermem.Human(u.StackUsed), dockermem.Human(u.PerProject()))
+				} else {
+					fmt.Fprintf(a.out, "docker   %s used out of %s, %d stack(s) running (~%s per stack)\n",
+						dockermem.Human(u.Used), dockermem.Human(u.Total), u.Projects,
+						dockermem.Human(u.PerProject()))
+				}
 				if msg := u.Warning(); msg != "" {
 					fmt.Fprintln(a.out, msg)
 				}

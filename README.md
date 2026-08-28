@@ -121,6 +121,7 @@ wtm create feat/my-branch --no-start        # without starting the stack
 wtm create feat/my-branch --no-post-create  # stack started, post_create skipped
 wtm create feat/my-branch --run claude       # a command on your machine, once ready
 wtm create feat/my-branch --exec 'manage.py load_fixture demo'   # in the container
+wtm create feat/my-branch --ignore-memory    # never ask, however tight the RAM
 
 # lifecycle
 wtm list                                    # worktrees wtm created for this project
@@ -389,6 +390,16 @@ beats reaching the container yourself, which means knowing the compose project
 name derived from the repository, the index and the branch. `wtm create
 --no-post-create` leaves it out for one worktree, for a stack wanted quickly
 rather than seeded, and prints the `wtm exec` line that plays it later.
+
+Before a stack goes up, wtm measures what the memory it has to fit into already
+holds and says when one more would not. On a native Linux docker that pool is
+the whole machine, session and browser included; Docker Desktop gives the
+containers a budget of their own. When it is tight, a create or a start asks
+whether to go ahead, and answering no leaves the worktree without its stack, to
+be started later with `wtm start`. The question only comes on a terminal: the
+estimate is an average over the running stacks, worth a person's judgement and
+never worth failing a script or an agent over. `--ignore-memory` answers it in
+advance, for an automation that runs under a terminal with nobody behind it.
 
 `wtm create --run` and `--exec` play one shell line each once the worktree is
 ready: `--run` on your machine from the worktree directory, with the compose

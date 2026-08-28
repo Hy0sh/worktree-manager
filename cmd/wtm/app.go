@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"golang.org/x/term"
+
 	"github.com/Hy0sh/worktree-manager/internal/backup"
 	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
@@ -78,7 +80,23 @@ func (a *app) options(name string, p config.Project, branch string) worktree.Opt
 			RepoName:   filepath.Base(p.Dir),
 			Out:        a.out,
 		},
+		Confirm: a.confirmer(),
 	}
+}
+
+// confirmer is nil unless a person is there to answer. wtm exists for parallel
+// agents, so a `create` must never hang on a question nor fail on one nobody
+// read, and a terminal is the only evidence that someone will.
+//
+// term.IsTerminal asks the kernel, where a file mode cannot: /dev/null is a
+// character device like a terminal is, so `wtm create < /dev/null`, the ordinary
+// way a script calls a command, would have been asked and answered no.
+func (a *app) confirmer() func(string) bool {
+	f, ok := a.in.(*os.File)
+	if !ok || !term.IsTerminal(int(f.Fd())) {
+		return nil
+	}
+	return func(question string) bool { return confirm(a.in, a.out, question) }
 }
 
 func (a *app) manager() *backup.Manager {

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -41,5 +42,24 @@ func TestPathPrintsNothingButThePath(t *testing.T) {
 	want := filepath.Join(dir, ".worktrees", "refactor/x") + "\n"
 	if out.String() != want {
 		t.Fatalf("output = %q, want %q", out.String(), want)
+	}
+}
+
+// wtm exists for parallel agents: a `create` reaching a memory warning must
+// never hang on a question nobody will answer, nor fail on one nobody read.
+// A terminal is the only evidence that somebody is there.
+func TestNothingIsAskedWithoutATerminal(t *testing.T) {
+	a := &app{in: strings.NewReader("y\n"), out: &bytes.Buffer{}}
+	if a.confirmer() != nil {
+		t.Fatal("a piped stdin is a script, and a script is never asked")
+	}
+	f, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	a.in = f
+	if a.confirmer() != nil {
+		t.Fatal("/dev/null is not a terminal either")
 	}
 }

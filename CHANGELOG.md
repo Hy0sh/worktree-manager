@@ -34,6 +34,41 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   thirty seconds is thirty seconds of elapsed time rather than thirty probes.
   The database wait goes through `execx.WaitFor`, which counts attempts and says
   so instead of claiming a duration: its bound stays as approximate as before.
+- The memory warning before a stack starts counts what the whole machine uses
+  when docker shares it, instead of the containers alone. It was written for
+  Docker Desktop, where the containers own a VM's budget and their sum is the
+  pressure. A native Linux docker has no VM: `docker info` then reports the
+  machine's own RAM, which the user's session, browser and editor are already
+  eating, and none of that was counted. So the threshold was reached long after
+  the machine had started to thrash, and the advice it would have given
+  (`increase Docker Desktop's RAM`) does not exist there. A colleague's Ubuntu
+  machine froze on its third worktree without wtm ever saying a word. The two
+  cases are told apart by whether the daemon reports the same total as the local
+  `/proc/meminfo`: one kernel for both means one pool of RAM. A VM, on any host,
+  and a remote daemon both report a total of their own and keep the previous
+  measure. `wtm doctor` names whose memory it is reporting, and the per-stack
+  estimate still comes from the containers alone, since that is what a
+  `wtm stop` can actually give back.
+- A create or a start reaching that warning now asks a person whether to go
+  ahead, instead of only saying so and starting nine containers anyway. The
+  warning scrolled past among compose's own output, which is how a colleague's
+  machine froze on its third worktree. Answering no leaves the worktree and its
+  files, the state `--no-start` produces, and names the `wtm start` that brings
+  the stack up once there is room. Nobody is asked unless stdin is a terminal:
+  wtm exists for parallel agents, and the estimate behind the warning is an
+  average over the running stacks, which predicts neither a light stack nor a
+  heavy one. Refusing a create over it, or hanging on a question nobody reads,
+  would both be worse than the warning it replaces. `golang.org/x/term` is a
+  new direct dependency for that one check: a file mode cannot tell a terminal
+  from `/dev/null`, so `wtm create < /dev/null` would have been asked and
+  answered no. `--ignore-memory` answers in advance on both commands, for the
+  one case the terminal check cannot cover: an automation that allocated a
+  terminal with nobody behind it. It is named after what it overrides and has
+  no shorthand on purpose, where `remove --all` takes a plain `-y`: there the
+  question answers an intent the command already states, here it is one the
+  tool raises, and a habitual `-y` is how a caller ends up agreeing to
+  something it never read. The question names the flag, since a hang leaves
+  nothing else in the log.
 
 ## [0.8.0] - 2026-08-28
 

@@ -9,6 +9,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 )
@@ -165,6 +167,31 @@ func TestCreateRefusesExecWithoutAStack(t *testing.T) {
 	for _, l := range f.fake.Lines() {
 		if strings.Contains(l, "worktree add") {
 			t.Fatalf("nothing should have been created, got %q", l)
+		}
+	}
+}
+
+// An automation that allocated a terminal without anybody behind it would hang
+// on the memory question, so both commands that can ask must offer the way out.
+// It is named after what it overrides and carries no shorthand on purpose: a
+// generic `-y` is the flag one passes out of habit, which is how a caller ends
+// up answering a question it never read, and how a confirmation added later
+// would be swallowed by callers that never agreed to it.
+func TestCreateAndStartOfferAWayOutOfTheMemoryQuestion(t *testing.T) {
+	f := newAllFixture(t, "")
+	for _, cmd := range []*cobra.Command{newCreateCmd(f.app), newStartCmd(f.app)} {
+		flag := cmd.Flags().Lookup("ignore-memory")
+		if flag == nil {
+			t.Fatalf("`%s` memory question cannot be answered in advance", cmd.Name())
+		}
+		if flag.Shorthand != "" {
+			t.Fatalf("`%s --ignore-memory` should have no shorthand, got -%s", cmd.Name(), flag.Shorthand)
+		}
+		if cmd.Flags().ShorthandLookup("y") != nil {
+			t.Fatalf("`%s` must not answer a memory question under a habitual -y", cmd.Name())
+		}
+		if !strings.Contains(flag.Usage, "memory") {
+			t.Fatalf("`%s --ignore-memory` should say what it overrides, got %q", cmd.Name(), flag.Usage)
 		}
 	}
 }

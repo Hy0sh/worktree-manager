@@ -11,7 +11,7 @@ import (
 )
 
 func newCreateCmd(a *app) *cobra.Command {
-	var noStart, noPostCreate bool
+	var noStart, noPostCreate, ignoreMemory bool
 	var runAfter, execAfter string
 	cmd := &cobra.Command{
 		Use:   "create [project] <branch> [base]",
@@ -52,6 +52,9 @@ func newCreateCmd(a *app) *cobra.Command {
 			o.NoStart = noStart
 			o.NoPostCreate = noPostCreate
 			o.RunAfter, o.ExecAfter = runAfter, execAfter
+			if ignoreMemory {
+				o.Confirm = nil
+			}
 			if p.Dump && !noStart {
 				if st := a.manager().Check(cmd.Context(), name, p); st.Behind() {
 					fmt.Fprintf(a.out, "note: the dump is %s, `wtm backup refresh %s` would save the replay\n",
@@ -65,11 +68,14 @@ func newCreateCmd(a *app) *cobra.Command {
 	cmd.Flags().BoolVar(&noPostCreate, "no-post-create", false, "starts the stack without running the project's post_create")
 	cmd.Flags().StringVar(&runAfter, "run", "", "shell line to play on your machine, from the worktree, once it is ready")
 	cmd.Flags().StringVar(&execAfter, "exec", "", "shell line to play in the application container, after the project's post_create")
+	cmd.Flags().BoolVar(&ignoreMemory, "ignore-memory", false,
+		"start the stack without asking, however tight the machine's memory is")
 	return cmd
 }
 
 func newStartCmd(a *app) *cobra.Command {
-	return &cobra.Command{
+	var ignoreMemory bool
+	cmd := &cobra.Command{
 		Use:               "start [project] <branch>",
 		Short:             "Starts the stack of an existing worktree",
 		Args:              needArgs(1, 2, "name the branch to start, as in `wtm start feat/my-branch`"),
@@ -81,9 +87,16 @@ func newStartCmd(a *app) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return worktree.Start(cmd.Context(), a.options(name, p, rest[0]))
+			o := a.options(name, p, rest[0])
+			if ignoreMemory {
+				o.Confirm = nil
+			}
+			return worktree.Start(cmd.Context(), o)
 		},
 	}
+	cmd.Flags().BoolVar(&ignoreMemory, "ignore-memory", false,
+		"start the stack without asking, however tight the machine's memory is")
+	return cmd
 }
 
 func newStopCmd(a *app) *cobra.Command {

@@ -36,7 +36,17 @@ type Options struct {
 	Out        io.Writer
 	Stack      *stack.Client
 	Resolver   *index.Resolver // resolves and records each branch's stable index
+	// Confirm asks a yes-or-no question, and is nil when nobody is there to
+	// answer. The memory advisory is its only caller: it rests on an average
+	// over the running stacks, which predicts neither a light stack nor a heavy
+	// one, so it is worth a question to a person and never worth failing the
+	// create of a script or an agent.
+	Confirm func(question string) bool
 }
+
+// errStackNotStarted says a person declined to bring the stack up. The worktree
+// is created and usable, so nothing above treats it as a failure.
+var errStackNotStarted = errors.New("stack not started")
 
 // dest is where the worktree goes. A branch name is not a safe path fragment:
 // `../..` escapes .worktrees entirely, and git only rejects such a refname
@@ -85,6 +95,13 @@ func Create(ctx context.Context, o Options) error {
 		return nil
 	}
 	if err := start(ctx, o, dest); err != nil {
+		if errors.Is(err, errStackNotStarted) {
+			// Nothing in a container can run, but a command working on the
+			// files is exactly what a worktree without a stack is good for.
+			o.NoStart = true
+			runAfter(ctx, o)
+			return nil
+		}
 		return err
 	}
 	afterCreate(ctx, o)
@@ -102,7 +119,11 @@ func Start(ctx context.Context, o Options) error {
 	if err != nil {
 		return err
 	}
-	return start(ctx, o, wt.Path)
+	// A declined start already said so on its own: the caller has nothing to add.
+	if err := start(ctx, o, wt.Path); err != nil && !errors.Is(err, errStackNotStarted) {
+		return err
+	}
+	return nil
 }
 
 // Stop takes the stack down and leaves the worktree in place.
