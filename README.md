@@ -124,8 +124,10 @@ wtm create feat/my-branch --no-post-create  # stack started, post_create skipped
 wtm list                                    # worktrees wtm created for this project
 wtm start feat/my-branch                    # bring a stopped stack back up
 wtm stop feat/my-branch
+wtm stop --all                              # every worktree of the project
 wtm remove feat/my-branch                   # stack, volumes and built images go, branch kept
 wtm remove feat/my-branch --force           # despite modified tracked files, or a lock
+wtm remove --all                            # lists them, asks once, -y answers for a script
 
 # inside the worktree's containers
 wtm exec feat/my-branch -- python manage.py seed_data

@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"strings"
 
+	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/worktree"
 	"github.com/spf13/cobra"
 )
@@ -70,14 +72,23 @@ func newStartCmd(a *app) *cobra.Command {
 }
 
 func newStopCmd(a *app) *cobra.Command {
-	return &cobra.Command{
-		Use:               "stop [project] <branch>",
-		Short:             "Stops the worktree's stack, without removing it",
-		Args:              needArgs(1, 2, "name the branch to stop, as in `wtm stop feat/my-branch`"),
+	var all bool
+	cmd := &cobra.Command{
+		Use:   "stop [project] <branch>",
+		Short: "Stops the worktree's stack, without removing it",
+		Args: allArgs(&all,
+			needArgs(1, 2, "name the branch to stop, as in `wtm stop feat/my-branch`")),
 		ValidArgsFunction: a.completeTargets,
 		SilenceUsage:      true,
 		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if all {
+				name, p, entries, err := a.allWorktrees(cmd.Context(), args)
+				if err != nil || len(entries) == 0 {
+					return err
+				}
+				return a.eachWorktree(cmd.Context(), a.options(name, p, ""), entries, "stopped", worktree.Stop)
+			}
 			name, p, rest, err := a.resolve(args)
 			if err != nil {
 				return err
@@ -85,18 +96,39 @@ func newStopCmd(a *app) *cobra.Command {
 			return worktree.Stop(cmd.Context(), a.options(name, p, rest[0]))
 		},
 	}
+	cmd.Flags().BoolVar(&all, "all", false, "every worktree of the project, instead of one branch")
+	return cmd
 }
 
 func newRemoveCmd(a *app) *cobra.Command {
-	var force bool
+	var force, all, assumeYes bool
 	cmd := &cobra.Command{
-		Use:               "remove [project] <branch>",
-		Short:             "Stops the stack then removes the worktree (branch kept)",
-		Args:              needArgs(1, 2, "name the branch to remove, as in `wtm remove feat/my-branch`"),
+		Use:   "remove [project] <branch>",
+		Short: "Stops the stack then removes the worktree (branch kept)",
+		Args: allArgs(&all,
+			needArgs(1, 2, "name the branch to remove, as in `wtm remove feat/my-branch`")),
 		ValidArgsFunction: a.completeTargets,
 		SilenceUsage:      true,
 		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if all {
+				name, p, entries, err := a.allWorktrees(cmd.Context(), args)
+				if err != nil || len(entries) == 0 {
+					return err
+				}
+				for _, e := range entries {
+					fmt.Fprintf(a.out, "  %s  %s (%s)\n", e.Branch, e.Path, e.Status)
+				}
+				// A closed input answers no, which is right for a person and
+				// wrong for a script, so the way out is part of the message.
+				if !assumeYes && !confirm(a.in, a.out, fmt.Sprintf(
+					"remove %d worktree(s), their stacks and volumes? (branches kept)", len(entries))) {
+					return fmt.Errorf("cancelled: nothing was removed (pass --yes to answer for a script)")
+				}
+				o := a.options(name, p, "")
+				o.Force = force
+				return a.eachWorktree(cmd.Context(), o, entries, "removed", worktree.Remove)
+			}
 			name, p, rest, err := a.resolve(args)
 			if err != nil {
 				return err
@@ -107,5 +139,44 @@ func newRemoveCmd(a *app) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "remove even if tracked files are modified or the worktree is locked")
+	cmd.Flags().BoolVar(&all, "all", false, "every worktree of the project, instead of one branch")
+	cmd.Flags().BoolVarP(&assumeYes, "yes", "y", false, "do not ask for confirmation (--all)")
 	return cmd
+}
+
+// allWorktrees resolves the project --all applies to and lists what it holds.
+// That form names no branch, so the project is read the way `wtm list` reads it.
+func (a *app) allWorktrees(ctx context.Context, args []string) (string, config.Project, []worktree.Entry, error) {
+	name, p, err := a.projectArg(args)
+	if err != nil {
+		return "", config.Project{}, nil, err
+	}
+	entries, err := worktree.List(ctx, a.options(name, p, ""))
+	if err == nil && len(entries) == 0 {
+		fmt.Fprintf(a.out, "no worktree for %s: nothing to do\n", name)
+	}
+	return name, p, entries, err
+}
+
+// eachWorktree plays action on every listed worktree, one after the other. A
+// failure never stops the walk: a cleanup that gave up on the first locked
+// worktree would leave every other stack running. The failures are held back
+// and reported together at the end, because each worktree pours its own docker
+// output over the terminal and a warning printed in the middle is a warning
+// nobody reads.
+func (a *app) eachWorktree(ctx context.Context, o worktree.Options, entries []worktree.Entry,
+	verb string, action func(context.Context, worktree.Options) error) error {
+	var failed []string
+	for _, e := range entries {
+		o.Branch = e.Branch
+		if err := action(ctx, o); err != nil {
+			failed = append(failed, fmt.Sprintf("  %s: %v", e.Branch, err))
+		}
+	}
+	if len(failed) == 0 {
+		fmt.Fprintf(a.out, "%d worktree(s) %s\n", len(entries), verb)
+		return nil
+	}
+	return fmt.Errorf("%d of %d worktree(s) could not be %s:\n%s",
+		len(failed), len(entries), verb, strings.Join(failed, "\n"))
 }

@@ -13,6 +13,13 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   not need the seed, and the wait on the application service is most of what
   such a create spends its time on. The skipped command is printed as a `wtm
   exec` line, so seeding it after the fact is a paste away.
+- `wtm stop --all` and `wtm remove --all` act on every worktree of the project,
+  named or current, instead of one branch. A failure never stops the walk: the
+  worktrees after a locked or dirty one are handled all the same, and the
+  failures are reported together at the end rather than as they happen, since
+  each worktree pours its own docker output over the terminal. The command
+  still exits non-zero, naming which ones and why. `remove --all` lists what it
+  is about to take and asks once, `-y` answering for a script.
 
 ## [0.7.0] - 2026-08-27
 

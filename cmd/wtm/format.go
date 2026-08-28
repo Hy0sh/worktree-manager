@@ -30,6 +30,18 @@ func needArgs(min, max int, missing string) cobra.PositionalArgs {
 	}
 }
 
+// allArgs accepts the `--all` form, which names a project and no branch, and
+// falls back to the branch form otherwise. cobra parses the flags before it
+// validates the positionals, so the flag is already read here.
+func allArgs(all *bool, branchForm cobra.PositionalArgs) cobra.PositionalArgs {
+	return func(cmd *cobra.Command, given []string) error {
+		if *all {
+			return cobra.RangeArgs(0, 1)(cmd, given)
+		}
+		return branchForm(cmd, given)
+	}
+}
+
 // projectArg reads an explicit project name, or falls back to the current one.
 func (a *app) projectArg(args []string) (string, config.Project, error) {
 	if len(args) == 1 {
