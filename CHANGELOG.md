@@ -6,6 +6,16 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Fixed
+
+- `wtm doctor` tells a build installed from a commit that a release is out.
+  `go install ...@main`, or `@latest` on an untagged commit, stamps the
+  pseudo-version the toolchain derives from that commit, and splitting it on
+  dots yielded four fields where three were expected: the build was not
+  comparable at all, so the check stayed silent whatever was published. The
+  pre-release suffix is read now, and semver's rule applied, so such a build is
+  also told when the tag it precedes appears.
+
 ## [0.9.0] - 2026-08-28
 
 ### Added

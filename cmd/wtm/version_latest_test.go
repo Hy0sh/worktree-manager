@@ -29,6 +29,17 @@ func TestNewerReleaseOnlyReportsWhatIsAhead(t *testing.T) {
 		{name: "working copy", local: "devel", answer: "v0.4.8"},
 		{name: "local edits over the tag", local: "v0.4.7+dirty", answer: "v0.4.8", reported: true},
 		{name: "minor behind", local: "v0.4.9", answer: "v0.5.0", reported: true},
+		// `go install ...@main`, or @latest on an untagged commit, stamps the
+		// pseudo-version the toolchain derives from the commit it built. It was
+		// not comparable at all, so such a build was never told it was behind.
+		{name: "installed from a commit", local: "v0.8.1-0.20260828143234-4c0fbbb36bed",
+			answer: "v0.9.0", reported: true},
+		// Semver puts a pre-release before the release it leads to, and that is
+		// exactly what this shape means: after v0.8.0, before v0.8.1.
+		{name: "commit ahead of the last tag, behind the next",
+			local: "v0.8.1-0.20260828143234-4c0fbbb36bed", answer: "v0.8.1", reported: true},
+		{name: "commit past the published tag", local: "v0.9.1-0.20260828143234-4c0fbbb36bed",
+			answer: "v0.9.0"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := olderVersion(tc.local, tc.answer); got != tc.reported {
