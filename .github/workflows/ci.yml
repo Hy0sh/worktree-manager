@@ -39,18 +39,24 @@ jobs:
       - name: Build
         run: go build ./...
 
-      # govulncheck and staticcheck both need a newer Go than this module's
-      # floor, and setup-go pins GOTOOLCHAIN=local, so these two steps are
-      # allowed to fetch the toolchain they need. The build above stays on the
-      # floor, which is the point.
+      # govulncheck reports the standard library of the toolchain it runs
+      # under, so on this module's floor it reports every patch released since
+      # that floor: 25 of them at v0.9.0, none of which this code introduced.
+      # GOTOOLCHAIN=auto did not help, because the toolchain setup-go installs
+      # already satisfies go.mod. It worked while the directive read `go 1.25`,
+      # which setup-go resolves to the newest 1.25.x, and broke the moment a
+      # `go get` normalised it to `go 1.25.0`, an exact version. That
+      # normalisation cannot be undone: `go mod tidy` puts it straight back.
+      # So these two steps get the current stable toolchain of their own. The
+      # build and the tests above stay on the floor, which is the point.
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: stable
+
       - name: Vulnerabilities
-        env:
-          GOTOOLCHAIN: auto
         run: go run golang.org/x/vuln/cmd/govulncheck@latest ./...
 
       # go vet says nothing about code nobody calls any more, which is how two
       # functions survived a rewrite of the compose plumbing.
       - name: Unused code
-        env:
-          GOTOOLCHAIN: auto
         run: go run honnef.co/go/tools/cmd/staticcheck@latest ./...
