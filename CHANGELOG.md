@@ -102,6 +102,18 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   `remove` and `exec` with nothing on screen. Failing to answer already
   degrades to the registry. `execx.Fake` records whether a call was bounded,
   which is what lets a test hold that, here and for the listing.
+- A worktree of a project whose `.env` is versioned gets its ports isolated.
+  Writing the port block into a tracked `.env` would dirty the worktree on
+  every start, so the generated compose file carries them instead, and it only
+  ever restated the ports published as literals: a project parametrising all of
+  its ports, which is the ordinary shape, had nothing written anywhere while a
+  note said the ports were covered. Its worktrees came up on the main stack's
+  ports. The file now restates every service in that case, which `ports:
+  !override` makes safe, since it replaces the list rather than appending to it.
+  Found by a test written for the port block itself: the fake answered every
+  `git ls-files` successfully, so git looked like it versioned `.env` in every
+  test of the package, and the branch that writes the ports was the one never
+  taken.
 
 ## [0.8.0] - 2026-08-28
 

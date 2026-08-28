@@ -97,7 +97,10 @@ func Stride(projectDir string) int {
 // environment variable can reach and which would otherwise publish the very
 // ports the main stack holds. Compose appends `ports` when merging, so the list
 // has to be replaced with !override, restating every port of that service.
-func PortsOverride(allocations []Allocation) string {
+// every restates the ports of every service instead of only those published as
+// literals. A worktree whose .env is versioned cannot carry the environment the
+// parametrised ones read, so this file has to be the whole isolation there.
+func PortsOverride(allocations []Allocation, every bool) string {
 	byService := map[string][]Allocation{}
 	var order []string
 	literal := map[string]bool{}
@@ -112,7 +115,7 @@ func PortsOverride(allocations []Allocation) string {
 	}
 	var b strings.Builder
 	for _, service := range order {
-		if !literal[service] {
+		if !every && !literal[service] {
 			continue // reachable through the .env, nothing to override
 		}
 		if b.Len() == 0 {

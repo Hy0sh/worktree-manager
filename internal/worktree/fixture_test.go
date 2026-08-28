@@ -29,7 +29,11 @@ type fixture struct {
 	fetched      bool              // set when the fake handled a fetch
 	dockerLabels []string          // compose project labels `docker ps -a` reports
 	tracked      map[string]string // files the checkout carries, written by `worktree add`
-	lockReason   string            // set to have the listing report the worktree as locked
+	// envTracked has git answer that .env is versioned, which stops wtm from
+	// writing the port block into it. Off by default: a project gitignoring its
+	// .env is the ordinary case, and it is the one where the ports are written.
+	envTracked bool
+	lockReason string // set to have the listing report the worktree as locked
 }
 
 // hasTrackingRef answers `rev-parse refs/remotes/<remote>/<branch>` for the
@@ -70,6 +74,14 @@ func newFixture(t *testing.T) *fixture {
 				return execx.Result{Stdout: "abc123\n"}, nil
 			}
 			return execx.Result{ExitCode: 1}, errors.New("unknown revision")
+		case strings.Contains(line, "ls-files --error-unmatch"):
+			// tracked() concludes on err == nil, so answering everything
+			// successfully would make git look like it versions every file, and
+			// the port block would never be written in any test.
+			if f.envTracked {
+				return execx.Result{Stdout: ".env\n"}, nil
+			}
+			return execx.Result{ExitCode: 1}, errors.New("did not match any file(s) known to git")
 		case strings.HasSuffix(line, " remote"):
 			return execx.Result{Stdout: strings.Join(f.remotes, "\n") + "\n"}, nil
 		case strings.Contains(line, "fetch --quiet"):

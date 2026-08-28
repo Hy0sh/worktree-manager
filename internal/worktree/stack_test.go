@@ -3,11 +3,13 @@ package worktree
 import (
 	"bytes"
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
+	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
 
 // A removed worktree used to leave its database volume behind forever, because
@@ -16,7 +18,18 @@ func TestRemoveDropsTheStackVolumes(t *testing.T) {
 	f := newFixture(t)
 	inner := f.fake.Handler
 	f.fake.Handler = func(c execx.Cmd) (execx.Result, error) {
-		if strings.Contains(c.String(), "volume ls") {
+		// `-q` is what tells the scoped listing from the label sweep the index
+		// resolver does, which the old stub caught too.
+		if strings.Contains(c.String(), "volume ls -q") {
+			// The label filter is what tells this stack's volumes from every
+			// volume on the machine, including the main stack's database. It is
+			// the only thing standing between `wtm remove` and someone else's
+			// data, and nothing held it.
+			want := "--filter label=com.docker.compose.project=" +
+				stack.ProjectName(filepath.Base(f.root), 1, "feat/x")
+			if !strings.Contains(c.String(), want) {
+				t.Errorf("the listing is not scoped to the stack:\n  %s\nwant %s", c.String(), want)
+			}
 			return execx.Result{Stdout: "wt_postgres_data\nwt_rustfs_data\n"}, nil
 		}
 		return inner(c)
@@ -42,6 +55,11 @@ func TestRemoveDropsTheStackImages(t *testing.T) {
 	inner := f.fake.Handler
 	f.fake.Handler = func(c execx.Cmd) (execx.Result, error) {
 		if strings.Contains(c.String(), "images -q") {
+			want := "--filter label=com.docker.compose.project=" +
+				stack.ProjectName(filepath.Base(f.root), 1, "feat/x")
+			if !strings.Contains(c.String(), want) {
+				t.Errorf("the listing is not scoped to the stack:\n  %s\nwant %s", c.String(), want)
+			}
 			return execx.Result{Stdout: "a18a04d19ffe\n836699db4129\n"}, nil
 		}
 		return inner(c)

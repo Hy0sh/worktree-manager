@@ -103,7 +103,7 @@ func TestPortsOverrideRestatesEveryPortOfAnOverriddenService(t *testing.T) {
 		{Service: "traefik", Port: 29087, Container: "8080"},
 		{Service: "db", Var: "DB_PORT", Port: 25439, Container: "5432"},
 	}
-	got := PortsOverride(allocs)
+	got := PortsOverride(allocs, false)
 	for _, want := range []string{"traefik:", "ports: !override", `"20080:80"`, `"29087:8080"`} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("override should contain %q:\n%s", want, got)
@@ -112,13 +112,13 @@ func TestPortsOverrideRestatesEveryPortOfAnOverriddenService(t *testing.T) {
 	if strings.Contains(got, "db:") {
 		t.Fatalf("a service reachable through the .env needs no override:\n%s", got)
 	}
-	if PortsOverride([]Allocation{{Service: "db", Var: "DB_PORT", Port: 25439, Container: "5432"}}) != "" {
+	if PortsOverride([]Allocation{{Service: "db", Var: "DB_PORT", Port: 25439, Container: "5432"}}, false) != "" {
 		t.Fatal("nothing to override means no file at all")
 	}
 }
 
 func TestPortsOverridePreservesTheInterfacePrefix(t *testing.T) {
-	out := PortsOverride([]Allocation{{Service: "db", HostIP: "127.0.0.1", Port: 25432, Container: "5432"}})
+	out := PortsOverride([]Allocation{{Service: "db", HostIP: "127.0.0.1", Port: 25432, Container: "5432"}}, false)
 	if !strings.Contains(out, `- "127.0.0.1:25432:5432"`) {
 		t.Fatalf("prefix lost:\n%s", out)
 	}
@@ -141,5 +141,25 @@ func TestStrideReadsTheProjectConfiguration(t *testing.T) {
 	}
 	if got := Stride(dir); got != 7 {
 		t.Fatalf("Stride = %d, want 7", got)
+	}
+}
+
+// A worktree whose .env is versioned cannot be given the environment the
+// parametrised ports read, so the generated file has to be the whole isolation
+// there. Restating them is safe: `!override` replaces the list rather than
+// appending to it, which is why this file exists in the first place.
+func TestPortsOverrideCanRestateEveryServiceForAVersionedEnv(t *testing.T) {
+	allocs := []Allocation{
+		{Service: "db", Var: "DB_PORT", Port: 25439, Container: "5432"},
+		{Service: "traefik", Port: 20080, Container: "80"},
+	}
+	got := PortsOverride(allocs, true)
+	for _, want := range []string{"db:", "traefik:", `"25439:5432"`, `"20080:80"`} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("override should contain %q:\n%s", want, got)
+		}
+	}
+	if strings.Count(got, "ports: !override") != 2 {
+		t.Fatalf("both services need their own override:\n%s", got)
 	}
 }

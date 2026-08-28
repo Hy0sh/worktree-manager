@@ -385,8 +385,13 @@ func TestStartKeepsAnEnvFileEditedInTheWorktree(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != "ROOT=edited" {
+	// The edit survives, and the port block start writes lands beside it rather
+	// than over it: that is what the marked section is for.
+	if !strings.HasPrefix(string(got), "ROOT=edited") {
 		t.Fatalf(".env = %q, start overwrote a worktree edit", got)
+	}
+	if !strings.Contains(string(got), "BACKEND_PORT=") {
+		t.Fatalf(".env = %q, start should have written the ports it allocated", got)
 	}
 }
 

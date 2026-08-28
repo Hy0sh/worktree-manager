@@ -30,8 +30,12 @@ func allocatePorts(ctx context.Context, o Options, wt stack.Worktree, dest strin
 		return nil
 	}
 	// Ports written as literals cannot be reached through the environment, so
-	// they are rebased in a generated compose file instead.
-	override := stack.PortsOverride(allocations)
+	// they are rebased in a generated compose file instead. A versioned .env
+	// cannot carry that environment at all, and the file then has to restate
+	// every port: leaving the parametrised ones out isolated nothing, while the
+	// note below said they were covered.
+	envTracked := tracked(ctx, o, dest, ".env")
+	override := stack.PortsOverride(allocations, envTracked)
 	path := filepath.Join(dest, portsOverride)
 	if override == "" {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
@@ -41,8 +45,8 @@ func allocatePorts(ctx context.Context, o Options, wt stack.Worktree, dest strin
 		return fmt.Errorf("writing the ports compose file: %w", err)
 	}
 	// Writing into a tracked .env would dirty the worktree on every start, and
-	// the generated compose file already carries the ports docker needs.
-	if tracked(ctx, o, dest, ".env") {
+	// the generated compose file now carries every port docker needs.
+	if envTracked {
 		o.logf("note: .env is tracked by git, ports are only set in %s", portsOverride)
 		return nil
 	}
