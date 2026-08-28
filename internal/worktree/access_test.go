@@ -1,7 +1,9 @@
 package worktree
 
 import (
+	"bytes"
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"slices"
@@ -9,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/Hy0sh/worktree-manager/internal/config"
+	"github.com/Hy0sh/worktree-manager/internal/execx"
 	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
 
@@ -129,5 +132,72 @@ func TestRunSetsNothingWithoutAStack(t *testing.T) {
 	}
 	if env := f.fake.Calls[len(f.fake.Calls)-1].Env; len(env) != 0 {
 		t.Fatalf("env = %v, want none", env)
+	}
+}
+
+// `create --run` hands the terminal to the command once everything else is
+// done, and its compose environment must be the one `wtm run` would set. The
+// index is the trap: it was allocated by the start that just happened, so the
+// copy of the project this call was given does not carry it.
+func TestCreateRunsTheHostCommandWithTheComposeEnvironment(t *testing.T) {
+	f := newFixture(t)
+	o := f.opts("feat/x")
+	o.RunAfter = "claude"
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	last := f.fake.Calls[len(f.fake.Calls)-1]
+	if last.Line() != `sh -c claude` {
+		t.Fatalf("last call = %q, want the command played last", last.Line())
+	}
+	if want := filepath.Join(f.root, ".worktrees", "feat", "x"); last.Dir != want {
+		t.Fatalf("working directory = %q, want the worktree %q", last.Dir, want)
+	}
+	want := "COMPOSE_PROJECT_NAME=" + stack.ProjectName(filepath.Base(f.root), 1, "feat/x")
+	if !slices.Contains(last.Env, want) {
+		t.Fatalf("env = %v, want %q", last.Env, want)
+	}
+}
+
+// The worktree exists and works: losing it over a command that failed would be
+// the worse outcome, so the failure is a warning naming the replay.
+func TestCreateSurvivesAFailingHostCommand(t *testing.T) {
+	f := newFixture(t)
+	inner := f.fake.Handler
+	f.fake.Handler = func(c execx.Cmd) (execx.Result, error) {
+		if c.Name == "sh" {
+			return execx.Result{ExitCode: 127}, errors.New("claude: not found")
+		}
+		return inner(c)
+	}
+	var out bytes.Buffer
+	o := f.opts("feat/x")
+	o.Out = &out
+	o.RunAfter = "claude --resume"
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create must not fail over --run: %v", err)
+	}
+	want := `wtm run feat/x -- sh -c 'claude --resume'`
+	if !strings.Contains(out.String(), want) {
+		t.Fatalf("the replay must be pastable, want %s in:\n%s", want, out.String())
+	}
+}
+
+// Opening an agent on the files of a branch is a reason to create a worktree
+// without paying for its stack.
+func TestCreateRunsTheHostCommandWithoutAStack(t *testing.T) {
+	f := newFixture(t)
+	o := f.opts("feat/x")
+	o.NoStart = true
+	o.RunAfter = "claude"
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	last := f.fake.Calls[len(f.fake.Calls)-1]
+	if last.Line() != `sh -c claude` {
+		t.Fatalf("last call = %q, want the command played all the same", last.Line())
+	}
+	if len(last.Env) != 0 {
+		t.Fatalf("env = %v, want none: no stack was started", last.Env)
 	}
 }

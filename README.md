@@ -119,6 +119,8 @@ wtm create feat/my-branch                   # project = current repo
 wtm create feat/my-branch main              # explicit base
 wtm create feat/my-branch --no-start        # without starting the stack
 wtm create feat/my-branch --no-post-create  # stack started, post_create skipped
+wtm create feat/my-branch --run claude       # a command on your machine, once ready
+wtm create feat/my-branch --exec 'manage.py load_fixture demo'   # in the container
 
 # lifecycle
 wtm list                                    # worktrees wtm created for this project
@@ -387,6 +389,20 @@ beats reaching the container yourself, which means knowing the compose project
 name derived from the repository, the index and the branch. `wtm create
 --no-post-create` leaves it out for one worktree, for a stack wanted quickly
 rather than seeded, and prints the `wtm exec` line that plays it later.
+
+`wtm create --run` and `--exec` play one shell line each once the worktree is
+ready: `--run` on your machine from the worktree directory, with the compose
+environment `wtm run` sets, `--exec` in the application container after the
+project's own `post_create`. Both may be given at once, `--exec` first so a
+fixture depending on the seed finds it, and `--run` last since it is the one
+taking over the terminal. A failure is a warning naming the line that replays
+it, never a failed creation. Neither is remembered: they are flags of one
+`create` and never reach `config.json`, so nothing in a repository can hand
+wtm a command to play on its own. What the command itself does is another
+matter, and `--run` runs on the host with your rights, in a checkout of a
+branch that may not be yours: creating someone else's branch and playing its
+`package.json` scripts in one line is exactly as trusting as it sounds.
+`--exec` is bounded by the container.
 
 The official postgres, mysql, mariadb and mongo images all run
 `docker-entrypoint-initdb.d` only on an empty data directory, which gives the

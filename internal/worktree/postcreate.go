@@ -57,69 +57,112 @@ func readyWait(p config.Project, defaultTimeout time.Duration) wait {
 	return wait{timeout, interval, every}
 }
 
-// postCreate plays the project's post_create command in the application
-// container of a brand new worktree. Every failure here is a warning and not an
-// error: the worktree exists and works, and losing it over a seed that did not
-// run would be the worse outcome. The message says how to replay the command.
-func postCreate(ctx context.Context, o Options) {
-	if o.Project.PostCreate == "" {
-		return
-	}
-	if o.NoPostCreate {
+// afterCreate plays what a fresh worktree still owes inside its stack: the
+// project's post_create, then the command of `create --exec`. Both are shell
+// lines needing the application to answer, so the wait serves the two. Every
+// failure here is a warning and not an error: the worktree exists and works,
+// and losing it over a seed that did not run would be the worse outcome. The
+// message says how to replay the command.
+func afterCreate(ctx context.Context, o Options) {
+	post := o.Project.PostCreate
+	if post != "" && o.NoPostCreate {
 		o.logf("post_create skipped (--no-post-create)")
-		o.logf("%s", replayLine(o, "run"))
+		o.logf("%s", replayLine(o, "run", post))
+		post = ""
+	}
+	if post == "" && o.ExecAfter == "" {
 		return
 	}
 	cfg := o.Project.BackupConfig()
 	if cfg.AppService == "" {
-		o.logf("warning: post_create is set but no app_service is: run it with " +
-			"`wtm exec " + o.Branch + " --service <service> -- ...`")
+		o.logf("warning: %s cannot be played, no app_service is set for this project: "+
+			"run it with `wtm exec "+o.Branch+" --service <service> -- ...`", owed(post, o.ExecAfter))
 		return
 	}
 	wt, err := o.Stack.FindByBranch(ctx, o.Branch)
 	if err != nil {
-		o.logf("warning: post_create was not run: %v", err)
+		o.logf("warning: %s was not run: %v", owed(post, o.ExecAfter), err)
 		return
 	}
 	// The index was allocated by the start that just happened, so it is in the
 	// registry by now, but not in the copy of the project this call was given.
 	if err := o.resolveIndex(ctx, &wt, index.MustExist); err != nil {
-		o.logf("warning: post_create was not run: %v", err)
+		o.logf("warning: %s was not run: %v", owed(post, o.ExecAfter), err)
 		return
 	}
 	if err := waitForDatabase(ctx, o, wt, cfg.DBService, cfg.DBUser, cfg.DBEngine); err != nil {
-		o.logf("warning: post_create was not run: %v", err)
-		o.logf("%s", replayLine(o, "replay"))
+		o.logf("warning: %s was not run: %v", owed(post, o.ExecAfter), err)
+		replayLines(o, "replay", post, o.ExecAfter)
 		return
 	}
 	if err := waitForApp(ctx, o, wt, cfg.AppService); err != nil {
-		o.logf("warning: post_create was not run: %v", err)
-		o.logf("%s", replayLine(o, "replay"))
+		o.logf("warning: %s was not run: %v", owed(post, o.ExecAfter), err)
+		replayLines(o, "replay", post, o.ExecAfter)
 		return
 	}
-	o.logf("post_create: %s", o.Project.PostCreate)
-	if _, err := o.Runner.Run(ctx, execx.Cmd{
-		Name: "docker",
-		Args: []string{"compose", "-p", o.projectName(wt), "exec", "-T", cfg.AppService,
-			"sh", "-c", o.Project.PostCreate},
-		Dir:  wt.Path,
-		Live: true,
-	}); err != nil {
-		o.logf("warning: post_create failed: %v", err)
-		o.logf("%s", replayLine(o, "replay"))
+	if post != "" {
+		o.logf("post_create: %s", post)
+		if err := execInStack(ctx, o, wt, cfg.AppService, post); err != nil {
+			o.logf("warning: post_create failed: %v", err)
+			replayLines(o, "replay", post)
+		}
 	}
-	// The command's own output has scrolled the addresses out of sight, and
+	// The project's own seed comes first: what --exec loads may depend on it.
+	if o.ExecAfter != "" {
+		o.logf("exec: %s", o.ExecAfter)
+		if err := execInStack(ctx, o, wt, cfg.AppService, o.ExecAfter); err != nil {
+			o.logf("warning: --exec failed: %v", err)
+			replayLines(o, "replay", o.ExecAfter)
+		}
+	}
+	// The commands' own output has scrolled the addresses out of sight, and
 	// they are what the developer opened the worktree for.
 	o.logf("stack ready (worktree %d, %s)", wt.Index, o.Branch)
 	logEndpoints(o, wt)
 }
 
+// execInStack plays a shell line in the application container. post_create and
+// --exec are both a line and not an argv, so both go through `sh -c`, and the
+// string is a single argument: nothing wtm computes is ever concatenated into
+// it.
+func execInStack(ctx context.Context, o Options, wt stack.Worktree, service, command string) error {
+	_, err := o.Runner.Run(ctx, execx.Cmd{
+		Name: "docker",
+		Args: []string{"compose", "-p", o.projectName(wt), "exec", "-T", service,
+			"sh", "-c", command},
+		Dir:  wt.Path,
+		Live: true,
+	})
+	return err
+}
+
+// owed names what a failed wait or a missing service cost, for a create that
+// may have been asked for the project's seed, for a command of its own, or both.
+func owed(post, exec string) string {
+	switch {
+	case post != "" && exec != "":
+		return "post_create and --exec"
+	case exec != "":
+		return "--exec"
+	}
+	return "post_create"
+}
+
 // The command runs through `sh -c`, so the line offered to the user has to as
 // well: a chained post_create pasted bare would leave its tail to the user's
 // own shell instead of the container.
-func replayLine(o Options, verb string) string {
-	return "         " + verb + " it with `wtm exec " + o.Branch + " -- sh -c " +
-		execx.ShellQuote(o.Project.PostCreate) + "`"
+func replayLine(o Options, verb, command string) string {
+	return "         " + verb + " it with `wtm exec " + execx.ShellQuote(o.Branch) +
+		" -- sh -c " + execx.ShellQuote(command) + "`"
+}
+
+// replayLines prints the pastable line of each command that did not run.
+func replayLines(o Options, verb string, commands ...string) {
+	for _, c := range commands {
+		if c != "" {
+			o.logf("%s", replayLine(o, verb, c))
+		}
+	}
 }
 
 // waitForApp holds until the application container can answer. A healthcheck
@@ -140,7 +183,8 @@ func waitForApp(ctx context.Context, o Options, wt stack.Worktree, service strin
 	}
 	port := publishedPort(o, wt, service)
 	if port == "" {
-		o.logf("warning: %s declares no healthcheck and publishes no port: post_create "+
+		// The subject is left out: this wait serves post_create and --exec alike.
+		o.logf("warning: %s declares no healthcheck and publishes no port: the command "+
 			"runs as soon as the database answers, ahead of a stack that installs at boot", service)
 		return nil
 	}

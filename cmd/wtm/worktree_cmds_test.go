@@ -145,3 +145,26 @@ func TestRemoveAllYesRemovesEveryWorktree(t *testing.T) {
 		}
 	}
 }
+
+// --exec enters the application container, and --no-start leaves none running.
+// Discovering that after the worktree, the fetch and the restore is a warning
+// nobody wanted: the two flags are refused together, and the message names the
+// flag that does work without a stack.
+func TestCreateRefusesExecWithoutAStack(t *testing.T) {
+	f := newAllFixture(t, "")
+	cmd := newCreateCmd(f.app)
+	cmd.SetArgs([]string{"myapp", "feat/x", "--exec", "manage.py seed_data", "--no-start"})
+	cmd.SetOut(f.out)
+	err := cmd.Execute()
+	if err == nil {
+		t.Fatal("--exec --no-start must be refused")
+	}
+	if !strings.Contains(err.Error(), "--run") {
+		t.Fatalf("the refusal should name the flag that works without a stack, got %v", err)
+	}
+	for _, l := range f.fake.Lines() {
+		if strings.Contains(l, "worktree add") {
+			t.Fatalf("nothing should have been created, got %q", l)
+		}
+	}
+}

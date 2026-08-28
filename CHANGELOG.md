@@ -6,6 +6,22 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Added
+
+- `wtm create --run` and `wtm create --exec` play a command once the worktree
+  is ready, saving the `wtm run` or `wtm exec` that followed every create:
+  `--run` on your machine from the worktree directory, with the compose
+  environment pointing at this worktree's stack, `--exec` inside the
+  application container. Both are shell lines, as `post_create` already is, so
+  the two can be combined on one line: `--exec` runs first, after the project's
+  `post_create` and whether or not `--no-post-create` skipped it, and `--run`
+  last, since it is the one taking the terminal. The wait on the application
+  service now serves either command, so an `--exec` on a project without a
+  `post_create` no longer reaches a cold container. A failure is a warning
+  naming the line that replays it, never a failed creation. `--exec` with
+  `--no-start` is refused up front rather than discovered at the end. Neither
+  flag is persisted: nothing in a repository can hand wtm a command to play.
+
 ### Fixed
 
 - The wait a new worktree grants each service is measured against the clock and

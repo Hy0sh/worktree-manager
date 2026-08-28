@@ -292,3 +292,112 @@ func TestCreateSkipsPostCreateWhenAsked(t *testing.T) {
 		t.Fatalf("the command must be pastable, want %s in:\n%s", run, out.String())
 	}
 }
+
+// `create --exec` is a throwaway post_create: same container, same shell, and
+// it comes after the project's own so a seed the branch depends on is there.
+func TestCreatePlaysTheExecCommandAfterPostCreate(t *testing.T) {
+	f := newFixture(t)
+	var out bytes.Buffer
+	o := f.opts("feat/x")
+	o.Out = &out
+	o.ExecAfter = "manage.py load_fixture demo"
+	o.Project.PostCreate = "manage.py seed_data"
+	o.Project.ReadyTimeout, o.Project.ReadyInterval = "1s", "1ms"
+	o.Project.Backup = &config.Backup{AppService: "backend"}
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	project := stack.ProjectName(filepath.Base(f.root), 1, "feat/x")
+	want := "docker compose -p " + project + " exec -T backend sh -c 'manage.py load_fixture demo'"
+	if last := f.fake.Lines()[len(f.fake.Lines())-1]; last != want {
+		t.Fatalf("last call =\n  %q\nwant\n  %q", last, want)
+	}
+	seed := strings.Index(out.String(), "post_create: manage.py seed_data")
+	if seed < 0 || !strings.Contains(out.String()[seed:], "exec: manage.py load_fixture demo") {
+		t.Fatalf("--exec should come after post_create:\n%s", out.String())
+	}
+}
+
+// The wait on the application belongs to whatever has to run in the container,
+// not to post_create alone: a project without one still gets a cold container.
+func TestCreateWaitsForTheAppBeforeTheExecCommand(t *testing.T) {
+	f := newFixture(t)
+	health := []string{"starting", "healthy"}
+	inner := f.fake.Handler
+	f.fake.Handler = func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(c.String(), ".Health") {
+			got := health[0]
+			if len(health) > 1 {
+				health = health[1:]
+			}
+			return execx.Result{Stdout: got + "\n"}, nil
+		}
+		if strings.Contains(c.String(), "sh -c 'manage.py") && len(health) > 1 {
+			t.Errorf("--exec ran while the app was %q", health[0])
+		}
+		return inner(c)
+	}
+	o := f.opts("feat/x")
+	o.ExecAfter = "manage.py load_fixture demo"
+	o.Project.ReadyTimeout, o.Project.ReadyInterval = "1s", "1ms"
+	o.Project.Backup = &config.Backup{AppService: "backend"}
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if last := f.fake.Lines()[len(f.fake.Lines())-1]; !strings.Contains(last, "sh -c 'manage.py") {
+		t.Fatalf("--exec should have run once healthy, last call = %q", last)
+	}
+}
+
+// Same reasoning as a failing post_create, and --exec has its own replay line.
+func TestCreateSurvivesAFailingExecCommand(t *testing.T) {
+	f := newFixture(t)
+	inner := f.fake.Handler
+	f.fake.Handler = func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(c.String(), "sh -c 'manage.py load_fixture") {
+			return execx.Result{ExitCode: 1}, errors.New("no fixture named demo")
+		}
+		return inner(c)
+	}
+	var out bytes.Buffer
+	o := f.opts("feat/x")
+	o.Out = &out
+	o.ExecAfter = "manage.py load_fixture demo"
+	o.Project.ReadyTimeout, o.Project.ReadyInterval = "1s", "1ms"
+	o.Project.Backup = &config.Backup{AppService: "backend"}
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create must not fail over --exec: %v", err)
+	}
+	want := `wtm exec feat/x -- sh -c 'manage.py load_fixture demo'`
+	if !strings.Contains(out.String(), want) {
+		t.Fatalf("the replay must be pastable, want %s in:\n%s", want, out.String())
+	}
+}
+
+// --no-post-create leaves the project's seed out, and says nothing about the
+// command this create was asked to play itself.
+func TestCreatePlaysTheExecCommandDespiteNoPostCreate(t *testing.T) {
+	f := newFixture(t)
+	var out bytes.Buffer
+	o := f.opts("feat/x")
+	o.Out = &out
+	o.NoPostCreate = true
+	o.ExecAfter = "manage.py load_fixture demo"
+	o.Project.PostCreate = "manage.py seed_data"
+	o.Project.ReadyTimeout, o.Project.ReadyInterval = "1s", "1ms"
+	o.Project.Backup = &config.Backup{AppService: "backend"}
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if !strings.Contains(out.String(), "post_create skipped (--no-post-create)") {
+		t.Fatalf("the seed should have been skipped:\n%s", out.String())
+	}
+	for _, l := range f.fake.Lines() {
+		if strings.Contains(l, "sh -c 'manage.py seed_data'") {
+			t.Fatalf("post_create should not have run, got %q", l)
+		}
+	}
+	if last := f.fake.Lines()[len(f.fake.Lines())-1]; !strings.Contains(last, "sh -c 'manage.py load_fixture demo'") {
+		t.Fatalf("--exec should still have run, last call = %q", last)
+	}
+}

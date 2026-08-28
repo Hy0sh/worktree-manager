@@ -12,6 +12,7 @@ import (
 
 func newCreateCmd(a *app) *cobra.Command {
 	var noStart, noPostCreate bool
+	var runAfter, execAfter string
 	cmd := &cobra.Command{
 		Use:   "create [project] <branch> [base]",
 		Short: "Creates a worktree and starts its stack",
@@ -19,12 +20,23 @@ func newCreateCmd(a *app) *cobra.Command {
 			"If the first argument names a registered project, it is treated as such;\n" +
 			"otherwise it is a branch of the project of the current directory.\n" +
 			"An existing branch is reused, local or on a remote (tracked, fetched if\n" +
-			"needed), and <base> is then ignored.",
+			"needed), and <base> is then ignored.\n\n" +
+			"--run and --exec each play a shell line once the worktree is ready, on\n" +
+			"your machine and in the application container respectively. They can be\n" +
+			"combined, and neither is remembered from one create to the next.\n\n" +
+			"  wtm create feat/my-branch --run claude\n" +
+			"  wtm create feat/my-branch --exec 'manage.py load_fixture demo'",
 		Args:              needArgs(1, 3, "name the branch to create, as in `wtm create feat/my-branch`"),
 		ValidArgsFunction: a.completeProjects,
 		SilenceUsage:      true,
 		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			// Refused before the worktree, the fetch and the restore: an --exec
+			// discovered stackless at the very end is a warning nobody wanted.
+			if execAfter != "" && noStart {
+				return fmt.Errorf("--exec needs the stack --no-start leaves down: " +
+					"drop --no-start, or use --run to play the command on your machine")
+			}
 			name, p, rest, err := a.resolve(args)
 			if err != nil {
 				return err
@@ -39,6 +51,7 @@ func newCreateCmd(a *app) *cobra.Command {
 			}
 			o.NoStart = noStart
 			o.NoPostCreate = noPostCreate
+			o.RunAfter, o.ExecAfter = runAfter, execAfter
 			if p.Dump && !noStart {
 				if st := a.manager().Check(cmd.Context(), name, p); st.Behind() {
 					fmt.Fprintf(a.out, "note: the dump is %s, `wtm backup refresh %s` would save the replay\n",
@@ -50,6 +63,8 @@ func newCreateCmd(a *app) *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&noStart, "no-start", false, "prepares the worktree without starting the stack")
 	cmd.Flags().BoolVar(&noPostCreate, "no-post-create", false, "starts the stack without running the project's post_create")
+	cmd.Flags().StringVar(&runAfter, "run", "", "shell line to play on your machine, from the worktree, once it is ready")
+	cmd.Flags().StringVar(&execAfter, "exec", "", "shell line to play in the application container, after the project's post_create")
 	return cmd
 }
 

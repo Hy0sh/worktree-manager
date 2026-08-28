@@ -24,12 +24,18 @@ type Options struct {
 	Base         string
 	NoStart      bool
 	NoPostCreate bool // skip the project's post_create on this create
-	Force        bool // remove despite uncommitted tracked changes
-	BackupsDir   string
-	Runner       execx.Runner
-	Out          io.Writer
-	Stack        *stack.Client
-	Resolver     *index.Resolver // resolves and records each branch's stable index
+	// RunAfter and ExecAfter are the commands of `create --run` and
+	// `create --exec`, played once the create is done: the first on the host
+	// from the worktree, the second in the application container. Both are
+	// shell lines and never persisted, unlike post_create.
+	RunAfter   string
+	ExecAfter  string
+	Force      bool // remove despite uncommitted tracked changes
+	BackupsDir string
+	Runner     execx.Runner
+	Out        io.Writer
+	Stack      *stack.Client
+	Resolver   *index.Resolver // resolves and records each branch's stable index
 }
 
 // dest is where the worktree goes. A branch name is not a safe path fragment:
@@ -75,12 +81,16 @@ func Create(ctx context.Context, o Options) error {
 
 	if o.NoStart {
 		o.logf("stack not started (--no-start), run `wtm create %s` without the flag to start it", o.Branch)
+		runAfter(ctx, o)
 		return nil
 	}
 	if err := start(ctx, o, dest); err != nil {
 		return err
 	}
-	postCreate(ctx, o)
+	afterCreate(ctx, o)
+	// Last of all: the command takes the terminal, so everything worth reading
+	// has to be on screen before it does.
+	runAfter(ctx, o)
 	return nil
 }
 
