@@ -75,8 +75,11 @@ func afterCreate(ctx context.Context, o Options) {
 	}
 	cfg := o.Project.BackupConfig()
 	if cfg.AppService == "" {
-		o.logf("warning: %s cannot be played, no app_service is set for this project: "+
-			"run it with `wtm exec "+o.Branch+" --service <service> -- ...`", owed(post, o.ExecAfter))
+		// Both post_create and --exec play in the application service, so the
+		// fix is to name it once in the registry rather than per create.
+		o.logf("warning: %s cannot be played, this project has no app_service: set it with "+
+			"`wtm project edit "+o.Name+" --app-service <service>`, or run the command by hand "+
+			"with `wtm exec "+o.Branch+" --service <service> -- ...`", owed(post, o.ExecAfter))
 		return
 	}
 	wt, err := o.Stack.FindByBranch(ctx, o.Branch)

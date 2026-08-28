@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -62,6 +63,25 @@ func (a *app) resolve(args []string) (string, config.Project, []string, error) {
 	}
 	name, p, err := a.cfg.ResolveCurrent(root)
 	return name, p, args, err
+}
+
+// resolveOne is resolve for the commands that name a single branch. An argument
+// left over means the first was meant as a project and is not one, and dropping
+// it silently had `wtm stop myap feat/x` stop a branch called `myap`, then
+// complain that no such worktree existed while listing the one asked for.
+func (a *app) resolveOne(args []string) (string, config.Project, string, error) {
+	// Refused before the repository is even looked up: the mistake is the
+	// project name, and an error about the current directory not being a
+	// registered project, or about git, sends the reader somewhere else.
+	if len(args) > 1 && !a.cfg.Has(args[0]) {
+		return "", config.Project{}, "", fmt.Errorf("%q is not a registered project "+
+			"(see `wtm project list`): with more than one argument, the first must name one", args[0])
+	}
+	name, p, rest, err := a.resolve(args)
+	if err != nil {
+		return "", config.Project{}, "", err
+	}
+	return name, p, rest[0], nil
 }
 
 func (a *app) options(name string, p config.Project, branch string) worktree.Options {

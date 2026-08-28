@@ -224,3 +224,39 @@ func TestCreateRefusesAFlagAsAShellLine(t *testing.T) {
 		}
 	}
 }
+
+// resolve hands back every argument when the first is not a registered project,
+// and the commands naming one branch read only the first: `wtm stop myap
+// feat/x` stopped a branch called `myap`, then complained that no such worktree
+// existed while listing the one that had been asked for.
+func TestATypoedProjectNameIsNotTakenForABranch(t *testing.T) {
+	f := newAllFixture(t, "")
+	commands := map[string]func(*app) *cobra.Command{
+		"start": newStartCmd, "stop": newStopCmd, "remove": newRemoveCmd,
+		"path": newPathCmd, "exec": newExecCmd, "run": newRunCmd,
+	}
+	for verb, build := range commands {
+		args := []string{"myap", "feat/a"}
+		if verb == "exec" || verb == "run" {
+			args = append(args, "--", "true")
+		}
+		cmd := build(f.app)
+		cmd.SetArgs(args)
+		cmd.SetOut(f.out)
+		err := cmd.Execute()
+		if err == nil {
+			t.Errorf("`wtm %s myap feat/a` must be refused", verb)
+			continue
+		}
+		for _, want := range []string{`"myap"`, "wtm project list"} {
+			if !strings.Contains(err.Error(), want) {
+				t.Errorf("`wtm %s` refusal should mention %s, got %v", verb, want, err)
+			}
+		}
+	}
+	for _, l := range f.fake.Lines() {
+		if strings.Contains(l, "compose") || strings.Contains(l, "worktree remove") {
+			t.Fatalf("nothing should have been touched, got %q", l)
+		}
+	}
+}

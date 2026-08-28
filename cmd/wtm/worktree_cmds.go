@@ -43,7 +43,9 @@ func newCreateCmd(a *app) *cobra.Command {
 				return err
 			}
 			if len(rest) > 2 {
-				return fmt.Errorf("too many arguments: %s", strings.Join(rest, " "))
+				return fmt.Errorf("too many arguments (%s): a create takes at most "+
+					"`[project] <branch> [base]`, and %q is not a registered project "+
+					"(see `wtm project list`)", strings.Join(rest, " "), args[0])
 			}
 			o := a.options(name, p, rest[0])
 			o.Base = a.cfg.BaseBranchFor(p)
@@ -84,11 +86,11 @@ func newStartCmd(a *app) *cobra.Command {
 		SilenceUsage:      true,
 		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			name, p, rest, err := a.resolve(args)
+			name, p, branch, err := a.resolveOne(args)
 			if err != nil {
 				return err
 			}
-			o := a.options(name, p, rest[0])
+			o := a.options(name, p, branch)
 			if ignoreMemory {
 				o.Confirm = nil
 			}
@@ -118,11 +120,11 @@ func newStopCmd(a *app) *cobra.Command {
 				}
 				return a.eachWorktree(cmd.Context(), a.options(name, p, ""), entries, "stopped", worktree.Stop)
 			}
-			name, p, rest, err := a.resolve(args)
+			name, p, branch, err := a.resolveOne(args)
 			if err != nil {
 				return err
 			}
-			return worktree.Stop(cmd.Context(), a.options(name, p, rest[0]))
+			return worktree.Stop(cmd.Context(), a.options(name, p, branch))
 		},
 	}
 	cmd.Flags().BoolVar(&all, "all", false, "every worktree of the project, instead of one branch")
@@ -158,11 +160,11 @@ func newRemoveCmd(a *app) *cobra.Command {
 				o.Force = force
 				return a.eachWorktree(cmd.Context(), o, entries, "removed", worktree.Remove)
 			}
-			name, p, rest, err := a.resolve(args)
+			name, p, branch, err := a.resolveOne(args)
 			if err != nil {
 				return err
 			}
-			o := a.options(name, p, rest[0])
+			o := a.options(name, p, branch)
 			o.Force = force
 			return worktree.Remove(cmd.Context(), o)
 		},

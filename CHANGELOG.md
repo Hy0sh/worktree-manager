@@ -37,6 +37,10 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   which skipped the wait altogether and left `post_create` playing against a
   database still restoring. `execx.WaitFor` keeps its attempt count for
   `backup`, whose callers configure it that way on purpose.
+- The warning naming what a create could not play says how to fix it for good:
+  both `post_create` and `--exec` run in the application service, so the answer
+  is `project edit --app-service`, not the per-command `wtm exec --service` it
+  used to point at, which `create` does not even accept.
 - The memory warning before a stack starts counts what the whole machine uses
   when docker shares it, instead of the containers alone. It was written for
   Docker Desktop, where the containers own a VM's budget and their sum is the
@@ -114,6 +118,20 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   `git ls-files` successfully, so git looked like it versioned `.env` in every
   test of the package, and the branch that writes the ports was the one never
   taken.
+- `wtm backup remove` asks before deleting a dump, and takes `-y` for a script,
+  as `project remove` already did for the very same file. Called without an
+  argument it takes the current directory's project, so from the wrong
+  directory it silently threw away the migration history the tool exists not to
+  replay; only `backup refresh` brings it back. It also completes project names
+  now, where it was the one command with a project argument falling back to
+  cobra's file completion.
+- A mistyped project name is no longer taken for a branch. `wtm stop myap
+  feat/x` read `myap` as the branch and dropped `feat/x`, then complained that
+  no such worktree existed while listing the one that had been asked for. Every
+  command naming a single branch refuses a leftover argument now, before it even
+  looks the repository up, since the mistake is the name and not the directory.
+  `create`, which does take `<branch> [base]`, keeps its own form and names
+  `wtm project list` in the refusal.
 
 ## [0.8.0] - 2026-08-28
 

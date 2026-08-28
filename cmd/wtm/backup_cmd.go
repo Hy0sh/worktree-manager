@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"text/tabwriter"
 	"time"
 
@@ -60,18 +61,33 @@ func newBackupCmd(a *app) *cobra.Command {
 		},
 	}
 
+	var assumeYes bool
 	remove := &cobra.Command{
-		Use:           "remove [project]",
-		Short:         "Deletes a project's backup",
-		Args:          cobra.RangeArgs(0, 1),
-		SilenceUsage:  true,
-		SilenceErrors: true,
+		Use:               "remove [project]",
+		Short:             "Deletes a project's backup",
+		Args:              cobra.RangeArgs(0, 1),
+		ValidArgsFunction: a.completeProjects,
+		SilenceUsage:      true,
+		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name, _, err := a.projectArg(args)
 			if err != nil {
 				return err
 			}
-			removed, err := a.manager().Remove(name)
+			m := a.manager()
+			if _, err := os.Stat(m.DumpPath(name)); err == nil {
+				// Called without an argument this takes the current directory's
+				// project, and the dump is the migration history wtm exists not
+				// to replay: only `backup refresh` brings it back. `project
+				// remove` already asks before deleting this very file. A closed
+				// input answers no, which is right for a person and wrong for a
+				// script, so the way out is part of the message.
+				if !assumeYes && !confirm(a.in, a.out, fmt.Sprintf(
+					"delete the backup of %s? only `wtm backup refresh` brings it back", name)) {
+					return fmt.Errorf("cancelled: the backup of %s was kept (pass --yes to answer for a script)", name)
+				}
+			}
+			removed, err := m.Remove(name)
 			if err != nil {
 				return err
 			}
@@ -84,6 +100,7 @@ func newBackupCmd(a *app) *cobra.Command {
 		},
 	}
 
+	remove.Flags().BoolVarP(&assumeYes, "yes", "y", false, "do not ask for confirmation")
 	cmd.AddCommand(list, refresh, remove)
 	return cmd
 }
