@@ -6,6 +6,8 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+## [0.9.1] - 2026-08-28
+
 ### Fixed
 
 - `wtm doctor` tells a build installed from a commit that a release is out.
@@ -659,7 +661,8 @@ First tagged release. The whole worktree lifecycle behind one binary:
   identical so worktrees created with it keep working.
 - A project without a compose file is not an error, there is simply no stack.
 
-[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.9.1...HEAD
+[0.9.1]: https://github.com/Hy0sh/worktree-manager/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.6.0...v0.7.0
