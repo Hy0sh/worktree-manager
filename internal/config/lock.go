@@ -44,5 +44,5 @@ func WithLock(path string, fn func(*Config) error) error {
 	if err := fn(cfg); err != nil {
 		return err
 	}
-	return cfg.Save(path)
+	return cfg.save(path)
 }

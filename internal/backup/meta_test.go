@@ -11,7 +11,6 @@ func TestMetaRoundTrip(t *testing.T) {
 	m := &Manager{Root: t.TempDir()}
 	written := Meta{
 		GeneratedAt: time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC),
-		GeneratedBy: "someone",
 		GitRev:      "abc123",
 	}
 	if err := m.writeMetaFile("myapp", written); err != nil {

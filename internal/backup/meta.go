@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"os/user"
 	"path/filepath"
 	"strings"
 	"time"
@@ -14,10 +13,9 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 )
 
-// Meta travels next to the dump so `backup list` can say where it comes from.
+// Meta travels next to the dump so `backup list` can say how old it is.
 type Meta struct {
 	GeneratedAt time.Time `json:"generated_at"`
-	GeneratedBy string    `json:"generated_by"`
 	GitRev      string    `json:"git_rev"`
 }
 
@@ -32,7 +30,6 @@ func (m *Manager) writeMeta(ctx context.Context, name string, p config.Project) 
 	}
 	return m.writeMetaFile(name, Meta{
 		GeneratedAt: time.Now().UTC(),
-		GeneratedBy: currentUser(),
 		GitRev:      strings.TrimSpace(res.Stdout),
 	})
 }
@@ -58,11 +55,4 @@ func (m *Manager) ReadMeta(name string) (Meta, error) {
 		return Meta{}, fmt.Errorf("%s is unreadable: %w", m.MetaPath(name), err)
 	}
 	return meta, nil
-}
-
-func currentUser() string {
-	if u, err := user.Current(); err == nil && u.Username != "" {
-		return u.Username
-	}
-	return "unknown"
 }

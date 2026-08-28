@@ -14,11 +14,10 @@ import (
 )
 
 type Cmd struct {
-	Name  string
-	Args  []string
-	Dir   string
-	Env   []string // extra variables, appended to the current environment
-	Stdin io.Reader
+	Name string
+	Args []string
+	Dir  string
+	Env  []string // extra variables, appended to the current environment
 	// Stdout, when set, receives the command output instead of it being
 	// captured in Result (used to stream pg_dump straight to a file).
 	Stdout io.Writer
@@ -84,11 +83,9 @@ func (e *Error) Error() string {
 
 func (e *Error) Unwrap() error { return e.Err }
 
-type OSRunner struct {
-	// Live output goes here; both default to the process streams.
-	Stdout io.Writer
-	Stderr io.Writer
-}
+// OSRunner is the production runner. Live output goes to the process streams;
+// a command wanting its output elsewhere sets Cmd.Stdout.
+type OSRunner struct{}
 
 func (r OSRunner) Run(ctx context.Context, c Cmd) (Result, error) {
 	cmd := exec.CommandContext(ctx, c.Name, c.Args...)
@@ -96,7 +93,6 @@ func (r OSRunner) Run(ctx context.Context, c Cmd) (Result, error) {
 	if len(c.Env) > 0 {
 		cmd.Env = append(os.Environ(), c.Env...)
 	}
-	cmd.Stdin = c.Stdin
 
 	// An interactive command needs the real terminal on all three streams:
 	// capturing output would break line editing, and without stdin a shell
@@ -124,13 +120,13 @@ func (r OSRunner) Run(ctx context.Context, c Cmd) (Result, error) {
 		outs = append(outs, &outBuf)
 	}
 	if c.Live {
-		outs = append(outs, or(r.Stdout, os.Stdout))
+		outs = append(outs, os.Stdout)
 	}
 	cmd.Stdout = io.MultiWriter(outs...)
 
 	errs := []io.Writer{&errBuf}
 	if c.Live {
-		errs = append(errs, or(r.Stderr, os.Stderr))
+		errs = append(errs, os.Stderr)
 	}
 	cmd.Stderr = io.MultiWriter(errs...)
 
@@ -143,13 +139,6 @@ func (r OSRunner) Run(ctx context.Context, c Cmd) (Result, error) {
 		return res, &Error{Cmd: c.String(), ExitCode: res.ExitCode, Stderr: res.Stderr, Err: runErr}
 	}
 	return res, nil
-}
-
-func or(w, fallback io.Writer) io.Writer {
-	if w != nil {
-		return w
-	}
-	return fallback
 }
 
 // WaitFor runs probe until it succeeds, which is how a container is told to be

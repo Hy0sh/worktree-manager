@@ -90,7 +90,7 @@ services:
   %s:
     volumes:
       - ./.db-snapshot:/db-snapshot:ro
-      - ./.db-snapshot/restore-snapshot.sh:/docker-entrypoint-initdb.d/10-wtm-restore.sh:ro
-`, dbService)
+      - ./.db-snapshot/%s:/docker-entrypoint-initdb.d/10-wtm-restore.sh:ro
+`, dbService, backup.RestoreScriptName)
 	return safefile.Write(dest, filepath.Join(dest, snapshotOverride), []byte(body), 0o644)
 }

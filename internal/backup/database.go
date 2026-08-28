@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/dbengine"
@@ -50,8 +51,9 @@ func (m *Manager) waitFor(ctx context.Context, label string, defaultAttempts int
 	if m.MaxWaitAttempts > 0 {
 		attempts = m.MaxWaitAttempts
 	}
-	interval := m.WaitInterval
-	if interval <= 0 && m.MaxWaitAttempts == 0 {
+	// MaxWaitAttempts is the tests' hook, and they want no sleep at all.
+	var interval time.Duration
+	if m.MaxWaitAttempts == 0 {
 		interval = defaultWaitInterval
 	}
 	return execx.WaitFor(ctx, m.Runner, label, attempts, interval, probe)

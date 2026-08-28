@@ -120,7 +120,8 @@ func Create(ctx context.Context, o Options) error {
 }
 
 // Start brings an existing worktree's stack back up. Without it, restarting a
-// stopped worktree means calling wtc with the index it derives, which is
+// stopped worktree means calling docker compose with the index wtm derives,
+// which is
 // exactly the internal knowledge this tool exists to hide.
 func Start(ctx context.Context, o Options) error {
 	wt, err := o.Stack.FindByBranch(ctx, o.Branch)

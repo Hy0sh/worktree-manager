@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-
-	"gopkg.in/yaml.v3"
 )
 
 // baseNames is docker compose's own lookup order.
@@ -42,42 +40,14 @@ func Files(dir string) ([]string, error) {
 	return files, nil
 }
 
-// Base is the file wtc reads. It stops at the first match and never looks at
-// override files, so a port parametrised only in an override stays invisible
-// to it.
+// Base is the first compose file docker would read. Its only caller asks
+// whether the project has a stack at all; nothing reads the file itself.
 func Base(dir string) (string, error) {
 	files, err := Files(dir)
 	if err != nil {
 		return "", err
 	}
 	return files[0], nil
-}
-
-// Ports counts how the base compose file declares its host ports. wtc can only
-// isolate a worktree when they read ${VAR:-default}; anything hardcoded would
-// collide with the main stack. Hardcoded declarations come back in raw as
-// "host:container" strings, whichever compose syntax declared them.
-func Ports(path string) (raw []string, parametrised int, err error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, 0, err
-	}
-	var doc yaml.Node
-	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return nil, 0, err
-	}
-	walkPorts(&doc, func(service string, entry *yaml.Node) {
-		sp, ok := parsePortNode(service, entry)
-		if !ok {
-			return
-		}
-		if sp.Var != "" {
-			parametrised++
-			return
-		}
-		raw = append(raw, sp.Host+":"+sp.Container)
-	})
-	return raw, parametrised, nil
 }
 
 func exists(path string) bool {

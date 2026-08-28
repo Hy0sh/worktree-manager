@@ -12,7 +12,7 @@ import (
 )
 
 // Exec runs a command inside the worktree's application container. Doing it by
-// hand means knowing the compose project name wtc derives, which is internal
+// hand means knowing the compose project name wtm derives, which is internal
 // knowledge no user should need.
 func Exec(ctx context.Context, o Options, service string, command []string) error {
 	wt, err := o.Stack.FindByBranch(ctx, o.Branch)

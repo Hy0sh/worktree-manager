@@ -17,7 +17,9 @@ import (
 // skipDirs are never descended into when looking for *.env files.
 var skipDirs = map[string]bool{".git": true, ".worktrees": true, "node_modules": true, ".claude": true}
 
-// envMaxDepth mirrors `find -maxdepth 3` from bin/new-worktree.
+// envMaxDepth bounds the walk looking for .env files: three levels covers a
+// repository root, a service directory and one below it, and stops wtm from
+// reading a whole monorepo to find them.
 const envMaxDepth = 3
 
 // provisionMode says what to do with a file the worktree already has. Create
@@ -167,7 +169,8 @@ func copyEnvFiles(root, dest string, mode provisionMode, logf func(string, ...an
 			}
 			return nil
 		}
-		if depth > envMaxDepth || !strings.HasSuffix(d.Name(), ".env") {
+		// Depth needs no check here: the directories above were pruned already.
+		if !strings.HasSuffix(d.Name(), ".env") {
 			return nil
 		}
 		// Following a valid symlink is the point (.env -> .env.local), but only

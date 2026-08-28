@@ -38,7 +38,7 @@ func Load(path string) (*Config, error) {
 	return cfg, nil
 }
 
-func (c *Config) Save(path string) error {
+func (c *Config) save(path string) error {
 	// The registry can hold a DATABASE_URL with its password, so it is kept
 	// readable by its owner alone.
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {

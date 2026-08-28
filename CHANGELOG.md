@@ -133,6 +133,35 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   `create`, which does take `<branch> [base]`, keeps its own form and names
   `wtm project list` in the refusal.
 
+### Removed
+
+- Dead code an audit found, none of which staticcheck can see: it counts every
+  exported identifier as used, and says nothing about a field written and never
+  read. `compose.Ports` lost its only caller when ports began being isolated
+  whatever the compose file declares, and its doc still stated the constraint
+  that change lifted; the test keeping it compiled was holding an abandoned
+  concept, not a behaviour. `Meta.GeneratedBy` was filled from `os/user` on
+  every refresh, persisted, and read by no one but a test. `Cmd.Stdin` was
+  never set, `OSRunner.Stdout` and `Stderr` never either, which made the
+  `w != nil` branch of the helper reading them unreachable. `Manager.WaitInterval`
+  had no writer, so the guard below it was always true and only
+  `MaxWaitAttempts`, the tests' hook, decided anything.
+- `Config.Save` is unexported. `WithLock` exists so that nothing writes the
+  registry outside the lock, and exporting the write opened the door it holds
+  shut. Nothing outside the package called it.
+- A depth check in the `.env` walk that could not be true: the directories above
+  it are pruned one level earlier, so a file reaching it is always in range. Its
+  constant referred to a script of the tool wtm replaced, absent from this
+  repository, which left a reader nothing to verify.
+- Four comments credited `wtc` with work wtm does itself, on the compose project
+  name, the `down` that keeps volumes, and the index a start derives. The
+  deliberate references stay: the port formula, the `.env` markers and the
+  `.wtcrc.json` it still reads are conventions kept identical on purpose.
+- The generated snapshot override takes the restore script's name from
+  `backup.RestoreScriptName` instead of restating it. The constant is exported
+  for exactly that, and the file writing the script already used it fifteen
+  lines above.
+
 ## [0.8.0] - 2026-08-28
 
 ### Added

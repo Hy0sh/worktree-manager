@@ -31,7 +31,7 @@ func TestRefreshWritesDumpAndMeta(t *testing.T) {
 	if meta.GitRev != "deadbeefcafe" {
 		t.Fatalf("git_rev = %q", meta.GitRev)
 	}
-	if meta.GeneratedBy == "" || meta.GeneratedAt.IsZero() {
+	if meta.GeneratedAt.IsZero() {
 		t.Fatalf("meta incomplete: %+v", meta)
 	}
 	if _, err := os.Stat(m.DumpPath("myapp") + ".tmp"); !os.IsNotExist(err) {

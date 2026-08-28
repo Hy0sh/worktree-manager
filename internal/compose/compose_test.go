@@ -44,34 +44,3 @@ func TestBaseIgnoresOverrides(t *testing.T) {
 		t.Fatalf("Base = %q, want %q", got, base)
 	}
 }
-
-func TestPortsSeparatesHardcodedFromParametrised(t *testing.T) {
-	dir := t.TempDir()
-	path := write(t, dir, "compose.yaml", `services:
-  db:
-    ports:
-      - "5432:5432"
-  api:
-    ports:
-      - 8080:8080
-  web:
-    ports:
-      - "${FRONTEND_PORT:-3000}:3000"
-  extra:
-    ports:
-      - "${API_PORT:-8000}:8000"
-`)
-	raw, parametrised, err := Ports(path)
-	if err != nil {
-		t.Fatalf("Ports: %v", err)
-	}
-	if parametrised != 2 {
-		t.Fatalf("parametrised = %d, want 2", parametrised)
-	}
-	if len(raw) != 2 {
-		t.Fatalf("raw = %v, want 2 entries (quoted and unquoted forms)", raw)
-	}
-	if raw[0] != "5432:5432" || raw[1] != "8080:8080" {
-		t.Fatalf("raw = %v", raw)
-	}
-}

@@ -30,7 +30,7 @@ func stackVolumes(ctx context.Context, o Options, wt stack.Worktree) []string {
 }
 
 // removeVolumes drops the stack's volumes once the worktree is gone. `docker
-// compose down`, which wtc runs on stop, deliberately keeps them: without this
+// compose down`, which stop runs, deliberately keeps them: without this
 // every removed worktree leaves its database behind forever.
 func removeVolumes(ctx context.Context, o Options, wt stack.Worktree) {
 	volumes := stackVolumes(ctx, o, wt)

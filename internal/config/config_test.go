@@ -40,7 +40,7 @@ func TestSaveThenLoadRoundtrip(t *testing.T) {
 			"my-app": {Dir: "/repo/myapp", BaseBranch: "main", Dump: true},
 		},
 	}
-	if err := cfg.Save(path); err != nil {
+	if err := cfg.save(path); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
 	back, err := Load(path)

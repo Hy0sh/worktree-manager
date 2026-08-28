@@ -32,7 +32,6 @@ type Manager struct {
 	Root            string
 	Out             io.Writer
 	MaxWaitAttempts int
-	WaitInterval    time.Duration
 }
 
 func (m *Manager) DumpPath(name string) string {
