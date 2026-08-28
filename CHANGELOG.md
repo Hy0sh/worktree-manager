@@ -32,8 +32,11 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   4m18s, and the ten minutes an application service gets ran past twenty.
   `ready_timeout` now means what it says for that service, and a reminder every
   thirty seconds is thirty seconds of elapsed time rather than thirty probes.
-  The database wait goes through `execx.WaitFor`, which counts attempts and says
-  so instead of claiming a duration: its bound stays as approximate as before.
+  The database wait shares that clock. Turning the bound back into a count of
+  attempts there floored to zero whenever the interval outlasted the timeout,
+  which skipped the wait altogether and left `post_create` playing against a
+  database still restoring. `execx.WaitFor` keeps its attempt count for
+  `backup`, whose callers configure it that way on purpose.
 - The memory warning before a stack starts counts what the whole machine uses
   when docker shares it, instead of the containers alone. It was written for
   Docker Desktop, where the containers own a VM's budget and their sum is the
@@ -53,8 +56,10 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   ahead, instead of only saying so and starting nine containers anyway. The
   warning scrolled past among compose's own output, which is how a colleague's
   machine froze on its third worktree. Answering no leaves the worktree and its
-  files, the state `--no-start` produces, and names the `wtm start` that brings
-  the stack up once there is room. Nobody is asked unless stdin is a terminal:
+  files, the state `--no-start` produces, and names both the `wtm start` that
+  brings the stack up once there is room and the lines that play the project's
+  `post_create` and this create's `--exec`: that path never reaches them, and
+  `wtm start` does not replay a seed. Nobody is asked unless stdin is a terminal:
   wtm exists for parallel agents, and the estimate behind the warning is an
   average over the running stacks, which predicts neither a light stack nor a
   heavy one. Refusing a create over it, or hanging on a question nobody reads,
@@ -69,7 +74,6 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   tool raises, and a habitual `-y` is how a caller ends up agreeing to
   something it never read. The question names the flag, since a hang leaves
   nothing else in the log.
-
 ## [0.8.0] - 2026-08-28
 
 ### Added

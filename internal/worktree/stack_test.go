@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 )
 
@@ -140,5 +141,32 @@ func TestCreateAsksNothingWhenThereIsRoom(t *testing.T) {
 	}
 	if err := Create(context.Background(), o); err != nil {
 		t.Fatalf("Create: %v", err)
+	}
+}
+
+// Calling off the stack on memory used to lose the project's post_create and
+// the create's own --exec without a word: both are played by afterCreate, which
+// that path skips. `wtm start` does not replay post_create either, so the way
+// back has to be named here or nowhere.
+func TestCallingOffTheStackStillNamesWhatWasNotPlayed(t *testing.T) {
+	f := newFixture(t)
+	fullMachine(f)
+	var out bytes.Buffer
+	o := f.opts("feat/x")
+	o.Out = &out
+	o.Confirm = func(string) bool { return false }
+	o.Project.PostCreate = "manage.py seed_data"
+	o.ExecAfter = "manage.py load_fixture demo"
+	o.Project.Backup = &config.Backup{AppService: "backend"}
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	for _, want := range []string{
+		"wtm exec feat/x -- sh -c 'manage.py seed_data'",
+		"wtm exec feat/x -- sh -c 'manage.py load_fixture demo'",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("want %s in:\n%s", want, out.String())
+		}
 	}
 }

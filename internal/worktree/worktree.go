@@ -96,6 +96,14 @@ func Create(ctx context.Context, o Options) error {
 	}
 	if err := start(ctx, o, dest); err != nil {
 		if errors.Is(err, errStackNotStarted) {
+			// afterCreate is what plays post_create and --exec, and this path
+			// never reaches it. `wtm start` does not replay post_create either,
+			// so the lines that would play them are named here or nowhere.
+			post := o.Project.PostCreate
+			if o.NoPostCreate {
+				post = ""
+			}
+			replayLines(o, "run", post, o.ExecAfter)
 			// Nothing in a container can run, but a command working on the
 			// files is exactly what a worktree without a stack is good for.
 			o.NoStart = true

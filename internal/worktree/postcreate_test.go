@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"io"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -399,5 +400,72 @@ func TestCreatePlaysTheExecCommandDespiteNoPostCreate(t *testing.T) {
 	}
 	if last := f.fake.Lines()[len(f.fake.Lines())-1]; !strings.Contains(last, "sh -c 'manage.py load_fixture demo'") {
 		t.Fatalf("--exec should still have run, last call = %q", last)
+	}
+}
+
+// A ready_interval longer than its ready_timeout is accepted by the flags, and
+// the database wait used to convert the two into a count of attempts: the
+// division floored to zero, so `execx.WaitFor` ran no probe at all, returned an
+// error wrapping a nil, and the seed was played against a database nobody had
+// waited for. The app wait never had the bug, which is the whole reason the two
+// now share one clock.
+func TestTheDatabaseWaitProbesEvenWhenTheIntervalOutlastsTheTimeout(t *testing.T) {
+	f := newFixture(t)
+	probes := 0
+	inner := f.fake.Handler
+	f.fake.Handler = func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(c.String(), "pg_isready") {
+			probes++
+			return execx.Result{}, nil
+		}
+		return inner(c)
+	}
+	o := f.opts("feat/x")
+	o.Project.Dump = true
+	o.Project.ReadyTimeout, o.Project.ReadyInterval = "1ms", "50ms"
+	o.Project.Backup = &config.Backup{DBService: "db", DBUser: "postgres",
+		DBEngine: "postgres", AppService: "backend"}
+	wt, err := o.Stack.FindByBranch(context.Background(), "feat/x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg := o.Project.BackupConfig()
+	if err := waitForDatabase(context.Background(), o, wt, cfg.DBService, cfg.DBUser, cfg.DBEngine); err != nil {
+		t.Fatalf("the database answered on the first probe: %v", err)
+	}
+	if probes != 1 {
+		t.Fatalf("the database was probed %d time(s), want exactly 1", probes)
+	}
+}
+
+// A wait that times out must name what it waited on and for how long, not wrap
+// a nil error into `%!w(<nil>)`.
+func TestTheDatabaseWaitNamesWhatItGaveUpOn(t *testing.T) {
+	f := newFixture(t)
+	inner := f.fake.Handler
+	f.fake.Handler = func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(c.String(), "pg_isready") {
+			return execx.Result{ExitCode: 1}, errors.New("could not connect")
+		}
+		return inner(c)
+	}
+	o := f.opts("feat/x")
+	o.Out = io.Discard
+	o.Project.Dump = true
+	o.Project.ReadyTimeout, o.Project.ReadyInterval = "5ms", "1ms"
+	o.Project.Backup = &config.Backup{DBService: "db", DBUser: "postgres", DBEngine: "postgres"}
+	wt, err := o.Stack.FindByBranch(context.Background(), "feat/x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = waitForDatabase(context.Background(), o, wt, "db", "postgres", "postgres")
+	if err == nil {
+		t.Fatal("a database that never answers must time out")
+	}
+	if strings.Contains(err.Error(), "%!w") || strings.Contains(err.Error(), "<nil>") {
+		t.Fatalf("the message wraps nothing: %v", err)
+	}
+	if !strings.Contains(err.Error(), "the database of feat/x") {
+		t.Fatalf("the message should name what it waited on, got %v", err)
 	}
 }

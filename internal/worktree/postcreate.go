@@ -299,13 +299,20 @@ func waitForDatabase(ctx context.Context, o Options, wt stack.Worktree, service,
 	if err != nil {
 		return err
 	}
+	probe := execx.Cmd{
+		Name: "docker",
+		Args: append([]string{"compose", "-p", o.projectName(wt), "exec", "-T", service}, eng.ReadyArgs(user)...),
+		Dir:  wt.Path,
+	}
+	// One clock for the two services. Turning the bound back into a count of
+	// attempts here floored to zero whenever the interval outlasted the
+	// timeout, which skipped the wait altogether, and it left ready_timeout
+	// meaning a number of probes for the database and elapsed time for the
+	// application. A refused probe is what a database still restoring answers,
+	// so it is a "not yet" and never an error to give up on.
 	w := readyWait(o.Project, dbReadyTimeout)
-	// WaitFor counts attempts, and says so in its message rather than claiming
-	// a duration, so the bound here stays as approximate as it has always been.
-	return execx.WaitFor(ctx, o.Runner, "the database of "+o.Branch,
-		int(w.timeout/w.interval), w.interval, execx.Cmd{
-			Name: "docker",
-			Args: append([]string{"compose", "-p", o.projectName(wt), "exec", "-T", service}, eng.ReadyArgs(user)...),
-			Dir:  wt.Path,
-		})
+	return waitUntil(ctx, o, w, "the database of "+o.Branch, "", func() (bool, error) {
+		_, err := o.Runner.Run(ctx, probe)
+		return err == nil, nil
+	})
 }
