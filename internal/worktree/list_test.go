@@ -85,3 +85,17 @@ func TestListReportsNoStatusWithoutCompose(t *testing.T) {
 		t.Fatalf("status = %q, a project without a stack is neither up nor down", entries[0].Status)
 	}
 }
+
+// The listing has been bounded since it existed, so that a wedged daemon
+// leaves a `-` in the STATUS column instead of hanging. Nothing held it.
+func TestTheListingAsksDockerUnderADeadline(t *testing.T) {
+	f := newFixture(t)
+	if _, err := List(context.Background(), f.opts("")); err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	for _, c := range f.fake.Calls {
+		if c.Name == "docker" && !c.Bounded {
+			t.Errorf("`%s` can hang the listing", c.Line())
+		}
+	}
+}

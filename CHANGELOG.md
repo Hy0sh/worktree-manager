@@ -74,6 +74,35 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   tool raises, and a habitual `-y` is how a caller ends up agreeing to
   something it never read. The question names the flag, since a hang leaves
   nothing else in the log.
+- `wtm backup list` no longer panics on a dump of a tebibyte or more.
+  `humanSize` let its exponent reach 3 and then indexed a string of three
+  letters. `cmd/wtm` also carries a second byte formatter, `dockermem.Human`,
+  which never had the bug.
+- `wtm doctor` matches the volume and image names compose actually builds. It
+  looked for `<directory>-wt-`, raw, while compose sanitises the project name,
+  so a repository in a directory named `MyApp` or `Front_Office` had every
+  orphan reported as none at all: neither the volumes squatting the indices a
+  new worktree steps over, nor the images of several GB. `stack.WorktreePrefix`
+  answers that question now, next to the `ProjectName` it has to agree with.
+- `wtm doctor` claims no orphan at all while one of a project's worktrees has
+  no recorded index. Such a worktree, created before indices were recorded or
+  started while docker was unreachable, cannot be turned into the compose
+  project name that would claim its volumes, so it looked orphan. doctor prints
+  `docker volume rm` lines, and a wrong guess there costs a running worktree
+  its database.
+- `create --run` and `--exec` refuse a value that is really a flag. pflag takes
+  whatever follows a long flag as its value, `--` and another flag included, so
+  a caller reaching for the argv form of `wtm exec` wrote `--exec --no-start`
+  and got neither: the shell line held `--no-start`, the flag stayed unset, and
+  the guard that refuses those two together never fired. The refusal names the
+  quoted form, and comes before the positionals are counted.
+- Resolving a worktree's index asks docker under a deadline. `wtm list` has
+  bounded the same question since it existed, so a wedged daemon leaves a `-`
+  in its STATUS column; resolution had no bound, so it hung `create`, `stop`,
+  `remove` and `exec` with nothing on screen. Failing to answer already
+  degrades to the registry. `execx.Fake` records whether a call was bounded,
+  which is what lets a test hold that, here and for the listing.
+
 ## [0.8.0] - 2026-08-28
 
 ### Added

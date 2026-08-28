@@ -5,6 +5,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 	"github.com/Hy0sh/worktree-manager/internal/stack"
@@ -47,11 +48,22 @@ func hasLeftovers(labels []string, repoName string, n int, branch string) bool {
 	return false
 }
 
+// dockerLabelsTimeout keeps a wedged daemon from hanging every command that
+// resolves an index.
+const dockerLabelsTimeout = 5 * time.Second
+
 // dockerProjects lists every compose project docker still knows about, stopped
 // containers and volumes included. ok is false only when `ps -a` itself fails,
 // meaning docker is unreachable and resolution must degrade to the registry:
 // partial evidence can only understate leftovers, never overstate them.
 func (r *Resolver) dockerProjects(ctx context.Context) (labels []string, ok bool) {
+	// `wtm list` has bounded the same question since it existed, because a
+	// listing must stay responsive. Resolution had no bound at all, so a
+	// wedged daemon hung `create`, `stop`, `remove` and `exec` instead, with
+	// nothing on screen. Failing to answer degrades to the registry, which is
+	// what this function already does when docker refuses.
+	ctx, cancel := context.WithTimeout(ctx, dockerLabelsTimeout)
+	defer cancel()
 	seen := map[string]bool{}
 	add := func(name string) {
 		if name != "" && !seen[name] {

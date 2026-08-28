@@ -4,6 +4,8 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+
+	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
 
 // portHolder is one published port a worktree stack would take, and who takes
@@ -64,6 +66,25 @@ func orphanVolumes(all []string, repoName string, live []string) []string {
 	return unclaimed(all, repoName, "_", live)
 }
 
+// orphanVolumes and orphanImages on a repoWorktrees answer nothing at all while
+// one of the project's worktrees has no recorded index: it cannot be turned
+// into the compose project name that would claim its volumes, so it would look
+// orphan. These reports print `docker volume rm` and `docker rmi` lines, and a
+// wrong guess costs a running worktree its database.
+func (rw repoWorktrees) orphanVolumes(all []string) []string {
+	if len(rw.Unindexed) > 0 {
+		return nil
+	}
+	return orphanVolumes(all, rw.Repo, rw.Live)
+}
+
+func (rw repoWorktrees) orphanImages(all []string) []string {
+	if len(rw.Unindexed) > 0 {
+		return nil
+	}
+	return orphanImages(all, rw.Repo, rw.Live)
+}
+
 // orphanImages returns the images compose built for worktree stacks of repoName
 // that no live worktree accounts for. Compose names a built image
 // "<project>-<service>", so the repository name is enough to attribute it; an
@@ -76,7 +97,7 @@ func orphanImages(all []string, repoName string, live []string) []string {
 // the live projects owns. sep is what compose puts between the project and the
 // resource: "_" for a volume, "-" for an image repository.
 func unclaimed(all []string, repoName, sep string, live []string) []string {
-	prefix := repoName + "-wt-"
+	prefix := stack.WorktreePrefix(repoName)
 	var out []string
 	for _, name := range all {
 		if !strings.HasPrefix(name, prefix) {

@@ -3,6 +3,8 @@ package main
 import (
 	"strings"
 	"testing"
+
+	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
 
 // Measured on two real projects: shop's db_test (offset 1000, default 5433)
@@ -89,5 +91,35 @@ func TestOrphanImagesKeepsWhatALiveWorktreeOwns(t *testing.T) {
 		if orphans[i] != want[i] {
 			t.Fatalf("orphans = %v, want %v", orphans, want)
 		}
+	}
+}
+
+// Compose sanitises the project name it builds from the repository directory,
+// so a directory whose name is not already lowercase and alphanumeric never
+// matched the prefix doctor looked for: it reported zero orphan, silently, and
+// the volumes squatting the indices stayed invisible.
+func TestOrphanVolumesMatchTheNameComposeActuallyBuilds(t *testing.T) {
+	all := []string{"myapp-wt-1-feat-x_db_data", "myapp-wt-2-old_db_data", "unrelated_data"}
+	live := []string{stack.ProjectName("MyApp", 1, "feat/x")}
+	got := orphanVolumes(all, "MyApp", live)
+	if len(got) != 1 || got[0] != "myapp-wt-2-old_db_data" {
+		t.Fatalf("orphans = %v, want only the removed worktree's volume", got)
+	}
+}
+
+// A worktree whose index was never recorded cannot be turned into the compose
+// project name that would claim its volumes, so it looked orphan. doctor prints
+// `docker volume rm` lines: guessing wrong here loses a running worktree's
+// database.
+func TestNoOrphanIsClaimedWhileAWorktreeHasNoIndex(t *testing.T) {
+	all := []string{"myapp-wt-1-feat-x_db_data", "myapp-wt-9-gone_db_data"}
+	rw := repoWorktrees{Repo: "myapp", Live: nil, Unindexed: []string{"feat/x"}}
+	if got := rw.orphanVolumes(all); got != nil {
+		t.Fatalf("orphans = %v, want none: one worktree cannot be accounted for", got)
+	}
+	rw.Unindexed = nil
+	rw.Live = []string{stack.ProjectName("myapp", 1, "feat/x")}
+	if got := rw.orphanVolumes(all); len(got) != 1 || got[0] != "myapp-wt-9-gone_db_data" {
+		t.Fatalf("orphans = %v, want the one nobody owns", got)
 	}
 }

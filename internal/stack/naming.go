@@ -16,6 +16,14 @@ func ProjectName(repoName string, index int, branch string) string {
 // ProjectPrefix is what every compose project of a worktree at this index
 // starts with, whatever its branch. It is how leftovers of a removed
 // worktree are spotted before the index is handed to a new one.
+// WorktreePrefix is what every worktree stack of a repository shares, and what
+// tells its volumes and images from everything else docker holds. It goes
+// through the same sanitisation compose applies: matching on the raw directory
+// name found nothing at all for a repository named MyApp.
+func WorktreePrefix(repoName string) string {
+	return sanitize(repoName) + "-wt-"
+}
+
 func ProjectPrefix(repoName string, index int) string {
 	return sanitize(fmt.Sprintf("%s-wt-%d", repoName, index)) + "-"
 }

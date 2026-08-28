@@ -195,3 +195,32 @@ func TestCreateAndStartOfferAWayOutOfTheMemoryQuestion(t *testing.T) {
 		}
 	}
 }
+
+// pflag does not treat `--` specially in the value of a long flag, so a caller
+// reaching for the argv form of `wtm exec` puts a flag, or the separator
+// itself, into the shell line: `--exec --no-start` left noStart false and slid
+// the string "--no-start" past the guard that refuses those two together.
+func TestCreateRefusesAFlagAsAShellLine(t *testing.T) {
+	f := newAllFixture(t, "")
+	for _, args := range [][]string{
+		{"myapp", "feat/x", "--exec", "--", "python", "manage.py", "seed"},
+		{"myapp", "feat/x", "--exec", "--no-start"},
+		{"myapp", "feat/x", "--run", "--ignore-memory"},
+	} {
+		cmd := newCreateCmd(f.app)
+		cmd.SetArgs(args)
+		cmd.SetOut(f.out)
+		err := cmd.Execute()
+		if err == nil {
+			t.Fatalf("`wtm create %s` must be refused", strings.Join(args, " "))
+		}
+		if !strings.Contains(err.Error(), "shell line") {
+			t.Fatalf("the refusal should say what is expected, got %v", err)
+		}
+	}
+	for _, l := range f.fake.Lines() {
+		if strings.Contains(l, "worktree add") {
+			t.Fatalf("nothing should have been created, got %q", l)
+		}
+	}
+}

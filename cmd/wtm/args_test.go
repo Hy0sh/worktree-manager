@@ -33,3 +33,20 @@ func TestAMissingArgumentNamesTheCallThatWouldHaveWorked(t *testing.T) {
 	}
 	walk(newRootCmd())
 }
+
+// humanSize let exp reach 3 and then indexed "kMG", a string of three, so
+// `wtm backup list` panicked on any dump of a tebibyte or more.
+func TestHumanSizeSurvivesADumpOverAGibibyte(t *testing.T) {
+	cases := map[int64]string{
+		512:                  "512 B",
+		1 << 20:              "1.0 MB",
+		1 << 30:              "1.0 GB",
+		1099511627776:        "1024.0 GB", // 1 TiB: no unit beyond G, so it counts up
+		1024 * 1099511627776: "1048576.0 GB",
+	}
+	for n, want := range cases {
+		if got := humanSize(n); got != want {
+			t.Errorf("humanSize(%d) = %q, want %q", n, got, want)
+		}
+	}
+}

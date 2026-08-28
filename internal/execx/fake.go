@@ -10,6 +10,10 @@ type Call struct {
 	Args []string
 	Dir  string
 	Env  []string
+	// Bounded says the context carried a deadline. A command asking docker
+	// something must never be able to hang wtm, and nothing could assert that
+	// before: the fake used to drop the context on the floor.
+	Bounded bool
 }
 
 // Line renders the call the way Cmd.String does, so an assertion reads exactly
@@ -25,8 +29,15 @@ type Fake struct {
 	Handler func(c Cmd) (Result, error)
 }
 
-func (f *Fake) Run(_ context.Context, c Cmd) (Result, error) {
-	f.Calls = append(f.Calls, Call{Name: c.Name, Args: c.Args, Dir: c.Dir, Env: c.Env})
+func (f *Fake) Run(ctx context.Context, c Cmd) (Result, error) {
+	// A test driving a cobra RunE by hand has no context on the command, and a
+	// test double must not be the thing that dereferences nil. Production never
+	// gets here with one: exec.CommandContext would panic just the same.
+	bounded := false
+	if ctx != nil {
+		_, bounded = ctx.Deadline()
+	}
+	f.Calls = append(f.Calls, Call{Name: c.Name, Args: c.Args, Dir: c.Dir, Env: c.Env, Bounded: bounded})
 	var (
 		res Result
 		err error

@@ -26,7 +26,8 @@ func newCreateCmd(a *app) *cobra.Command {
 			"combined, and neither is remembered from one create to the next.\n\n" +
 			"  wtm create feat/my-branch --run claude\n" +
 			"  wtm create feat/my-branch --exec 'manage.py load_fixture demo'",
-		Args:              needArgs(1, 3, "name the branch to create, as in `wtm create feat/my-branch`"),
+		Args: shellLineArgs(&runAfter, &execAfter,
+			needArgs(1, 3, "name the branch to create, as in `wtm create feat/my-branch`")),
 		ValidArgsFunction: a.completeProjects,
 		SilenceUsage:      true,
 		SilenceErrors:     true,

@@ -108,3 +108,28 @@ func TestReleaseForgetsTheBranch(t *testing.T) {
 		t.Fatalf("got %d, %v", got, err)
 	}
 }
+
+// A daemon that accepts a connection and never answers used to hang every
+// command that resolves an index, with nothing on screen: `wtm list` bounded
+// the same question from the start, resolution never did. Resolution already
+// knows how to degrade to the registry when docker refuses, so a deadline
+// costs it nothing.
+func TestDockerIsAskedUnderADeadline(t *testing.T) {
+	r, _, fake := newResolver(t, nil, []string{})
+	if _, err := r.Resolve(context.Background(), "feat/x", 0, MayAllocate); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	asked := false
+	for _, c := range fake.Calls {
+		if c.Name != "docker" {
+			continue
+		}
+		asked = true
+		if !c.Bounded {
+			t.Errorf("`%s` can hang forever", c.Line())
+		}
+	}
+	if !asked {
+		t.Fatal("this resolution should have had to ask docker")
+	}
+}

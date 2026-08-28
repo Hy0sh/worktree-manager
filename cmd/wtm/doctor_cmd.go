@@ -66,6 +66,11 @@ func (a *app) reportPortClashes() {
 type repoWorktrees struct {
 	Repo string
 	Live []string
+	// Unindexed holds the branches whose index the registry does not carry, a
+	// worktree created before indices were recorded or started while docker was
+	// unreachable. Their compose project name cannot be derived, so nothing
+	// this project owns can be called orphan while any of them stands.
+	Unindexed []string
 }
 
 func (a *app) liveProjects(ctx context.Context) []repoWorktrees {
@@ -79,12 +84,15 @@ func (a *app) liveProjects(ctx context.Context) []repoWorktrees {
 		}
 		repo := filepath.Base(p.Dir)
 		live := make([]string, 0, len(worktrees))
+		var unindexed []string
 		for _, wt := range worktrees {
 			if idx := p.WorktreeIndices[wt.Branch]; idx > 0 {
 				live = append(live, stack.ProjectName(repo, idx, wt.Branch))
+				continue
 			}
+			unindexed = append(unindexed, wt.Branch)
 		}
-		out = append(out, repoWorktrees{Repo: repo, Live: live})
+		out = append(out, repoWorktrees{Repo: repo, Live: live, Unindexed: unindexed})
 	}
 	return out
 }
@@ -100,7 +108,7 @@ func (a *app) reportOrphanVolumes(ctx context.Context) {
 	all := strings.Fields(res.Stdout)
 	var orphans []string
 	for _, rw := range a.liveProjects(ctx) {
-		orphans = append(orphans, orphanVolumes(all, rw.Repo, rw.Live)...)
+		orphans = append(orphans, rw.orphanVolumes(all)...)
 	}
 	if len(orphans) == 0 {
 		return
@@ -127,7 +135,7 @@ func (a *app) reportOrphanImages(ctx context.Context) {
 	all := strings.Fields(res.Stdout)
 	var orphans []string
 	for _, rw := range a.liveProjects(ctx) {
-		orphans = append(orphans, orphanImages(all, rw.Repo, rw.Live)...)
+		orphans = append(orphans, rw.orphanImages(all)...)
 	}
 	if len(orphans) == 0 {
 		return
