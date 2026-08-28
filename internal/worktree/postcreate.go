@@ -28,12 +28,14 @@ const (
 	stillWaiting = 30 * time.Second
 )
 
-// wait is how long a service gets, how often it is asked, and after how many
-// attempts the wait repeats itself.
+// wait is how long a service gets, how often it is asked, and how much elapsed
+// time separates two reminders. All three are durations: a probe is a `docker
+// compose exec` costing real time, so a bound counted in attempts is not the
+// bound the user asked for.
 type wait struct {
-	attempts int
+	timeout  time.Duration
 	interval time.Duration
-	every    int
+	every    time.Duration
 }
 
 // readyWait reads the project's bounds, falling back to the given default. A
@@ -47,15 +49,12 @@ func readyWait(p config.Project, defaultTimeout time.Duration) wait {
 	if d, err := time.ParseDuration(p.ReadyInterval); err == nil && d > 0 {
 		interval = d
 	}
-	attempts := int(timeout / interval)
-	if attempts < 1 {
-		attempts = 1
+	// Reminding more often than the wait even asks would say nothing new.
+	every := stillWaiting
+	if every < interval {
+		every = interval
 	}
-	every := int(stillWaiting / interval)
-	if every < 1 {
-		every = 1
-	}
-	return wait{attempts, interval, every}
+	return wait{timeout, interval, every}
 }
 
 // postCreate plays the project's post_create command in the application
@@ -204,10 +203,19 @@ func listening(ctx context.Context, o Options, wt stack.Worktree, service, port 
 }
 
 // waitUntil polls ready, naming what it waits on the first time the answer is
-// no, then again every stillWaiting attempts: minutes of silence read as a hung
-// wtm. why explains the wait, and belongs to that first line alone.
+// no, then again every w.every of elapsed time: minutes of silence read as a
+// hung wtm. why explains the wait, and belongs to that first line alone.
+//
+// Everything is measured against the wall clock rather than counted in
+// attempts. Each probe costs real time, and ignoring it made both the reported
+// elapsed and the bound itself shorter than what the user lived through: on a
+// machine busy booting nine services, a wait announcing 2m0s had been holding
+// for 4m18s, and the ten minutes an application service gets ran past twenty.
 func waitUntil(ctx context.Context, o Options, w wait, what, why string, ready func() (bool, error)) error {
-	for i := 0; i < w.attempts; i++ {
+	start := time.Now()
+	var reminded time.Duration
+	first := true
+	for {
 		ok, err := ready()
 		if err != nil {
 			return err
@@ -215,22 +223,25 @@ func waitUntil(ctx context.Context, o Options, w wait, what, why string, ready f
 		if ok {
 			return nil
 		}
+		elapsed := time.Since(start)
 		switch {
-		case i == 0:
+		case first:
 			o.logf("waiting for %s%s", what, why)
-		case i%w.every == 0:
-			o.logf("still waiting for %s (%s)", what, time.Duration(i)*w.interval)
+			first = false
+		case elapsed-reminded >= w.every:
+			reminded = elapsed
+			o.logf("still waiting for %s (%s)", what, elapsed.Round(time.Second))
 		}
-		if i < w.attempts-1 {
-			select {
-			case <-ctx.Done():
-				return ctx.Err()
-			case <-time.After(w.interval):
-			}
+		if elapsed >= w.timeout {
+			return fmt.Errorf("timed out waiting for %s after %s", what,
+				elapsed.Round(time.Second))
+		}
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(w.interval):
 		}
 	}
-	return fmt.Errorf("timed out waiting for %s after %s", what,
-		time.Duration(w.attempts)*w.interval)
 }
 
 // waitForDatabase holds until the engine answers, using the same probe
@@ -245,9 +256,12 @@ func waitForDatabase(ctx context.Context, o Options, wt stack.Worktree, service,
 		return err
 	}
 	w := readyWait(o.Project, dbReadyTimeout)
-	return execx.WaitFor(ctx, o.Runner, "the database of "+o.Branch, w.attempts, w.interval, execx.Cmd{
-		Name: "docker",
-		Args: append([]string{"compose", "-p", o.projectName(wt), "exec", "-T", service}, eng.ReadyArgs(user)...),
-		Dir:  wt.Path,
-	})
+	// WaitFor counts attempts, and says so in its message rather than claiming
+	// a duration, so the bound here stays as approximate as it has always been.
+	return execx.WaitFor(ctx, o.Runner, "the database of "+o.Branch,
+		int(w.timeout/w.interval), w.interval, execx.Cmd{
+			Name: "docker",
+			Args: append([]string{"compose", "-p", o.projectName(wt), "exec", "-T", service}, eng.ReadyArgs(user)...),
+			Dir:  wt.Path,
+		})
 }

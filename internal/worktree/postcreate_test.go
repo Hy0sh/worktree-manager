@@ -196,40 +196,73 @@ func TestCreateRestatesTheAddressesAfterPostCreate(t *testing.T) {
 func TestTheWaitKeepsSayingWhatItWaitsOn(t *testing.T) {
 	var out bytes.Buffer
 	o := Options{Out: &out}
-	w := wait{attempts: 40, interval: time.Millisecond, every: 10}
+	w := wait{timeout: 60 * time.Millisecond, interval: time.Millisecond, every: 10 * time.Millisecond}
 	err := waitUntil(context.Background(), o, w, "backend to listen on 8000",
 		" (it declares no healthcheck)", func() (bool, error) { return false, nil })
 	if err == nil {
 		t.Fatal("a wait that never succeeds must time out")
 	}
 	lines := strings.Split(strings.TrimSpace(out.String()), "\n")
-	if len(lines) != 4 {
-		t.Fatalf("want one line then a reminder every 10 attempts, got:\n%s", out.String())
-	}
 	if lines[0] != "waiting for backend to listen on 8000 (it declares no healthcheck)" {
 		t.Fatalf("first line = %q", lines[0])
 	}
-	// The reason belongs to that first line, not to every reminder.
-	if lines[1] != "still waiting for backend to listen on 8000 (10ms)" {
-		t.Fatalf("reminder = %q", lines[1])
+	if len(lines) < 2 {
+		t.Fatalf("a wait of 60ms reminding every 10ms should repeat itself:\n%s", out.String())
 	}
-	if !strings.Contains(err.Error(), "after 40ms") {
-		t.Fatalf("the timeout should name the elapsed bound, got %v", err)
+	// The reason belongs to that first line, not to every reminder.
+	for _, l := range lines[1:] {
+		if !strings.HasPrefix(l, "still waiting for backend to listen on 8000 (") ||
+			strings.Contains(l, "healthcheck") {
+			t.Fatalf("reminder = %q", l)
+		}
+	}
+}
+
+// The elapsed time the wait reports used to be a count of attempts times the
+// interval, which ignored what each probe itself costs. A `docker compose exec`
+// on a machine busy booting nine services took about a second, so a wait that
+// announced 2m0s had really been holding for 4m18s, and the ten minutes granted
+// to an application service were over twenty in wall clock.
+func TestTheWaitAccountsForWhatTheProbeItselfCosts(t *testing.T) {
+	var out bytes.Buffer
+	o := Options{Out: &out}
+	w := wait{timeout: 100 * time.Millisecond, interval: time.Millisecond, every: time.Hour}
+	start := time.Now()
+	err := waitUntil(context.Background(), o, w, "backend to listen on 8000", "",
+		func() (bool, error) {
+			time.Sleep(10 * time.Millisecond)
+			return false, nil
+		})
+	elapsed := time.Since(start)
+	if err == nil {
+		t.Fatal("a wait that never succeeds must time out")
+	}
+	// Counting attempts would have run 100 probes of 11ms, over a second.
+	if elapsed > 500*time.Millisecond {
+		t.Fatalf("the wait held for %s, far past the 100ms it was given", elapsed)
+	}
+	if !strings.Contains(err.Error(), "backend to listen on 8000 after ") {
+		t.Fatalf("the timeout should name what it waited on and for how long, got %v", err)
 	}
 }
 
 // The bounds a project sets replace the built-in ones.
 func TestReadyWaitTakesTheProjectBounds(t *testing.T) {
-	if got := readyWait(config.Project{}, appReadyTimeout); got.attempts != 600 || got.interval != time.Second || got.every != 30 {
+	if got := readyWait(config.Project{}, appReadyTimeout); got.timeout != appReadyTimeout ||
+		got.interval != time.Second || got.every != stillWaiting {
 		t.Fatalf("defaults = %+v", got)
 	}
 	p := config.Project{ReadyTimeout: "2m", ReadyInterval: "10s"}
-	if got := readyWait(p, appReadyTimeout); got.attempts != 12 || got.interval != 10*time.Second || got.every != 3 {
-		t.Fatalf("2m every 10s = %+v, want 12 attempts of 10s, a reminder every 3", got)
+	if got := readyWait(p, appReadyTimeout); got.timeout != 2*time.Minute || got.interval != 10*time.Second {
+		t.Fatalf("2m every 10s = %+v", got)
 	}
 	// A duration the flags would have rejected must not shorten the wait.
-	if got := readyWait(config.Project{ReadyTimeout: "nonsense"}, dbReadyTimeout); got.attempts != 60 {
+	if got := readyWait(config.Project{ReadyTimeout: "nonsense"}, dbReadyTimeout); got.timeout != dbReadyTimeout {
 		t.Fatalf("a malformed timeout should fall back, got %+v", got)
+	}
+	// Reminding more often than the wait even asks would say nothing new.
+	if got := readyWait(config.Project{ReadyInterval: "1m"}, dbReadyTimeout); got.every != time.Minute {
+		t.Fatalf("the reminder should not outpace the probe, got %+v", got)
 	}
 }
 

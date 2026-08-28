@@ -6,6 +6,19 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Fixed
+
+- The wait a new worktree grants each service is measured against the clock and
+  no longer counted in attempts. Each probe is a `docker compose exec` costing
+  real time, which the count ignored, so both the elapsed time reported and the
+  bound itself came out shorter than what the wait actually held: on a machine
+  busy booting nine services, a reminder announcing `2m0s` had been waiting for
+  4m18s, and the ten minutes an application service gets ran past twenty.
+  `ready_timeout` now means what it says for that service, and a reminder every
+  thirty seconds is thirty seconds of elapsed time rather than thirty probes.
+  The database wait goes through `execx.WaitFor`, which counts attempts and says
+  so instead of claiming a duration: its bound stays as approximate as before.
+
 ## [0.8.0] - 2026-08-28
 
 ### Added
