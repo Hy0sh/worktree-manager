@@ -18,17 +18,18 @@ import (
 )
 
 type Options struct {
-	Name       string // project name in the registry
-	Project    config.Project
-	Branch     string
-	Base       string
-	NoStart    bool
-	Force      bool // remove despite uncommitted tracked changes
-	BackupsDir string
-	Runner     execx.Runner
-	Out        io.Writer
-	Stack      *stack.Client
-	Resolver   *index.Resolver // resolves and records each branch's stable index
+	Name         string // project name in the registry
+	Project      config.Project
+	Branch       string
+	Base         string
+	NoStart      bool
+	NoPostCreate bool // skip the project's post_create on this create
+	Force        bool // remove despite uncommitted tracked changes
+	BackupsDir   string
+	Runner       execx.Runner
+	Out          io.Writer
+	Stack        *stack.Client
+	Resolver     *index.Resolver // resolves and records each branch's stable index
 }
 
 // dest is where the worktree goes. A branch name is not a safe path fragment:

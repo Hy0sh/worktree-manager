@@ -6,6 +6,14 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Added
+
+- `wtm create --no-post-create` starts the stack without playing the project's
+  `post_create`. A worktree opened to read a branch or reproduce something does
+  not need the seed, and the wait on the application service is most of what
+  such a create spends its time on. The skipped command is printed as a `wtm
+  exec` line, so seeding it after the fact is a paste away.
+
 ## [0.7.0] - 2026-08-27
 
 ### Added

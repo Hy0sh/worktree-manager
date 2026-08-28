@@ -118,6 +118,7 @@ wtm create my-app feat/my-branch            # base = the project's own
 wtm create feat/my-branch                   # project = current repo
 wtm create feat/my-branch main              # explicit base
 wtm create feat/my-branch --no-start        # without starting the stack
+wtm create feat/my-branch --no-post-create  # stack started, post_create skipped
 
 # lifecycle
 wtm list                                    # worktrees wtm created for this project
@@ -381,7 +382,9 @@ to the branch the worktree was cut from, since that file is versioned.
 A fresh worktree still needs its seed, which the dump deliberately leaves out.
 `post_create` plays it on its own, and `wtm exec` is the way in by hand: either
 beats reaching the container yourself, which means knowing the compose project
-name derived from the repository, the index and the branch.
+name derived from the repository, the index and the branch. `wtm create
+--no-post-create` leaves it out for one worktree, for a stack wanted quickly
+rather than seeded, and prints the `wtm exec` line that plays it later.
 
 The official postgres, mysql, mariadb and mongo images all run
 `docker-entrypoint-initdb.d` only on an empty data directory, which gives the

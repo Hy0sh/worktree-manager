@@ -9,7 +9,7 @@ import (
 )
 
 func newCreateCmd(a *app) *cobra.Command {
-	var noStart bool
+	var noStart, noPostCreate bool
 	cmd := &cobra.Command{
 		Use:   "create [project] <branch> [base]",
 		Short: "Creates a worktree and starts its stack",
@@ -36,6 +36,7 @@ func newCreateCmd(a *app) *cobra.Command {
 				o.Base = rest[1]
 			}
 			o.NoStart = noStart
+			o.NoPostCreate = noPostCreate
 			if p.Dump && !noStart {
 				if st := a.manager().Check(cmd.Context(), name, p); st.Behind() {
 					fmt.Fprintf(a.out, "note: the dump is %s, `wtm backup refresh %s` would save the replay\n",
@@ -46,6 +47,7 @@ func newCreateCmd(a *app) *cobra.Command {
 		},
 	}
 	cmd.Flags().BoolVar(&noStart, "no-start", false, "prepares the worktree without starting the stack")
+	cmd.Flags().BoolVar(&noPostCreate, "no-post-create", false, "starts the stack without running the project's post_create")
 	return cmd
 }
 

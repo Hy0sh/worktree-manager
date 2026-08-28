@@ -232,3 +232,30 @@ func TestReadyWaitTakesTheProjectBounds(t *testing.T) {
 		t.Fatalf("a malformed timeout should fall back, got %+v", got)
 	}
 }
+
+// A stack wanted for a quick look does not need the seed, and waiting on the
+// application to be healthy is most of what a create spends its time on.
+func TestCreateSkipsPostCreateWhenAsked(t *testing.T) {
+	f := newFixture(t)
+	var out bytes.Buffer
+	o := f.opts("feat/x")
+	o.Out = &out
+	o.NoPostCreate = true
+	o.Project.PostCreate = "manage.py seed_data"
+	o.Project.Backup = &config.Backup{AppService: "backend"}
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	for _, l := range f.fake.Lines() {
+		if strings.Contains(l, "exec -T") || strings.Contains(l, ".Health") {
+			t.Fatalf("nothing should have been played nor waited on, got %q", l)
+		}
+	}
+	want := "post_create skipped (--no-post-create)"
+	if !strings.Contains(out.String(), want) {
+		t.Fatalf("want %q in:\n%s", want, out.String())
+	}
+	if run := `wtm exec feat/x -- sh -c 'manage.py seed_data'`; !strings.Contains(out.String(), run) {
+		t.Fatalf("the command must be pastable, want %s in:\n%s", run, out.String())
+	}
+}

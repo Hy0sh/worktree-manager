@@ -66,6 +66,11 @@ func postCreate(ctx context.Context, o Options) {
 	if o.Project.PostCreate == "" {
 		return
 	}
+	if o.NoPostCreate {
+		o.logf("post_create skipped (--no-post-create)")
+		o.logf("%s", replayLine(o, "run"))
+		return
+	}
 	cfg := o.Project.BackupConfig()
 	if cfg.AppService == "" {
 		o.logf("warning: post_create is set but no app_service is: run it with " +
@@ -85,12 +90,12 @@ func postCreate(ctx context.Context, o Options) {
 	}
 	if err := waitForDatabase(ctx, o, wt, cfg.DBService, cfg.DBUser, cfg.DBEngine); err != nil {
 		o.logf("warning: post_create was not run: %v", err)
-		o.logf("%s", replayLine(o))
+		o.logf("%s", replayLine(o, "replay"))
 		return
 	}
 	if err := waitForApp(ctx, o, wt, cfg.AppService); err != nil {
 		o.logf("warning: post_create was not run: %v", err)
-		o.logf("%s", replayLine(o))
+		o.logf("%s", replayLine(o, "replay"))
 		return
 	}
 	o.logf("post_create: %s", o.Project.PostCreate)
@@ -102,7 +107,7 @@ func postCreate(ctx context.Context, o Options) {
 		Live: true,
 	}); err != nil {
 		o.logf("warning: post_create failed: %v", err)
-		o.logf("%s", replayLine(o))
+		o.logf("%s", replayLine(o, "replay"))
 	}
 	// The command's own output has scrolled the addresses out of sight, and
 	// they are what the developer opened the worktree for.
@@ -113,8 +118,8 @@ func postCreate(ctx context.Context, o Options) {
 // The command runs through `sh -c`, so the line offered to the user has to as
 // well: a chained post_create pasted bare would leave its tail to the user's
 // own shell instead of the container.
-func replayLine(o Options) string {
-	return "         replay it with `wtm exec " + o.Branch + " -- sh -c " +
+func replayLine(o Options, verb string) string {
+	return "         " + verb + " it with `wtm exec " + o.Branch + " -- sh -c " +
 		execx.ShellQuote(o.Project.PostCreate) + "`"
 }
 
