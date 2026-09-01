@@ -117,6 +117,7 @@ wtm project edit my-app --dump --app-service backend
 wtm create my-app feat/my-branch            # base = the project's own
 wtm create feat/my-branch                   # project = current repo
 wtm create feat/my-branch main              # explicit base
+wtm create feat/my-branch --from-here       # base = the current directory's branch
 wtm create feat/my-branch --no-start        # without starting the stack
 wtm create feat/my-branch --no-post-create  # stack started, post_create skipped
 wtm create feat/my-branch --run claude       # a command on your machine, once ready
@@ -159,6 +160,32 @@ wtm backup remove my-app
 
 If the first argument is a registered project, it's treated as such;
 otherwise it's a branch of the current directory's project.
+
+`<base>` completes to the local branches plus the remote ones no local branch
+stands for. It is resolved in the main repository, never in the worktree the
+command was typed from, so from a worktree on `feat/a` a create starts from the
+project's base and not from `feat/a`. `--from-here` is for the other intent:
+
+```sh
+wtm create feat/my-branch --from-here
+```
+
+It resolves the branch of the current directory and passes it by name, which is
+what the `-C` on the main repository would otherwise defeat. It refuses
+alongside a positional base, and on a branch that already exists, since the
+base is ignored there and a flag doing nothing quietly is worse than no flag.
+
+The base is cut from the local ref, which nothing refreshes: only the branch
+being created is ever fetched. So a create says when that ref trails its
+remote, and does not move the cut:
+
+```
+note: develop is 12 commits behind origin/develop, this worktree starts from the local ref
+```
+
+Starting from the tracking ref instead cannot conflict, but it moves the
+starting point: unpushed commits on the base would silently be left out. Which
+ref to cut from stays yours.
 
 `create` picks up an existing branch rather than shadowing it. A local
 branch is checked out as-is; a branch that only exists on a remote is
