@@ -65,10 +65,9 @@ func (a *app) resolve(args []string) (string, config.Project, []string, error) {
 	return name, p, args, err
 }
 
-// resolveOne is resolve for the commands that name a single branch. An argument
-// left over means the first was meant as a project and is not one, and dropping
-// it silently had `wtm stop myap feat/x` stop a branch called `myap`, then
-// complain that no such worktree existed while listing the one asked for.
+// resolveOne is resolve for the commands that name a single branch. Dropping a
+// left-over argument silently had `wtm stop myap feat/x` stop a branch called
+// `myap`, then complain no such worktree existed while listing the one asked for.
 func (a *app) resolveOne(args []string) (string, config.Project, string, error) {
 	// Refused before the repository is even looked up: the mistake is the
 	// project name, and an error about the current directory not being a
@@ -119,13 +118,9 @@ func managed(p config.Project) map[string]bool {
 	return out
 }
 
-// confirmer is nil unless a person is there to answer. wtm exists for parallel
-// agents, so a `create` must never hang on a question nor fail on one nobody
-// read, and a terminal is the only evidence that someone will.
-//
-// term.IsTerminal asks the kernel, where a file mode cannot: /dev/null is a
-// character device like a terminal is, so `wtm create < /dev/null`, the ordinary
-// way a script calls a command, would have been asked and answered no.
+// confirmer is nil unless a person is there to answer: wtm exists for parallel
+// agents, and a `create` must never hang on a question nobody read. IsTerminal
+// asks the kernel, where a file mode cannot: /dev/null is a character device too.
 func (a *app) confirmer() func(string) bool {
 	f, ok := a.in.(*os.File)
 	if !ok || !term.IsTerminal(int(f.Fd())) {

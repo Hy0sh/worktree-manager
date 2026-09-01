@@ -16,9 +16,9 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
 
-// reportPortClashes says which ports two projects would fight over. Everything
-// it needs is already recorded: each project's offset, stride, compose ports
-// and the index of every branch that owns a stack.
+// reportPortClashes says which ports two stacks would fight over, between
+// projects and between worktrees of one. Everything it needs is already
+// recorded: each project's offset, stride, compose ports and branch indices.
 func (a *app) reportPortClashes() {
 	var holders []portHolder
 	for _, name := range a.cfg.Names() {
@@ -74,14 +74,13 @@ type repoWorktrees struct {
 	Repo string
 	Name string // project name in the registry, for the command lines
 	Live []string
-	// Unindexed holds the branches whose index the registry does not carry, a
-	// worktree created before indices were recorded or started while docker was
-	// unreachable. Their compose project name cannot be derived, so nothing
-	// this project owns can be called orphan while any of them stands.
+	// Unindexed holds the branches whose index the registry does not carry,
+	// created before indices were recorded or started while docker was down.
+	// Their compose project name cannot be derived, so none can be called orphan.
 	Unindexed []string
 	// Stale are branches the registry holds an index for but git holds no
 	// worktree for: a removal made outside wtm, or before remove released it.
-	// Each pushes new worktrees further out, and can read a foreign worktree as adopted.
+	// Each also makes a foreign worktree on that branch read as managed.
 	Stale []string
 }
 
@@ -120,7 +119,6 @@ func (a *app) liveProjects(ctx context.Context) []repoWorktrees {
 	return out
 }
 
-// reportStaleIndices lists the recorded indices no worktree stands behind.
 func (a *app) reportStaleIndices(ctx context.Context) {
 	var lines, cmds []string
 	for _, rw := range a.liveProjects(ctx) {
@@ -210,12 +208,9 @@ func (a *app) reportOrphanImages(ctx context.Context) {
 	fmt.Fprintf(a.out, "  drop them with `docker rmi %s`\n", strings.Join(orphans, " "))
 }
 
-// buildCache is what buildkit keeps between builds. It is reported and never
-// removed: the cache is shared by every project on the machine and buildkit
-// attributes none of it, so only the developer can decide it is expendable.
-// `docker system df` also has the number but walks the whole image store for
-// it, which took a minute on a machine busy building; `buildx du` prints its
-// Private/Reclaimable/Total summary in under a second.
+// buildCache is reported and never removed: buildkit attributes none of it, so
+// only the developer can decide it is expendable. `docker system df` has the
+// number too, but walks the image store for it where `buildx du` takes a second.
 func (a *app) buildCache(ctx context.Context) string {
 	res, err := a.runner.Run(ctx, execx.Cmd{Name: "docker", Args: []string{"buildx", "du"}})
 	if err != nil {

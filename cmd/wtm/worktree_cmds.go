@@ -323,12 +323,9 @@ func (a *app) allWorktrees(ctx context.Context, args []string) (string, config.P
 	return name, p, entries, err
 }
 
-// eachWorktree plays action on every listed worktree, one after the other. A
-// failure never stops the walk: a cleanup that gave up on the first locked
-// worktree would leave every other stack running. The failures are held back
-// and reported together at the end, because each worktree pours its own docker
-// output over the terminal and a warning printed in the middle is a warning
-// nobody reads.
+// eachWorktree plays action on every listed worktree: a failure never stops the
+// walk, which would leave every stack after the locked one running, and the
+// failures are held back because docker floods the terminal in between.
 func (a *app) eachWorktree(ctx context.Context, o worktree.Options, entries []worktree.Entry,
 	verb string, action func(context.Context, worktree.Options) error) error {
 	var failed []string

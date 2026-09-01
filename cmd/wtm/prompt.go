@@ -50,8 +50,7 @@ func (p *prompter) ask(question, current string) (string, error) {
 
 // askInherited asks for a value the project leaves unset, showing what applies
 // as long as it stays that way. An empty answer returns "", never the inherited
-// value: recording that would pin the project to whatever the registry's
-// default said the day the question was answered.
+// value: recording that would pin the project to today's registry default.
 func (p *prompter) askInherited(question, inherited string) (string, error) {
 	fmt.Fprintf(p.out, "%s [inherited: %s]: ", question, inherited)
 	if !p.in.Scan() {

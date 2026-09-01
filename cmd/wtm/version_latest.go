@@ -10,9 +10,8 @@ import (
 )
 
 // The Go module proxy answers with what `go install ...@latest` would resolve,
-// which is the only number worth comparing a build against, and it needs no
-// token where the GitHub API rate-limits anonymous callers. Uppercase letters
-// of a module path are escaped with a bang, hence `!hy0sh`.
+// and needs no token where the GitHub API rate-limits anonymous callers.
+// Uppercase letters of a module path are escaped with a bang, hence `!hy0sh`.
 const latestModuleURL = "https://proxy.golang.org/github.com/!hy0sh/worktree-manager/@latest"
 
 // latestTimeout is the whole budget of the check. A read command never blocks
@@ -53,9 +52,8 @@ func (a *app) newerRelease(ctx context.Context) string {
 }
 
 // olderVersion compares two "vX.Y.Z" tags, plus the pre-release shape a build
-// installed from a commit carries. Anything else, "devel" included, is not
-// comparable and answers false: the check exists to point at an upgrade, never
-// to guess at one.
+// installed from a commit carries. Anything else, "devel" included, answers
+// false: the check exists to point at an upgrade, never to guess at one.
 func olderVersion(local, published string) bool {
 	l, localPre, ok := semverFields(local)
 	if !ok {
@@ -75,12 +73,9 @@ func olderVersion(local, published string) bool {
 	return localPre && !publishedPre
 }
 
-// semverFields reads the numbers of a version, and whether a pre-release
-// suffix follows them. `go install ...@main` stamps the pseudo-version the
-// toolchain derives from the commit, "v0.8.1-0.20260828143234-4c0fbbb36bed",
-// which is semver for "after v0.8.0, before v0.8.1": splitting on dots alone
-// yielded four fields, so such a build was never comparable and never told it
-// was behind.
+// semverFields reads the numbers of a version, and whether a pre-release suffix
+// follows them. `go install ...@main` stamps "v0.8.1-0.20260828143234-4c0fbbb",
+// which split on dots alone read as four fields and never compared as behind.
 func semverFields(v string) (out [3]int, pre bool, ok bool) {
 	// The toolchain stamps a build made over local edits "v0.4.8+dirty", and
 	// semver ignores what follows the plus: the tag is what gets compared.

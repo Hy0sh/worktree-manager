@@ -151,11 +151,9 @@ func validateUpdate(u config.ProjectUpdate) error {
 	return nil
 }
 
-// detectEngineIfUnset fills db_engine from the compose image when the backup
-// is on and no engine was given. The stepper offers the detection as its
-// default; a scripted --no-input call deserves the same instead of a silent
-// postgres fallback that only fails at the first refresh. When the image is
-// not recognised, logf is how that fallback risk reaches the caller.
+// detectEngineIfUnset fills db_engine from the compose image when the backup is
+// on and no engine was given: the stepper offers the detection as its default,
+// and a scripted --no-input call deserves the same rather than a silent postgres.
 func detectEngineIfUnset(p *config.Project, logf func(string, ...any)) {
 	if !p.Dump || p.Dir == "" || (p.Backup != nil && p.Backup.DBEngine != "") {
 		return
@@ -180,9 +178,8 @@ func detectEngineIfUnset(p *config.Project, logf func(string, ...any)) {
 }
 
 // warnPinnedContainers reports the services whose compose file fixes their
-// container_name. It is the one isolation wtm cannot provide: ports, volumes
-// and the compose project name are rebased, a container_name is not, so the
-// main stack and a worktree stack cannot both run.
+// container_name. It is the one isolation wtm cannot provide: ports, volumes and
+// the project name are rebased, so the main and worktree stacks collide there.
 func warnPinnedContainers(p config.Project, logf func(string, ...any)) {
 	if p.Dir == "" {
 		return

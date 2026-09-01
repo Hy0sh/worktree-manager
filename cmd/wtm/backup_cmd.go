@@ -77,11 +77,8 @@ func newBackupCmd(a *app) *cobra.Command {
 			m := a.manager()
 			if _, err := os.Stat(m.DumpPath(name)); err == nil {
 				// Called without an argument this takes the current directory's
-				// project, and the dump is the migration history wtm exists not
-				// to replay: only `backup refresh` brings it back. `project
-				// remove` already asks before deleting this very file. A closed
-				// input answers no, which is right for a person and wrong for a
-				// script, so the way out is part of the message.
+				// project, and only `backup refresh` brings the dump back. A
+				// closed input answers no, hence the way out in the message.
 				if !assumeYes && !confirm(a.in, a.out, fmt.Sprintf(
 					"delete the backup of %s? only `wtm backup refresh` brings it back", name)) {
 					return fmt.Errorf("cancelled: the backup of %s was kept (pass --yes to answer for a script)", name)
