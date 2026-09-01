@@ -186,3 +186,90 @@ func TestFindByBranchFindsADetachedWorktreeAndSaysSo(t *testing.T) {
 		t.Fatalf("running a command there works on another commit: it must be said, abbreviated, got %q", out.String())
 	}
 }
+
+// Adopting is what makes one of those visible, and the branch carrying a
+// recorded index is the only thing that says so: nothing in the path of an
+// adopted worktree distinguishes it from a stranger's.
+func TestWorktreesKeepsAnAdoptedWorktree(t *testing.T) {
+	f := &execx.Fake{Handler: func(c execx.Cmd) (execx.Result, error) {
+		return execx.Result{Stdout: "worktree /repo\nbranch refs/heads/main\n\n" +
+			"worktree /repo/.claude/worktrees/curry\nbranch refs/heads/worktree-curry\n\n" +
+			"worktree /elsewhere/manual\nbranch refs/heads/manual\n\n" +
+			"worktree /repo/.worktrees/feat/x\nbranch refs/heads/feat/x\n"}, nil
+	}}
+	c := &Client{Runner: f, Dir: "/repo", Managed: map[string]bool{"worktree-curry": true}}
+	wts, err := c.Worktrees(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wts) != 2 {
+		t.Fatalf("expected the adopted worktree and the wtm one, got %+v", wts)
+	}
+	if wts[0].Branch != "worktree-curry" || wts[1].Branch != "feat/x" {
+		t.Fatalf("git's own order must be kept, got %+v", wts)
+	}
+}
+
+// Pos is the fallback internal/index uses for worktrees older than the recorded
+// indices, and it must keep meaning "nth under .worktrees". Numbering adopted
+// worktrees along with the others would shift that fallback and hand such a
+// worktree an index its .env never carried.
+func TestWorktreesLeaveAdoptedOnesOutOfThePositions(t *testing.T) {
+	f := &execx.Fake{Handler: func(c execx.Cmd) (execx.Result, error) {
+		return execx.Result{Stdout: "worktree /repo\nbranch refs/heads/main\n\n" +
+			"worktree /repo/.claude/worktrees/curry\nbranch refs/heads/worktree-curry\n\n" +
+			"worktree /repo/.worktrees/feat/x\nbranch refs/heads/feat/x\n"}, nil
+	}}
+	c := &Client{Runner: f, Dir: "/repo", Managed: map[string]bool{"worktree-curry": true}}
+	wts, err := c.Worktrees(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wts[0].Pos != 0 {
+		t.Fatalf("an adopted worktree holds no position, got %d", wts[0].Pos)
+	}
+	if wts[1].Pos != 1 {
+		t.Fatalf("feat/x is the first worktree under .worktrees, got Pos %d", wts[1].Pos)
+	}
+}
+
+// A branch recorded but sitting under .worktrees is the ordinary case, and
+// counting it twice would break the numbering just as surely.
+func TestWorktreesCountARecordedWtmWorktreeOnce(t *testing.T) {
+	f := &execx.Fake{Handler: func(c execx.Cmd) (execx.Result, error) {
+		return execx.Result{Stdout: "worktree /repo\nbranch refs/heads/main\n\n" +
+			"worktree /repo/.worktrees/feat/x\nbranch refs/heads/feat/x\n\n" +
+			"worktree /repo/.worktrees/feat/y\nbranch refs/heads/feat/y\n"}, nil
+	}}
+	c := &Client{Runner: f, Dir: "/repo", Managed: map[string]bool{"feat/x": true, "feat/y": true}}
+	wts, err := c.Worktrees(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wts) != 2 || wts[0].Pos != 1 || wts[1].Pos != 2 {
+		t.Fatalf("positions must stay 1 then 2, got %+v", wts)
+	}
+}
+
+func TestAllHoldsWhatWorktreesHides(t *testing.T) {
+	out := "worktree /repo\nbranch refs/heads/main\n\n" +
+		"worktree /repo/.claude/worktrees/curry\nbranch refs/heads/worktree-curry\n\n" +
+		"worktree /repo/.worktrees/feat/x\nbranch refs/heads/feat/x\n"
+	f := &execx.Fake{Handler: func(c execx.Cmd) (execx.Result, error) {
+		return execx.Result{Stdout: out}, nil
+	}}
+	c := &Client{Runner: f, Dir: "/repo"}
+	all, err := c.All(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(all) != 2 {
+		t.Fatalf("All must carry every linked worktree, got %+v", all)
+	}
+	if all[0].UnderRoot || !all[1].UnderRoot {
+		t.Fatalf("UnderRoot must tell the two apart, got %+v", all)
+	}
+	if all[0].Pos != 0 || all[1].Pos != 1 {
+		t.Fatalf("only worktrees under root hold a position, got %+v", all)
+	}
+}

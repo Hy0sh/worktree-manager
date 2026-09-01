@@ -20,7 +20,7 @@ var artifactBlock = mark.Block{
 // and the .worktrees directory in the main one, which `git add -A` there adds
 // as an embedded repository. None of it is in any project's .gitignore, so
 // without this a commit takes wtm's plumbing along with the work.
-var excluded = []string{".worktrees/", ".git-container", ".db-snapshot", snapshotOverride, portsOverride}
+var excluded = []string{".worktrees/", gitContainerLink, snapshotLink, snapshotOverride, portsOverride}
 
 // excludeArtifacts writes to info/exclude rather than .gitignore, which is
 // versioned and belongs to the project. git reads it from the common git-dir,

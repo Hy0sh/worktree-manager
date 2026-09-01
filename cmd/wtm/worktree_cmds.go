@@ -102,6 +102,62 @@ func newStartCmd(a *app) *cobra.Command {
 	return cmd
 }
 
+func newAdoptCmd(a *app) *cobra.Command {
+	var assumeYes, ignoreMemory bool
+	var renameTo string
+	cmd := &cobra.Command{
+		Use:   "adopt [project] [branch]",
+		Short: "Gives an existing worktree a stack, without moving it",
+		Long: "Adopts a worktree wtm did not create, a `claude --worktree` one or any\n" +
+			"`git worktree add`, and gives it what a created one gets: a stable index,\n" +
+			"remapped ports, provisioned .env files and a stack on the restored dump.\n\n" +
+			"Without a branch, the worktree of the current directory is adopted. The\n" +
+			"worktree never moves: something may well be working in it right now.\n\n" +
+			"--as renames the branch on the way in, which `claude --worktree` names for\n" +
+			"itself. Adopting is the moment for it: the branch is part of the compose\n" +
+			"project name, so a rename once the stack exists orphans it.\n\n" +
+			"  cd ~/dev/myapp/.claude/worktrees/curry && wtm adopt\n" +
+			"  wtm adopt --as feat/my-feature\n" +
+			"  wtm adopt myapp worktree-curry",
+		Args:              needArgs(0, 2, "adopt takes at most `[project] [branch]`"),
+		ValidArgsFunction: a.completeAdoptable,
+		SilenceUsage:      true,
+		SilenceErrors:     true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			name, p, rest, err := a.resolve(args)
+			if err != nil {
+				return err
+			}
+			if len(rest) > 1 {
+				return fmt.Errorf("too many arguments (%s): an adopt takes at most "+
+					"`[project] [branch]`, and %q is not a registered project "+
+					"(see `wtm project list`)", strings.Join(rest, " "), args[0])
+			}
+			branch := ""
+			if len(rest) == 1 {
+				branch = rest[0]
+			}
+			o := a.options(name, p, branch)
+			o.RenameTo = renameTo
+			// Deliberately not a.confirmer(): with nobody to answer, adopting
+			// must refuse and name -y rather than write into somebody's
+			// checkout unasked, which is what a nil Confirm would mean.
+			o.ConfirmAdopt = func(question string) bool {
+				return assumeYes || confirm(a.in, a.out, question)
+			}
+			if ignoreMemory {
+				o.Confirm = nil
+			}
+			return worktree.Adopt(cmd.Context(), o)
+		},
+	}
+	cmd.Flags().StringVar(&renameTo, "as", "", "rename the branch to this on the way in")
+	cmd.Flags().BoolVarP(&assumeYes, "yes", "y", false, "do not ask for confirmation")
+	cmd.Flags().BoolVar(&ignoreMemory, "ignore-memory", false,
+		"start the stack without asking, however tight the machine's memory is")
+	return cmd
+}
+
 func newStopCmd(a *app) *cobra.Command {
 	var all bool
 	cmd := &cobra.Command{
@@ -152,8 +208,7 @@ func newRemoveCmd(a *app) *cobra.Command {
 				}
 				// A closed input answers no, which is right for a person and
 				// wrong for a script, so the way out is part of the message.
-				if !assumeYes && !confirm(a.in, a.out, fmt.Sprintf(
-					"remove %d worktree(s), their stacks and volumes? (branches kept)", len(entries))) {
+				if !assumeYes && !confirm(a.in, a.out, removeAllQuestion(entries)) {
 					return fmt.Errorf("cancelled: nothing was removed (pass --yes to answer for a script)")
 				}
 				o := a.options(name, p, "")
@@ -173,6 +228,24 @@ func newRemoveCmd(a *app) *cobra.Command {
 	cmd.Flags().BoolVar(&all, "all", false, "every worktree of the project, instead of one branch")
 	cmd.Flags().BoolVarP(&assumeYes, "yes", "y", false, "do not ask for confirmation (--all)")
 	return cmd
+}
+
+// removeAllQuestion says what --all is about to do. "remove 4 worktrees" stopped
+// being true once adopted ones joined the listing: those keep their directory,
+// and only their stack goes.
+func removeAllQuestion(entries []worktree.Entry) string {
+	adopted := 0
+	for _, e := range entries {
+		if !e.UnderRoot {
+			adopted++
+		}
+	}
+	if adopted == 0 {
+		return fmt.Sprintf("remove %d worktree(s), their stacks and volumes? (branches kept)", len(entries))
+	}
+	return fmt.Sprintf("remove %d worktree(s) and the stacks of %d adopted one(s), "+
+		"with their volumes? (branches kept, adopted directories kept)",
+		len(entries)-adopted, adopted)
 }
 
 // allWorktrees resolves the project --all applies to and lists what it holds.
