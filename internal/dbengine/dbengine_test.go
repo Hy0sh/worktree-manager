@@ -141,10 +141,9 @@ func TestPostgresCommands(t *testing.T) {
 	}
 }
 
-// The postgres image runs a temporary server on the unix socket alone while it
-// initialises a new data directory, then restarts for good. pg_isready over the
-// socket answers during that window, and a migration launched then dies with
-// "database system is shutting down". Only a TCP probe waits for the real one.
+// The image runs a temporary server on the unix socket alone while initialising
+// a new data directory; pg_isready over the socket answers in that window, and a
+// migration launched then dies. Only a TCP probe waits for the real server.
 func TestPostgresReadyProbesOverTCP(t *testing.T) {
 	eng, err := ByName("postgres")
 	if err != nil {
