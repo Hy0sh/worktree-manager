@@ -75,6 +75,9 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   stop/start pair leaked one more. `stop` still keeps volumes, named or not.
 - `wtm doctor` counts the anonymous volumes no container mounts and prints the
   line that drops them.
+- A SQLite project no longer hears that its database "was restored from the
+  dump" on every start: its file is copied once and kept, and the note was
+  false each time it printed.
 
 ## [0.9.1] - 2026-08-28
 

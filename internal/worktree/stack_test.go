@@ -30,7 +30,7 @@ func TestRemoveDropsTheStackVolumes(t *testing.T) {
 			if !strings.Contains(c.String(), want) {
 				t.Errorf("the listing is not scoped to the stack:\n  %s\nwant %s", c.String(), want)
 			}
-			return execx.Result{Stdout: "wt_postgres_data\nwt_rustfs_data\n"}, nil
+			return execx.Result{Stdout: "wt_postgres_data\nwt_files_data\n"}, nil
 		}
 		return inner(c)
 	}
@@ -43,7 +43,7 @@ func TestRemoveDropsTheStackVolumes(t *testing.T) {
 			removal = l
 		}
 	}
-	if !strings.Contains(removal, "wt_postgres_data") || !strings.Contains(removal, "wt_rustfs_data") {
+	if !strings.Contains(removal, "wt_postgres_data") || !strings.Contains(removal, "wt_files_data") {
 		t.Fatalf("both volumes should be removed, got %q", removal)
 	}
 }
@@ -186,5 +186,23 @@ func TestCallingOffTheStackStillNamesWhatWasNotPlayed(t *testing.T) {
 		if !strings.Contains(out.String(), want) {
 			t.Fatalf("want %s in:\n%s", want, out.String())
 		}
+	}
+}
+
+// A file-based engine keeps its database as a file the worktree owns, copied
+// once and never overwritten. No dump is restored on a start, so the note that
+// says one was is simply false there.
+func TestStartSaysNothingAboutTheDumpOnAFileBasedEngine(t *testing.T) {
+	f := newFixture(t)
+	var out strings.Builder
+	o := f.opts("feat/x")
+	o.Out = &out
+	o.Project.Dump = true
+	o.Project.Backup = &config.Backup{DBEngine: "sqlite"}
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if strings.Contains(out.String(), "restored from the dump") {
+		t.Fatalf("nothing is restored on sqlite:\n%s", out.String())
 	}
 }

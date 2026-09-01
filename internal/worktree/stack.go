@@ -133,10 +133,10 @@ func start(ctx context.Context, o Options, dest string) error {
 		return fmt.Errorf("starting the stack: %w", err)
 	}
 	o.logf("stack started (worktree %d, %s)", wt.Index, o.Branch)
-	// The dump carries what the migrations create, never seed data, so a
-	// brand new database comes up migrated but empty. A project with a
-	// post_create is about to fill it, and saying so would contradict it.
-	if fresh && o.Project.Dump && o.Project.PostCreate == "" {
+	// The dump carries what migrations create, never seed data; post_create
+	// would contradict the note. A file-based engine restores nothing on start.
+	if fresh && o.Project.Dump && o.Project.PostCreate == "" &&
+		!dbengine.IsFileBased(o.Project.BackupConfig().DBEngine) {
 		o.logf("note: the database was restored from the dump and holds no seed data yet,")
 		o.logf("      seed it with `wtm exec %s -- <your seed command>`", o.Branch)
 	}
