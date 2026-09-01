@@ -91,7 +91,7 @@ func TestRefreshTakesDownWhatItStartedWhenNothingWasThere(t *testing.T) {
 	}
 	lines := f.Lines()
 	last := lines[len(lines)-1]
-	if !strings.HasSuffix(last, "compose down") {
+	if !strings.HasSuffix(last, "compose down --volumes") {
 		t.Fatalf("the whole stack was wtm's to start, so it is wtm's to take down, last call %q", last)
 	}
 }
@@ -118,12 +118,42 @@ func TestRefreshRemovesOnlyTheServiceItStartedWhenOthersExist(t *testing.T) {
 		if strings.HasSuffix(l, "compose down") {
 			t.Fatalf("the developer's stopped containers are not wtm's to remove: %q", l)
 		}
-		if strings.Contains(l, "compose rm -f -s db") {
+		if strings.Contains(l, "compose rm -f -s -v db") {
 			rm = true
 		}
 	}
 	if !rm {
 		t.Fatalf("the db wtm started must be stopped and removed, ran %v", f.Lines())
+	}
+}
+
+// A stopped db container is the developer's: up reuses it, along with the
+// data its anonymous volume holds. It goes back to stopped, nothing removed.
+func TestRefreshStopsADatabaseItOnlyRestarted(t *testing.T) {
+	f := &execx.Fake{Handler: func(c execx.Cmd) (execx.Result, error) {
+		switch {
+		case strings.Contains(c.String(), "ps -a --services"):
+			return execx.Result{Stdout: "db\nbackend\n"}, nil
+		case strings.Contains(c.String(), "ps --services"):
+			return execx.Result{}, nil
+		}
+		return okHandler(c)
+	}}
+	m := newManager(t, f)
+	if err := m.Refresh(context.Background(), "myapp", newProject(t)); err != nil {
+		t.Fatalf("Refresh: %v", err)
+	}
+	var stopped bool
+	for _, l := range f.Lines() {
+		if strings.Contains(l, "compose rm ") || strings.HasSuffix(l, "compose down") || strings.Contains(l, "down --volumes") {
+			t.Fatalf("the developer's container and data must survive: %q", l)
+		}
+		if strings.HasSuffix(l, "compose stop db") {
+			stopped = true
+		}
+	}
+	if !stopped {
+		t.Fatalf("the db wtm restarted must be stopped again, ran %v", f.Lines())
 	}
 }
 
@@ -162,7 +192,7 @@ func TestRefreshCleansUpAfterAFailedMigration(t *testing.T) {
 		t.Fatal("expected the migration failure")
 	}
 	lines := f.Lines()
-	if last := lines[len(lines)-1]; !strings.HasSuffix(last, "compose down") {
+	if last := lines[len(lines)-1]; !strings.HasSuffix(last, "compose down --volumes") {
 		t.Fatalf("cleanup must run on failure too, last call %q", last)
 	}
 }
@@ -184,7 +214,7 @@ func TestRefreshCleansUpAfterAFailedStart(t *testing.T) {
 		t.Fatal("expected the start failure")
 	}
 	lines := f.Lines()
-	if last := lines[len(lines)-1]; !strings.HasSuffix(last, "compose down") {
+	if last := lines[len(lines)-1]; !strings.HasSuffix(last, "compose down --volumes") {
 		t.Fatalf("cleanup must run after a failed start too, last call %q", last)
 	}
 }

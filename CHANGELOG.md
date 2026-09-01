@@ -50,9 +50,10 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   default stride of 1, a project publishing `db` on 5432 and `db_test` on 5433
   had index 1 put `db_test` on 26434 and index 2 put `db` there too, so the
   second stack failed on a docker bind error. The allocator now steps over an
-  index whose ports a recorded worktree already publishes, and says which port
-  and which neighbour made it skip. The stride itself does not move: it is
-  what keeps every existing worktree on the ports its `.env` carries.
+  index whose ports a recorded worktree already publishes, including the index
+  a plain create takes from its git position, and says which port and which
+  neighbour made it skip. The stride itself does not move: it is what keeps
+  every existing worktree on the ports its `.env` carries.
 - A command wtm could not even start no longer claims to have exited 0. The
   exit code is read from the process, and a lookup failure never made one, so
   `docker` missing from `$PATH` was reported as a success code next to the
@@ -84,11 +85,13 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   indices, a `claude --worktree` checked out on such a branch read as adopted
   without anyone adopting it. `wtm remove <branch>` now releases such an index,
   taking down whatever stack was left at it.
-- `wtm backup refresh` takes back down the database it started for itself. It
-  only ever started what was missing, and then left it running: a refresh on a
-  stack nothing of which was up ended with a database container nobody asked
-  for, counted by `doctor` as a running stack. A refresh that fails now cleans
-  up the same way, rather than leaving a created container and its network.
+- `wtm backup refresh` takes back down the database it started for itself,
+  its anonymous volume with it; a database that already existed stopped is
+  stopped again, never removed. It only ever started what was missing, and
+  then left it running: a refresh on a stack nothing of which was up ended
+  with a database container nobody asked for, counted by `doctor` as a
+  running stack. A refresh that fails now cleans up the same way, rather than
+  leaving a created container and its network.
 - A port docker refuses to bind is followed by the container that publishes it,
   read from `docker ps`: docker's own message names the port and nobody else.
   And a command whose output streamed to the terminal no longer has that whole

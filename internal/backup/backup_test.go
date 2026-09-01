@@ -42,7 +42,7 @@ func TestRefreshRunsFullSequence(t *testing.T) {
 		at = found
 	}
 	last := lines[len(lines)-1]
-	if !strings.HasSuffix(last, "compose down") {
+	if !strings.HasSuffix(last, "compose down --volumes") {
 		t.Fatalf("the database started for the refresh must be taken down last, got %q", last)
 	}
 	if !strings.Contains(lines[len(lines)-2], "DROP DATABASE") {

@@ -14,7 +14,7 @@ import (
 
 // ensureUp starts the database when it is down (recreating a running one
 // restarts the developer's stack for nothing) and returns the cleanup that
-// undoes only what wtm started: `rm -f -s` the service, `down` if wtm made the whole stack.
+// undoes only what wtm started; see cleanupStarted for which command that is.
 func (m *Manager) ensureUp(ctx context.Context, name string, p config.Project, cfg config.Backup) (func(), error) {
 	noop := func() {}
 	running, err := m.services(ctx, p, "ps", "--services", "--status", "running")
@@ -37,19 +37,25 @@ func (m *Manager) ensureUp(ctx context.Context, name string, p config.Project, c
 		Live: true,
 	}); err != nil {
 		// The failed up may have left a created container behind: same cleanup.
-		m.cleanupStarted(ctx, p, cfg, len(existing) == 0)()
+		m.cleanupStarted(ctx, p, cfg, existing)()
 		return noop, fmt.Errorf("starting stack %s: %w", name, err)
 	}
-	return m.cleanupStarted(ctx, p, cfg, len(existing) == 0), nil
+	return m.cleanupStarted(ctx, p, cfg, existing), nil
 }
 
-// cleanupStarted undoes only what wtm itself started: `down` when the whole
-// stack was wtm's doing, otherwise `rm -f -s` of the one service it added.
-func (m *Manager) cleanupStarted(ctx context.Context, p config.Project, cfg config.Backup, owned bool) func() {
+// cleanupStarted undoes only what wtm itself started. Nothing existed: down,
+// volumes included, they are all wtm's. A stopped db existed: up reused it and
+// the developer's data in it, so it goes back to stopped, nothing removed.
+func (m *Manager) cleanupStarted(ctx context.Context, p config.Project, cfg config.Backup, existing map[string]bool) func() {
 	return func() {
-		args := []string{"compose", "rm", "-f", "-s", cfg.DBService}
-		if owned {
-			args = []string{"compose", "down"}
+		var args []string
+		switch {
+		case len(existing) == 0:
+			args = []string{"compose", "down", "--volumes"}
+		case existing[cfg.DBService]:
+			args = []string{"compose", "stop", cfg.DBService}
+		default:
+			args = []string{"compose", "rm", "-f", "-s", "-v", cfg.DBService}
 		}
 		if _, err := m.Runner.Run(ctx, execx.Cmd{Name: "docker", Args: args, Dir: p.Dir}); err != nil {
 			m.logf("warning: the database started for the refresh could not be taken down: %v", err)
