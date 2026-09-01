@@ -12,28 +12,23 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 )
 
-// ensureUp starts only the services that are down. Recreating a container that
-// already runs is never harmless: the developer's stack goes through a full
-// restart, dependency reinstall included, for no benefit here.
-func (m *Manager) ensureUp(ctx context.Context, name string, p config.Project, cfg config.Backup) error {
-	res, err := m.Runner.Run(ctx, execx.Cmd{
-		Name: "docker",
-		Args: []string{"compose", "ps", "--services", "--status", "running"},
-		Dir:  p.Dir,
-	})
+// ensureUp starts the database when it is down (recreating a running one
+// restarts the developer's stack for nothing) and returns the cleanup that
+// undoes only what wtm started: `rm -f -s` the service, `down` if wtm made the whole stack.
+func (m *Manager) ensureUp(ctx context.Context, name string, p config.Project, cfg config.Backup) (func(), error) {
+	noop := func() {}
+	running, err := m.services(ctx, p, "ps", "--services", "--status", "running")
 	if err != nil {
-		return fmt.Errorf("state of stack %s: %w", name, err)
-	}
-	running := map[string]bool{}
-	for _, line := range strings.Split(res.Stdout, "\n") {
-		if s := strings.TrimSpace(line); s != "" {
-			running[s] = true
-		}
+		return noop, fmt.Errorf("state of stack %s: %w", name, err)
 	}
 	// Only the database has to run: migrations happen in their own container.
 	if running[cfg.DBService] {
 		m.logf("database of %s already running", name)
-		return nil
+		return noop, nil
+	}
+	existing, err := m.services(ctx, p, "ps", "-a", "--services")
+	if err != nil {
+		return noop, fmt.Errorf("state of stack %s: %w", name, err)
 	}
 	if _, err := m.Runner.Run(ctx, execx.Cmd{
 		Name: "docker",
@@ -41,9 +36,40 @@ func (m *Manager) ensureUp(ctx context.Context, name string, p config.Project, c
 		Dir:  p.Dir,
 		Live: true,
 	}); err != nil {
-		return fmt.Errorf("starting stack %s: %w", name, err)
+		// The failed up may have left a created container behind: same cleanup.
+		m.cleanupStarted(ctx, p, cfg, len(existing) == 0)()
+		return noop, fmt.Errorf("starting stack %s: %w", name, err)
 	}
-	return nil
+	return m.cleanupStarted(ctx, p, cfg, len(existing) == 0), nil
+}
+
+// cleanupStarted undoes only what wtm itself started: `down` when the whole
+// stack was wtm's doing, otherwise `rm -f -s` of the one service it added.
+func (m *Manager) cleanupStarted(ctx context.Context, p config.Project, cfg config.Backup, owned bool) func() {
+	return func() {
+		args := []string{"compose", "rm", "-f", "-s", cfg.DBService}
+		if owned {
+			args = []string{"compose", "down"}
+		}
+		if _, err := m.Runner.Run(ctx, execx.Cmd{Name: "docker", Args: args, Dir: p.Dir}); err != nil {
+			m.logf("warning: the database started for the refresh could not be taken down: %v", err)
+		}
+	}
+}
+
+// services lists what `compose ps` answers for the given selection.
+func (m *Manager) services(ctx context.Context, p config.Project, args ...string) (map[string]bool, error) {
+	res, err := m.Runner.Run(ctx, execx.Cmd{Name: "docker", Args: append([]string{"compose"}, args...), Dir: p.Dir})
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]bool{}
+	for _, line := range strings.Split(res.Stdout, "\n") {
+		if s := strings.TrimSpace(line); s != "" {
+			out[s] = true
+		}
+	}
+	return out, nil
 }
 
 func (m *Manager) waitFor(ctx context.Context, label string, defaultAttempts int, probe execx.Cmd) error {

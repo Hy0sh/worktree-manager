@@ -91,9 +91,13 @@ func (m *Manager) Refresh(ctx context.Context, name string, p config.Project) er
 	}
 	db := dbengine.TempDBName(name)
 
-	if err := m.ensureUp(ctx, name, p, cfg); err != nil {
+	cleanup, err := m.ensureUp(ctx, name, p, cfg)
+	if err != nil {
 		return err
 	}
+	// Whatever the refresh started for itself goes back down, whether the dump
+	// was written or the migration failed halfway.
+	defer cleanup()
 	if err := m.waitFor(ctx, "the database", dbWaitAttempts, execx.Cmd{
 		Name: "docker",
 		Args: append([]string{"compose", "exec", "-T", cfg.DBService}, eng.ReadyArgs(cfg.DBUser)...),

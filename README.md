@@ -153,7 +153,7 @@ wtm run feat/my-branch -- scripts/some-compose-script.sh
 cd $(wtm path feat/my-branch)
 
 # database backup
-wtm backup refresh my-app            # starts db+backend if needed
+wtm backup refresh my-app            # starts the db if needed, and stops it again after
 wtm backup list
 wtm backup remove my-app
 ```

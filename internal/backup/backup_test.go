@@ -41,8 +41,12 @@ func TestRefreshRunsFullSequence(t *testing.T) {
 		}
 		at = found
 	}
-	if !strings.Contains(lines[len(lines)-1], "DROP DATABASE") {
-		t.Fatalf("the temporary database must be dropped last, got %q", lines[len(lines)-1])
+	last := lines[len(lines)-1]
+	if !strings.HasSuffix(last, "compose down") {
+		t.Fatalf("the database started for the refresh must be taken down last, got %q", last)
+	}
+	if !strings.Contains(lines[len(lines)-2], "DROP DATABASE") {
+		t.Fatalf("the temporary database must be dropped before the stack comes down, got %q", lines[len(lines)-2])
 	}
 	for _, c := range f.Calls {
 		if strings.Contains(strings.Join(c.Args, " "), "migrate") {
