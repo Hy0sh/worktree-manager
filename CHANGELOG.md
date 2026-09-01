@@ -78,6 +78,12 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 - A SQLite project no longer hears that its database "was restored from the
   dump" on every start: its file is copied once and kept, and the note was
   false each time it printed.
+- `wtm doctor` lists the recorded indices no worktree stands behind, a removal
+  made outside `wtm remove` or before it released indices. Each one pushes
+  every new worktree one index further out, and since `adopt` keys on recorded
+  indices, a `claude --worktree` checked out on such a branch read as adopted
+  without anyone adopting it. `wtm remove <branch>` now releases such an index,
+  taking down whatever stack was left at it.
 
 ## [0.9.1] - 2026-08-28
 

@@ -404,3 +404,44 @@ func TestStopKeepsTheVolumes(t *testing.T) {
 		t.Fatalf("a stopped worktree keeps its database, got %q", down)
 	}
 }
+
+// The worktree is gone but its index is not, so every new worktree lands one
+// index further out. remove is the verb that forgets a worktree; it can forget
+// one that already left.
+func TestRemoveReleasesAnIndexWhoseWorktreeIsGone(t *testing.T) {
+	f := newFixture(t)
+	if err := config.WithLock(f.cfgPath, func(c *config.Config) error {
+		p := c.Projects["myapp"]
+		p.WorktreeIndices = map[string]int{"feat/gone": 5}
+		c.Projects["myapp"] = p
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	o := f.opts("feat/gone")
+	o.Out = &out
+	if err := Remove(context.Background(), o); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	if got := lastCall(f, " down"); !strings.Contains(got, "-wt-5-feat-gone") {
+		t.Fatalf("a stack left at that index must still be taken down, got %q", got)
+	}
+	cfg, err := config.Load(f.cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := cfg.Projects["myapp"].WorktreeIndices["feat/gone"]; ok {
+		t.Fatal("the index must be released")
+	}
+	if !strings.Contains(out.String(), "index 5 released") {
+		t.Fatalf("say what happened:\n%s", out.String())
+	}
+}
+
+func TestRemoveStillFailsOnABranchNobodyKnows(t *testing.T) {
+	f := newFixture(t)
+	if err := Remove(context.Background(), f.opts("feat/unknown")); err == nil {
+		t.Fatal("no worktree and no index: nothing to remove, must say so")
+	}
+}

@@ -72,19 +72,26 @@ func (a *app) reportPortClashes() {
 // left out: assuming everything it owns is orphan would be worse.
 type repoWorktrees struct {
 	Repo string
+	Name string // project name in the registry, for the command lines
 	Live []string
 	// Unindexed holds the branches whose index the registry does not carry, a
 	// worktree created before indices were recorded or started while docker was
 	// unreachable. Their compose project name cannot be derived, so nothing
 	// this project owns can be called orphan while any of them stands.
 	Unindexed []string
+	// Stale are branches the registry holds an index for but git holds no
+	// worktree for: a removal made outside wtm, or before remove released it.
+	// Each pushes new worktrees further out, and can read a foreign worktree as adopted.
+	Stale []string
 }
 
 func (a *app) liveProjects(ctx context.Context) []repoWorktrees {
 	var out []repoWorktrees
 	for _, name := range a.cfg.Names() {
 		p := a.cfg.Projects[name]
-		client := &stack.Client{Runner: a.runner, Dir: p.Dir}
+		// Managed is what lets an adopted worktree count as present: without
+		// it every adopted branch would read as stale.
+		client := &stack.Client{Runner: a.runner, Dir: p.Dir, Managed: managed(p)}
 		worktrees, err := client.Worktrees(ctx)
 		if err != nil {
 			continue
@@ -92,16 +99,46 @@ func (a *app) liveProjects(ctx context.Context) []repoWorktrees {
 		repo := filepath.Base(p.Dir)
 		live := make([]string, 0, len(worktrees))
 		var unindexed []string
+		present := map[string]bool{}
 		for _, wt := range worktrees {
+			present[wt.Branch] = true
 			if idx := p.WorktreeIndices[wt.Branch]; idx > 0 {
 				live = append(live, stack.ProjectName(repo, idx, wt.Branch))
 				continue
 			}
 			unindexed = append(unindexed, wt.Branch)
 		}
-		out = append(out, repoWorktrees{Repo: repo, Live: live, Unindexed: unindexed})
+		var stale []string
+		for branch := range p.WorktreeIndices {
+			if !present[branch] {
+				stale = append(stale, branch)
+			}
+		}
+		sort.Strings(stale)
+		out = append(out, repoWorktrees{Repo: repo, Name: name, Live: live, Unindexed: unindexed, Stale: stale})
 	}
 	return out
+}
+
+// reportStaleIndices lists the recorded indices no worktree stands behind.
+func (a *app) reportStaleIndices(ctx context.Context) {
+	var lines, cmds []string
+	for _, rw := range a.liveProjects(ctx) {
+		p := a.cfg.Projects[rw.Name]
+		for _, branch := range rw.Stale {
+			lines = append(lines, fmt.Sprintf("%s: index %d is recorded for %s, which has no worktree", rw.Name, p.WorktreeIndices[branch], branch))
+			cmds = append(cmds, fmt.Sprintf("wtm remove %s %s", rw.Name, branch))
+		}
+	}
+	if len(lines) == 0 {
+		return
+	}
+	fmt.Fprintln(a.out)
+	fmt.Fprintln(a.out, "recorded indices with no worktree behind them (each pushes new worktrees one index further out):")
+	for _, l := range lines {
+		fmt.Fprintf(a.out, "  %s\n", l)
+	}
+	fmt.Fprintf(a.out, "  release them with `%s`\n", strings.Join(cmds, "`, `"))
 }
 
 // reportOrphanVolumes lists the volumes of worktrees that no longer exist.
@@ -250,6 +287,7 @@ func newDoctorCmd(a *app) *cobra.Command {
 			// project, so this must still run with zero of them; the others
 			// below are harmless no-ops in that case.
 			a.reportPortClashes()
+			a.reportStaleIndices(cmd.Context())
 			a.reportOrphanVolumes(cmd.Context())
 			a.reportAnonymousVolumes(cmd.Context())
 			a.reportOrphanImages(cmd.Context())

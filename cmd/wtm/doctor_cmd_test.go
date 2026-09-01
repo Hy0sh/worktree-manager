@@ -127,3 +127,42 @@ func TestDoctorCountsDanglingAnonymousVolumes(t *testing.T) {
 		}
 	}
 }
+
+// An index whose branch has no worktree any more is what a removal outside
+// `wtm remove` leaves behind. It pushes every new worktree further out, and
+// with adoption keyed on recorded indices it also makes a foreign worktree on
+// that branch look managed. doctor is where it has to show.
+func TestDoctorReportsIndicesWithoutAWorktree(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "my-app")
+	var out bytes.Buffer
+	a := &app{
+		cfg: &config.Config{Projects: map[string]config.Project{"myapp": {Dir: dir,
+			WorktreeIndices: map[string]int{"feat/live": 2, "feat/gone": 5, "worktree-curry": 7}}}},
+		cfgPath: filepath.Join(t.TempDir(), "config.json"),
+		backups: t.TempDir(),
+		runner: &execx.Fake{Handler: func(c execx.Cmd) (execx.Result, error) {
+			if strings.Contains(c.String(), "worktree list") {
+				return execx.Result{Stdout: "worktree " + dir + "\nbranch refs/heads/develop\n\n" +
+					"worktree " + dir + "/.worktrees/feat/live\nbranch refs/heads/feat/live\n\n" +
+					"worktree " + dir + "/.claude/worktrees/curry\nbranch refs/heads/worktree-curry\n"}, nil
+			}
+			return execx.Result{}, nil
+		}},
+		out: &out,
+	}
+	cmd := newDoctorCmd(a)
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("doctor: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "myapp: index 5 is recorded for feat/gone, which has no worktree") {
+		t.Fatalf("the stale index must be named:\n%s", got)
+	}
+	if !strings.Contains(got, "wtm remove myapp feat/gone") {
+		t.Fatalf("the release command must be named:\n%s", got)
+	}
+	// worktree-curry is adopted: recorded, and its worktree exists outside .worktrees.
+	if strings.Contains(got, "worktree-curry") {
+		t.Fatalf("an adopted worktree is not stale:\n%s", got)
+	}
+}

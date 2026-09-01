@@ -313,6 +313,12 @@ func Stop(ctx context.Context, o Options) error {
 func Remove(ctx context.Context, o Options) error {
 	wt, err := o.Stack.FindByBranch(ctx, o.Branch)
 	if err != nil {
+		// The worktree left without its index: a removal made outside wtm, or
+		// before remove released indices. Forgetting it is still this verb's
+		// job, and a stack left at that index goes with it.
+		if n := o.Resolver.Recorded()[o.Branch]; n > 0 {
+			return releaseStale(ctx, o, n)
+		}
 		return err
 	}
 	// Checked before anything is taken down: a refusal must leave the worktree
@@ -381,5 +387,24 @@ func Remove(ctx context.Context, o Options) error {
 	if err := o.Resolver.Release(o.Branch); err != nil {
 		o.logf("warning: the index of %s could not be released: %v", o.Branch, err)
 	}
+	return nil
+}
+
+// releaseStale takes down whatever a vanished worktree left at index n and
+// frees the index. Down needs a directory to run compose from; the worktree's
+// is gone, so the repository stands in, since -p alone finds it by label.
+func releaseStale(ctx context.Context, o Options, n int) error {
+	wt := stack.Worktree{Index: n, Branch: o.Branch}
+	if hasCompose(o.Project.Dir) {
+		if err := o.Stack.Down(ctx, o.projectName(wt), o.Project.Dir, true); err != nil {
+			o.logf("warning: the stack of %s could not be taken down: %v", o.Branch, err)
+		}
+		removeVolumes(ctx, o, wt)
+		removeImages(ctx, o, wt)
+	}
+	if err := o.Resolver.Release(o.Branch); err != nil {
+		return fmt.Errorf("releasing the index of %s: %w", o.Branch, err)
+	}
+	o.logf("no worktree for %s: index %d released", o.Branch, n)
 	return nil
 }
