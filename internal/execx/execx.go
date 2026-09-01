@@ -29,10 +29,9 @@ type Cmd struct {
 	Interactive bool
 }
 
-// String renders the command the way a shell would take it back, because wtm
-// prints commands for the user to replay: joining the arguments raw turns
-// `sh -c "a && b"` into two commands and a path with a space into two
-// arguments.
+// String renders the command the way a shell would take it back, since wtm
+// prints commands for the user to replay: joined raw, `sh -c "a && b"` reads
+// as two commands and a path with a space as two arguments.
 func (c Cmd) String() string {
 	parts := make([]string, 0, len(c.Args)+1)
 	parts = append(parts, ShellQuote(c.Name))
@@ -79,6 +78,20 @@ type Error struct {
 }
 
 func (e *Error) Error() string {
+	// A command that never started leaves ProcessState nil, and one a signal
+	// killed reports -1: either printed as an exit code would read as success.
+	if e.ExitCode <= 0 {
+		return fmt.Sprintf("`%s` failed: %s", e.Cmd, e.message())
+	}
+	return fmt.Sprintf("`%s` failed (exit %d): %s", e.Cmd, e.ExitCode, e.message())
+}
+
+// message is the diagnosis, most specific first: a binary that does not exist,
+// then what the command said, then the failure itself.
+func (e *Error) message() string {
+	if name := MissingBinary(e.Err); name != "" {
+		return name + " is not installed, or not in $PATH"
+	}
 	msg := strings.TrimSpace(e.Stderr)
 	if e.Live {
 		if i := strings.LastIndex(msg, "\n"); i >= 0 {
@@ -86,17 +99,9 @@ func (e *Error) Error() string {
 		}
 	}
 	if msg == "" && e.Err != nil {
-		msg = e.Err.Error()
+		return e.Err.Error()
 	}
-	if name := MissingBinary(e.Err); name != "" {
-		msg = name + " is not installed, or not in $PATH"
-	}
-	// A command that never started leaves ProcessState nil, and one a signal
-	// killed reports -1: either printed as an exit code would read as success.
-	if e.ExitCode <= 0 {
-		return fmt.Sprintf("`%s` failed: %s", e.Cmd, msg)
-	}
-	return fmt.Sprintf("`%s` failed (exit %d): %s", e.Cmd, e.ExitCode, msg)
+	return msg
 }
 
 func (e *Error) Unwrap() error { return e.Err }
@@ -175,11 +180,11 @@ func (r OSRunner) Run(ctx context.Context, c Cmd) (Result, error) {
 func WaitFor(ctx context.Context, r Runner, label string, attempts int, interval time.Duration, probe Cmd) error {
 	var last error
 	for i := 0; i < attempts; i++ {
-		if _, err := r.Run(ctx, probe); err == nil {
+		_, err := r.Run(ctx, probe)
+		if err == nil {
 			return nil
-		} else {
-			last = err
 		}
+		last = err
 		if i < attempts-1 && interval > 0 {
 			select {
 			case <-ctx.Done():
