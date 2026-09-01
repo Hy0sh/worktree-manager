@@ -36,8 +36,7 @@ type Resolver struct {
 	Out        io.Writer
 	// Conflicts says why index n must not be handed out, or "" when it may.
 	// The resolver knows nothing about ports; the worktree package does, and
-	// with a stride of 1 two neighbouring indices publish the same port when
-	// two services sit one port apart (db 5432, db_test 5433).
+	// with a stride of 1 services one port apart collide on neighbouring indices.
 	Conflicts func(n int) string
 }
 
