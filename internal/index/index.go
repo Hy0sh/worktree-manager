@@ -46,6 +46,14 @@ func (r *Resolver) logf(format string, args ...any) {
 	}
 }
 
+// conflicts is Conflicts with the nil check folded in.
+func (r *Resolver) conflicts(n int) string {
+	if r.Conflicts == nil {
+		return ""
+	}
+	return r.Conflicts(n)
+}
+
 // Resolve tries, first answer winning: recorded → backfill from docker labels →
 // git position if free and clean → allocation (MayAllocate only). pos is that
 // git position, kept only so worktrees created before indices were recorded
@@ -107,15 +115,19 @@ func (r *Resolver) Resolve(ctx context.Context, branch string, pos int, mode Mod
 		// while it is free and no other branch's debris squats it.
 		if pos > 0 && ownerOf(p.WorktreeIndices, pos) == "" &&
 			!(dockerOK && hasLeftovers(labels, r.RepoName, pos, branch)) {
-			if !dockerOK {
-				// A guess made without docker evidence must not become
-				// permanent: a neighbour not backfilled yet may really be
-				// running here, so resolve for this call only.
-				idx = pos
+			if why := r.conflicts(pos); why != "" {
+				// A new worktree's position is usually free, so this is the
+				// path a plain create takes: it must ask the same question
+				// as the allocation loop below.
+				r.logf("index %d skipped: %s", pos, why)
+			} else {
+				if !dockerOK {
+					idx = pos
+					return nil
+				}
+				record(pos)
 				return nil
 			}
-			record(pos)
-			return nil
 		}
 
 		if mode != MayAllocate {
@@ -129,11 +141,9 @@ func (r *Resolver) Resolve(ctx context.Context, branch string, pos int, mode Mod
 				r.logf("index %d skipped: docker still holds containers or volumes of a previous worktree there", n)
 				continue
 			}
-			if r.Conflicts != nil {
-				if why := r.Conflicts(n); why != "" {
-					r.logf("index %d skipped: %s", n, why)
-					continue
-				}
+			if why := r.conflicts(n); why != "" {
+				r.logf("index %d skipped: %s", n, why)
+				continue
 			}
 			if !dockerOK {
 				// Same reasoning as the fallback above: an allocation made

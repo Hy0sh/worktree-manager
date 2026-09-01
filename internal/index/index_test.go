@@ -170,3 +170,29 @@ func TestResolveWithoutConflictsBehavesAsBefore(t *testing.T) {
 		t.Fatalf("expected 2, got %d (%v)", got, err)
 	}
 }
+
+// A brand-new worktree's git position is usually free, so the position
+// fallback, meant for worktrees older than recorded indices, is what a plain
+// create goes through. It has to ask the same question as the allocation loop,
+// or two db ports one apart collide on the second create of every project.
+func TestResolveFallbackAsksTheCallerToo(t *testing.T) {
+	r, path, _ := newResolver(t, map[string]int{"feat/a": 1}, []string{})
+	var out strings.Builder
+	r.Out = &out
+	r.Conflicts = func(n int) string {
+		if n == 2 {
+			return "db would publish 26434, which feat/a already publishes for db_test"
+		}
+		return ""
+	}
+	got, err := r.Resolve(context.Background(), "feat/b", 2, MayAllocate)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if got != 3 || recorded(t, path, "feat/b") != 3 {
+		t.Fatalf("position 2 clashes, expected 3 recorded, got %d", got)
+	}
+	if !strings.Contains(out.String(), "index 2 skipped") {
+		t.Fatalf("the skip must be said:\n%s", out.String())
+	}
+}
