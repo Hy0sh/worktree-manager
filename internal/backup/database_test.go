@@ -166,3 +166,25 @@ func TestRefreshCleansUpAfterAFailedMigration(t *testing.T) {
 		t.Fatalf("cleanup must run on failure too, last call %q", last)
 	}
 }
+
+// A failed `compose up` can still leave a created container and its network
+// behind, measured on a real machine, so the cleanup must run then too.
+func TestRefreshCleansUpAfterAFailedStart(t *testing.T) {
+	f := &execx.Fake{Handler: func(c execx.Cmd) (execx.Result, error) {
+		switch {
+		case strings.Contains(c.String(), "ps -a --services"), strings.Contains(c.String(), "ps --services"):
+			return execx.Result{}, nil
+		case strings.Contains(c.String(), "up -d"):
+			return execx.Result{ExitCode: 1}, errors.New("port is already allocated")
+		}
+		return okHandler(c)
+	}}
+	m := newManager(t, f)
+	if err := m.Refresh(context.Background(), "myapp", newProject(t)); err == nil {
+		t.Fatal("expected the start failure")
+	}
+	lines := f.Lines()
+	if last := lines[len(lines)-1]; !strings.HasSuffix(last, "compose down") {
+		t.Fatalf("cleanup must run after a failed start too, last call %q", last)
+	}
+}
