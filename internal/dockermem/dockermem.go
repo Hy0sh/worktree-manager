@@ -79,7 +79,7 @@ func (u Usage) Warning() string {
 	}
 	return fmt.Sprintf("warning: %d stack(s) already use %s out of the %s of the Docker VM; "+
 		"one more (~%s estimated) would bring the total to ~%s. Stop a stack (`wtm stop <branch>`) "+
-		"or increase Docker Desktop's RAM if it gets tight.",
+		"or raise the Docker VM's memory limit if it gets tight.",
 		u.Projects, Human(u.Used), Human(u.Total), Human(u.PerProject()), Human(u.Projected()))
 }
 

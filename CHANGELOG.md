@@ -6,6 +6,14 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Fixed
+
+- The memory warning no longer sends the reader to Docker Desktop's RAM
+  setting. Every VM-backed engine holds a budget of its own, under another name
+  and in another place, so an OrbStack or Colima user was pointed at an
+  application they do not run. The line names the limit rather than the
+  product.
+
 ## [0.9.1] - 2026-08-28
 
 ### Fixed
