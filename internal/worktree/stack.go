@@ -164,6 +164,9 @@ func (o Options) projectName(wt stack.Worktree) string {
 }
 
 func (o Options) resolveIndex(ctx context.Context, wt *stack.Worktree, mode index.Mode) error {
+	if mode == index.MayAllocate {
+		o.Resolver.Conflicts = portClash(o)
+	}
 	n, err := o.Resolver.Resolve(ctx, o.Branch, wt.Pos, mode)
 	if err != nil {
 		return err

@@ -46,6 +46,13 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ### Fixed
 
+- Two worktrees of one project no longer land on the same host port. With the
+  default stride of 1, a project publishing `db` on 5432 and `db_test` on 5433
+  had index 1 put `db_test` on 26434 and index 2 put `db` there too, so the
+  second stack failed on a docker bind error. The allocator now steps over an
+  index whose ports a recorded worktree already publishes, and says which port
+  and which neighbour made it skip. The stride itself does not move: it is
+  what keeps every existing worktree on the ports its `.env` carries.
 - A command wtm could not even start no longer claims to have exited 0. The
   exit code is read from the process, and a lookup failure never made one, so
   `docker` missing from `$PATH` was reported as a success code next to the
@@ -330,7 +337,7 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   application service once a new worktree's stack answers. The dump carries what
   the migrations create and never seed data, so a fresh worktree came up migrated
   and empty and every developer seeded it by hand, usually by reaching for the
-  project's own reset script: on gallia that script drops the schema and migrates
+  project's own reset script: on myapp that script drops the schema and migrates
   again, which throws away the restored dump and pays for the migrations wtm
   exists to skip. The database is waited for with the probe `backup refresh`
   already used, extracted as `execx.WaitFor`. A failure is a warning naming the

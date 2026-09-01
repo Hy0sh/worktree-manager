@@ -53,6 +53,43 @@ func allocatePorts(ctx context.Context, o Options, wt stack.Worktree, dest strin
 	return stack.WriteEnvOverrides(dest, allocations)
 }
 
+// portClash checks a candidate index against recorded worktrees only, since
+// those are the ones that can run at the same time as the new one. The stride
+// stays put: changing it would move every existing worktree's ports.
+func portClash(o Options) func(n int) string {
+	services, err := compose.MergedServicePorts(o.Project.Dir)
+	if err != nil {
+		return func(int) string { return "" }
+	}
+	stride := stack.Stride(o.Project.Dir)
+	recorded := o.Resolver.Recorded()
+	return func(n int) string {
+		mine, err := stack.Allocate(services, n, stride, o.Project.PortOffset)
+		if err != nil {
+			return ""
+		}
+		for branch, idx := range recorded {
+			if branch == o.Branch || idx == n {
+				continue
+			}
+			theirs, err := stack.Allocate(services, idx, stride, o.Project.PortOffset)
+			if err != nil {
+				continue
+			}
+			for _, a := range mine {
+				for _, b := range theirs {
+					if a.Port == b.Port {
+						return fmt.Sprintf("%s would publish %d, which %s already publishes for %s "+
+							"(raise portStride in .wtcrc.json to spread the indices further apart)",
+							a.Service, a.Port, branch, b.Service)
+					}
+				}
+			}
+		}
+		return ""
+	}
+}
+
 // endpoints pairs each service with the port it actually listens on in this
 // worktree, so the output is a list of addresses to open rather than the raw
 // block of variables written into .env.

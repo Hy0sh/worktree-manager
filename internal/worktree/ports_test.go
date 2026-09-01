@@ -7,6 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Hy0sh/worktree-manager/internal/config"
 )
 
 // A raw .env block ("BACKEND_PORT=28007 DB_PORT=25439") tells nobody where to
@@ -114,5 +116,68 @@ func TestCreateLeavesATrackedEnvAloneAndSaysSo(t *testing.T) {
 		if strings.Contains(string(gen), unwanted) {
 			t.Fatalf("%s keeps the main stack's port: %q", portsOverride, gen)
 		}
+	}
+}
+
+// shop's shape: db on 5432, db_test on 5433, no .wtcrc.json so the stride is
+// 1. Index 1 puts db_test on 26434 and index 2 puts db there too.
+func twoDBFixture(t *testing.T) *fixture {
+	t.Helper()
+	f := newFixture(t)
+	mustWrite(t, filepath.Join(f.root, "compose.yaml"), `services:
+  db:
+    ports:
+      - "${DB_PORT:-5432}:5432"
+  db_test:
+    ports:
+      - "${DB_TEST_PORT:-5433}:5432"
+`)
+	if err := os.Remove(filepath.Join(f.root, ".wtcrc.json")); err != nil {
+		t.Fatal(err)
+	}
+	if err := config.WithLock(f.cfgPath, func(c *config.Config) error {
+		p := c.Projects["myapp"]
+		p.PortOffset = 1000
+		p.WorktreeIndices = map[string]int{"feat/x": 1}
+		c.Projects["myapp"] = p
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	return f
+}
+
+func TestPortClashNamesTheNeighbourAndItsPort(t *testing.T) {
+	f := twoDBFixture(t)
+	o := f.opts("feat/y")
+	o.Project.PortOffset = 1000
+	why := portClash(o)(2)
+	for _, want := range []string{"26434", "feat/x", "db_test", "db"} {
+		if !strings.Contains(why, want) {
+			t.Fatalf("reason should carry %q, got %q", want, why)
+		}
+	}
+	if !strings.Contains(why, "portStride") {
+		t.Fatalf("the remedy is portStride in .wtcrc.json, got %q", why)
+	}
+}
+
+func TestPortClashIsSilentOnAFreeIndex(t *testing.T) {
+	f := twoDBFixture(t)
+	o := f.opts("feat/y")
+	o.Project.PortOffset = 1000
+	if why := portClash(o)(3); why != "" {
+		t.Fatalf("index 3 clashes with nothing, got %q", why)
+	}
+}
+
+// The recorded branch itself is never its own neighbour: a start on an existing
+// index must not refuse the index it already owns.
+func TestPortClashIgnoresTheBranchBeingResolved(t *testing.T) {
+	f := twoDBFixture(t)
+	o := f.opts("feat/x")
+	o.Project.PortOffset = 1000
+	if why := portClash(o)(1); why != "" {
+		t.Fatalf("feat/x owns index 1, got %q", why)
 	}
 }
