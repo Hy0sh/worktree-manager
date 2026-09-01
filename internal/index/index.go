@@ -1,7 +1,6 @@
-// Package index owns the branch→index mapping of a project's worktrees. The
-// index feeds the port formula and the compose project name, so it must never
-// change once a stack exists: allocated once, recorded in the registry, and
-// recovered from docker for worktrees that predate the recording.
+// Package index owns the branch→index mapping of a project's worktrees. It
+// feeds the port formula and the compose project name, so an index must never
+// change once a stack exists: allocated once, recorded, recovered from docker.
 package index
 
 import (
@@ -56,8 +55,7 @@ func (r *Resolver) conflicts(n int) string {
 
 // Resolve tries, first answer winning: recorded → backfill from docker labels →
 // git position if free and clean → allocation (MayAllocate only). pos is that
-// git position, kept only so worktrees created before indices were recorded
-// keep the ports their .env already carries.
+// position, kept so worktrees older than recorded indices keep their .env ports.
 func (r *Resolver) Resolve(ctx context.Context, branch string, pos int, mode Mode) (int, error) {
 	// Nominal path: recorded, read-only, no lock and no docker.
 	cfg, err := config.Load(r.ConfigPath)
@@ -89,10 +87,25 @@ func (r *Resolver) Resolve(ctx context.Context, branch string, pos int, mode Mod
 			idx = n
 			return nil
 		}
-		record := func(n int) {
-			p.WorktreeIndices[branch] = n
-			c.Projects[r.Name] = p
+		// take hands the index out either way, but pins it in the registry only
+		// when docker answered the survey: an allocation made blind is a guess,
+		// not a fact worth recording forever.
+		take := func(n int) error {
 			idx = n
+			if dockerOK {
+				p.WorktreeIndices[branch] = n
+				c.Projects[r.Name] = p
+			}
+			return nil
+		}
+		// A refused index is announced once: the fallback asks about pos, then
+		// the allocation loop reaches pos again with the same answer.
+		reported := map[int]bool{}
+		skipped := func(n int, why string) {
+			if !reported[n] {
+				reported[n] = true
+				r.logf("index %d skipped: %s", n, why)
+			}
 		}
 
 		// Backfill: the stack's own containers or volumes carry the index in
@@ -105,8 +118,7 @@ func (r *Resolver) Resolve(ctx context.Context, branch string, pos int, mode Mod
 						"stop the old stack with `docker compose -p %s down -v`, then `wtm start %s` will allocate a fresh index",
 						branch, n, owner, label, branch)
 				}
-				record(n)
-				return nil
+				return take(n)
 			}
 		}
 
@@ -115,18 +127,13 @@ func (r *Resolver) Resolve(ctx context.Context, branch string, pos int, mode Mod
 		// while it is free and no other branch's debris squats it.
 		if pos > 0 && ownerOf(p.WorktreeIndices, pos) == "" &&
 			!(dockerOK && hasLeftovers(labels, r.RepoName, pos, branch)) {
+			// A new worktree's position is usually free, so this is the path a
+			// plain create takes: it must ask the same question as the
+			// allocation loop below.
 			if why := r.conflicts(pos); why != "" {
-				// A new worktree's position is usually free, so this is the
-				// path a plain create takes: it must ask the same question
-				// as the allocation loop below.
-				r.logf("index %d skipped: %s", pos, why)
+				skipped(pos, why)
 			} else {
-				if !dockerOK {
-					idx = pos
-					return nil
-				}
-				record(pos)
-				return nil
+				return take(pos)
 			}
 		}
 
@@ -138,21 +145,14 @@ func (r *Resolver) Resolve(ctx context.Context, branch string, pos int, mode Mod
 				continue
 			}
 			if dockerOK && hasLeftovers(labels, r.RepoName, n, branch) {
-				r.logf("index %d skipped: docker still holds containers or volumes of a previous worktree there", n)
+				skipped(n, "docker still holds containers or volumes of a previous worktree there")
 				continue
 			}
 			if why := r.conflicts(n); why != "" {
-				r.logf("index %d skipped: %s", n, why)
+				skipped(n, why)
 				continue
 			}
-			if !dockerOK {
-				// Same reasoning as the fallback above: an allocation made
-				// blind is a guess, not a fact worth pinning forever.
-				idx = n
-				return nil
-			}
-			record(n)
-			return nil
+			return take(n)
 		}
 	})
 	return idx, err

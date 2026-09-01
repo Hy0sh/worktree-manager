@@ -110,10 +110,8 @@ func TestReleaseForgetsTheBranch(t *testing.T) {
 }
 
 // A daemon that accepts a connection and never answers used to hang every
-// command that resolves an index, with nothing on screen: `wtm list` bounded
-// the same question from the start, resolution never did. Resolution already
-// knows how to degrade to the registry when docker refuses, so a deadline
-// costs it nothing.
+// command that resolves an index, with nothing on screen. Degrading to the
+// registry is what resolution already does when docker refuses.
 func TestDockerIsAskedUnderADeadline(t *testing.T) {
 	r, _, fake := newResolver(t, nil, []string{})
 	if _, err := r.Resolve(context.Background(), "feat/x", 0, MayAllocate); err != nil {
@@ -135,9 +133,8 @@ func TestDockerIsAskedUnderADeadline(t *testing.T) {
 }
 
 // The allocator already steps over an index docker holds leftovers for. A
-// caller who knows the ports can tell it to step over an index whose ports
-// would clash with a recorded neighbour, which is how two worktrees of one
-// project stop fighting over 26434.
+// caller who knows the ports can also refuse one whose ports would clash with
+// a recorded neighbour: how two worktrees stop fighting over 26434.
 func TestResolveSkipsAnIndexTheCallerRefuses(t *testing.T) {
 	r, path, _ := newResolver(t, map[string]int{"feat/a": 1}, []string{})
 	var out strings.Builder
@@ -171,10 +168,9 @@ func TestResolveWithoutConflictsBehavesAsBefore(t *testing.T) {
 	}
 }
 
-// A brand-new worktree's git position is usually free, so the position
-// fallback, meant for worktrees older than recorded indices, is what a plain
-// create goes through. It has to ask the same question as the allocation loop,
-// or two db ports one apart collide on the second create of every project.
+// A brand-new worktree's git position is usually free, so the fallback meant
+// for older worktrees is what a plain create goes through: it must ask the
+// loop's question, or two db ports one apart collide on the second create.
 func TestResolveFallbackAsksTheCallerToo(t *testing.T) {
 	r, path, _ := newResolver(t, map[string]int{"feat/a": 1}, []string{})
 	var out strings.Builder
@@ -192,7 +188,8 @@ func TestResolveFallbackAsksTheCallerToo(t *testing.T) {
 	if got != 3 || recorded(t, path, "feat/b") != 3 {
 		t.Fatalf("position 2 clashes, expected 3 recorded, got %d", got)
 	}
-	if !strings.Contains(out.String(), "index 2 skipped") {
-		t.Fatalf("the skip must be said:\n%s", out.String())
+	// Once: the fallback asks, then the loop reaches 2 again with the same answer.
+	if strings.Count(out.String(), "index 2 skipped") != 1 {
+		t.Fatalf("the skip must be said exactly once:\n%s", out.String())
 	}
 }
