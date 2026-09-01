@@ -144,10 +144,9 @@ func TestStrideReadsTheProjectConfiguration(t *testing.T) {
 	}
 }
 
-// A worktree whose .env is versioned cannot be given the environment the
-// parametrised ports read, so the generated file has to be the whole isolation
-// there. Restating them is safe: `!override` replaces the list rather than
-// appending to it, which is why this file exists in the first place.
+// A worktree whose .env is versioned cannot carry the variables the parametrised
+// ports read, so the generated file is the whole isolation there. Restating them
+// is safe: `!override` replaces the list instead of appending to it.
 func TestPortsOverrideCanRestateEveryServiceForAVersionedEnv(t *testing.T) {
 	allocs := []Allocation{
 		{Service: "db", Var: "DB_PORT", Port: 25439, Container: "5432"},

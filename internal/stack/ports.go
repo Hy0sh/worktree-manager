@@ -41,10 +41,9 @@ func AllocatePort(defaultPort, index, stride, projectOffset int) (int, error) {
 	return port, nil
 }
 
-// Allocate rebases every published port of the compose file, whether it is
-// written as a variable or as a literal. A literal cannot be overridden
-// through the environment, so it is rebased through a generated compose file
-// instead; see PortsOverride.
+// Allocate rebases every published port of the compose file, variable or
+// literal. A literal cannot be overridden through the environment, so it goes
+// through a generated compose file instead; see PortsOverride.
 func Allocate(services []compose.ServicePort, index, stride, projectOffset int) ([]Allocation, error) {
 	var out []Allocation
 	seen := map[int]string{}
@@ -94,12 +93,8 @@ func Stride(projectDir string) int {
 }
 
 // PortsOverride rebases the ports a project wrote as literals, which no
-// environment variable can reach and which would otherwise publish the very
-// ports the main stack holds. Compose appends `ports` when merging, so the list
-// has to be replaced with !override, restating every port of that service.
-// every restates the ports of every service instead of only those published as
-// literals. A worktree whose .env is versioned cannot carry the environment the
-// parametrised ones read, so this file has to be the whole isolation there.
+// environment variable can reach. Compose appends `ports` when merging, so the
+// list is replaced with !override, restating every port of that service.
 func PortsOverride(allocations []Allocation, every bool) string {
 	byService := map[string][]Allocation{}
 	var order []string
@@ -115,6 +110,9 @@ func PortsOverride(allocations []Allocation, every bool) string {
 	}
 	var b strings.Builder
 	for _, service := range order {
+		// every covers the parametrised services too: a worktree whose .env is
+		// versioned cannot carry the variables they read, so this file has to
+		// be the whole isolation there.
 		if !every && !literal[service] {
 			continue // reachable through the .env, nothing to override
 		}

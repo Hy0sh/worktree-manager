@@ -210,10 +210,9 @@ func TestWorktreesKeepsAnAdoptedWorktree(t *testing.T) {
 	}
 }
 
-// Pos is the fallback internal/index uses for worktrees older than the recorded
-// indices, and it must keep meaning "nth under .worktrees". Numbering adopted
-// worktrees along with the others would shift that fallback and hand such a
-// worktree an index its .env never carried.
+// Pos is internal/index's fallback for worktrees older than the recorded
+// indices, so it must keep meaning "nth under .worktrees": numbering adopted
+// ones would hand such a worktree an index its .env never carried.
 func TestWorktreesLeaveAdoptedOnesOutOfThePositions(t *testing.T) {
 	f := &execx.Fake{Handler: func(c execx.Cmd) (execx.Result, error) {
 		return execx.Result{Stdout: "worktree /repo\nbranch refs/heads/main\n\n" +

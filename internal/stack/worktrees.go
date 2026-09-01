@@ -10,10 +10,9 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 )
 
-// Worktree carries two very different numbers. Index is the stable one the
-// ports and the compose project name derive from, filled by internal/index, not
-// here. Pos is where git listed the worktree, which resorts alphabetically, so
-// it is only a first-guess hint for that resolver.
+// Worktree carries two very different numbers. Index is the stable one ports
+// and the compose project name derive from, filled by internal/index. Pos is
+// where git listed it, which resorts alphabetically: a hint for that resolver.
 type Worktree struct {
 	Index  int
 	Pos    int
@@ -42,9 +41,8 @@ func (w Worktree) ShortHead() string {
 }
 
 // WorktreesRoot is where the worktrees wtm creates itself live. What git lists
-// outside it, a `claude -w` worktree under .claude/worktrees or a manual `git
-// worktree add` anywhere else, has none of what every wtm command needs until
-// `wtm adopt` gives it a stable index, a provisioned .env and a stack.
+// outside it, `claude -w` worktrees or a manual `git worktree add`, has no
+// index, no provisioned .env and no stack until `wtm adopt` gives it those.
 func WorktreesRoot(repoDir string) string {
 	return filepath.Join(repoDir, ".worktrees")
 }
@@ -79,11 +77,9 @@ func (c *Client) All(ctx context.Context) ([]Worktree, error) {
 	root := WorktreesRoot(c.Dir) + string(os.PathSeparator)
 	var (
 		out []Worktree
-		// pos counts the worktrees under root alone. It is the fallback
-		// internal/index uses for worktrees older than the recorded indices, so
-		// it must keep meaning "nth under .worktrees": numbering adopted ones
-		// along with them would shift that fallback and hand such a worktree an
-		// index its .env never carried.
+		// pos counts the worktrees under root alone: it is internal/index's
+		// fallback for worktrees older than recorded indices, so numbering an
+		// adopted one would hand it an index its .env never carried.
 		pos    int
 		first  = true
 		path   string
