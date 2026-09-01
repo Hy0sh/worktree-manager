@@ -47,17 +47,24 @@ func (a *app) reportPortClashes() {
 			}
 		}
 	}
-	clashes := portClashes(holders)
-	if len(clashes) == 0 {
-		return
+	if clashes := portClashes(holders); len(clashes) > 0 {
+		fmt.Fprintln(a.out)
+		fmt.Fprintln(a.out, "port clashes between projects (those stacks cannot run at the same time):")
+		for _, line := range clashes {
+			fmt.Fprintf(a.out, "  %s\n", line)
+		}
+		fmt.Fprintln(a.out, "  offsets are handed out once, at registration: keep those stacks from running together, or")
+		fmt.Fprintln(a.out, "  raise `port_offset` for one project in config.json and recreate its worktrees, whose .env carry the old ports")
 	}
-	fmt.Fprintln(a.out)
-	fmt.Fprintln(a.out, "port clashes between projects (those stacks cannot run at the same time):")
-	for _, line := range clashes {
-		fmt.Fprintf(a.out, "  %s\n", line)
+	if clashes := intraProjectClashes(holders); len(clashes) > 0 {
+		fmt.Fprintln(a.out)
+		fmt.Fprintln(a.out, "port clashes between worktrees of one project (those two cannot run at the same time):")
+		for _, line := range clashes {
+			fmt.Fprintf(a.out, "  %s\n", line)
+		}
+		fmt.Fprintln(a.out, "  the stride is too small for ports that sit close together: set `portStride` in the project's")
+		fmt.Fprintln(a.out, "  .wtcrc.json above their spread, then recreate the worktrees, whose .env carry the old ports")
 	}
-	fmt.Fprintln(a.out, "  offsets are handed out once, at registration: keep those stacks from running together, or")
-	fmt.Fprintln(a.out, "  raise `port_offset` for one project in config.json and recreate its worktrees, whose .env carry the old ports")
 }
 
 // repoWorktrees pairs a registered project's repository name with the compose

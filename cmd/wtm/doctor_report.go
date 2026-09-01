@@ -117,3 +117,45 @@ func unclaimed(all []string, repoName, sep string, live []string) []string {
 	sort.Strings(out)
 	return out
 }
+
+// intraProjectClashes reports the ports two worktrees of the same project would
+// both publish. Until the allocator learnt to skip clashing indices, worktrees
+// recorded before can still overlap; portStride spreads them.
+func intraProjectClashes(holders []portHolder) []string {
+	type key struct {
+		project string
+		port    int
+	}
+	byKey := map[key][]portHolder{}
+	for _, h := range holders {
+		k := key{h.Project, h.Port}
+		byKey[k] = append(byKey[k], h)
+	}
+	var keys []key
+	for k, hs := range byKey {
+		branches := map[string]bool{}
+		for _, h := range hs {
+			branches[h.Branch] = true
+		}
+		if len(branches) > 1 {
+			keys = append(keys, k)
+		}
+	}
+	sort.Slice(keys, func(i, j int) bool {
+		if keys[i].project != keys[j].project {
+			return keys[i].project < keys[j].project
+		}
+		return keys[i].port < keys[j].port
+	})
+	var out []string
+	for _, k := range keys {
+		hs := byKey[k]
+		sort.Slice(hs, func(i, j int) bool { return hs[i].Branch < hs[j].Branch })
+		who := make([]string, 0, len(hs))
+		for _, h := range hs {
+			who = append(who, h.Branch+" "+h.Label)
+		}
+		out = append(out, fmt.Sprintf("%s: port %d is claimed by %s", k.project, k.port, strings.Join(who, " and ")))
+	}
+	return out
+}

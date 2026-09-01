@@ -65,6 +65,10 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   and in another place, so an OrbStack or Colima user was pointed at an
   application they do not run. The line names the limit rather than the
   product.
+- `wtm doctor` reports the ports two worktrees of the same project would both
+  publish, with the `portStride` remedy. It only ever looked between projects,
+  so a clash inside one, the very case that happens with `db` and `db_test`
+  one port apart, went unreported until docker refused the second stack.
 
 ## [0.9.1] - 2026-08-28
 

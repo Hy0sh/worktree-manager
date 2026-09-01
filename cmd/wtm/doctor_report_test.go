@@ -12,14 +12,14 @@ import (
 // the offset step is smaller than the spread of the default ports it shifts.
 func TestPortClashesReportsTwoProjectsOnTheSamePort(t *testing.T) {
 	lines := portClashes([]portHolder{
-		{Port: 26434, Project: "shop", Branch: "feat/x", Label: "db_test:5432"},
-		{Port: 26434, Project: "station", Branch: "feat/y", Label: "kratos:4433"},
-		{Port: 26433, Project: "shop", Branch: "feat/x", Label: "db:5432"},
+		{Port: 26434, Project: "webshop", Branch: "feat/x", Label: "db_test:5432"},
+		{Port: 26434, Project: "beta", Branch: "feat/y", Label: "auth:4433"},
+		{Port: 26433, Project: "webshop", Branch: "feat/x", Label: "db:5432"},
 	})
 	if len(lines) != 1 {
 		t.Fatalf("lines = %v, want the single clash", lines)
 	}
-	for _, want := range []string{"26434", "shop/feat/x", "station/feat/y"} {
+	for _, want := range []string{"26434", "alpha/feat/x", "beta/feat/y"} {
 		if !strings.Contains(lines[0], want) {
 			t.Fatalf("line should mention %q, got %q", want, lines[0])
 		}
@@ -30,8 +30,8 @@ func TestPortClashesReportsTwoProjectsOnTheSamePort(t *testing.T) {
 // own port, and refuses within a project anyway. Reporting them would be noise.
 func TestPortClashesIgnoresOneProjectWithItself(t *testing.T) {
 	lines := portClashes([]portHolder{
-		{Port: 26434, Project: "shop", Branch: "feat/x", Label: "db:5432"},
-		{Port: 26434, Project: "shop", Branch: "feat/y", Label: "db:5432"},
+		{Port: 26434, Project: "webshop", Branch: "feat/x", Label: "db:5432"},
+		{Port: 26434, Project: "webshop", Branch: "feat/y", Label: "db:5432"},
 	})
 	if len(lines) != 0 {
 		t.Fatalf("lines = %v, want none", lines)
@@ -40,16 +40,16 @@ func TestPortClashesIgnoresOneProjectWithItself(t *testing.T) {
 
 func TestOrphanVolumesKeepsWhatALiveWorktreeOwns(t *testing.T) {
 	all := []string{
-		"gallia-utopia-wt-1-worktree-parsed_postgres_data",
-		"gallia-utopia-wt-2-fix-migration_postgres_data",
-		"gallia-utopia-wt-2-fix-migration_rustfs_data",
+		"my-app-wt-1-feat-x_postgres_data",
+		"my-app-wt-2-fix-migration_postgres_data",
+		"my-app-wt-2-fix-migration_files_data",
 		"other-project-wt-1-feat-x_data", // another repository's, not ours to report
-		"gallia-utopia_postgres_data",    // the main stack, not a worktree
+		"my-app_postgres_data",    // the main stack, not a worktree
 	}
-	orphans := orphanVolumes(all, "gallia-utopia", []string{"gallia-utopia-wt-1-worktree-parsed"})
+	orphans := orphanVolumes(all, "my-app", []string{"my-app-wt-1-feat-x"})
 	want := []string{
-		"gallia-utopia-wt-2-fix-migration_postgres_data",
-		"gallia-utopia-wt-2-fix-migration_rustfs_data",
+		"my-app-wt-2-fix-migration_postgres_data",
+		"my-app-wt-2-fix-migration_files_data",
 	}
 	if len(orphans) != len(want) {
 		t.Fatalf("orphans = %v, want %v", orphans, want)
@@ -64,25 +64,25 @@ func TestOrphanVolumesKeepsWhatALiveWorktreeOwns(t *testing.T) {
 // With no live worktree recorded, everything under the prefix is orphan: that
 // is exactly the state a project left after its worktrees were removed.
 func TestOrphanVolumesReportsAllWhenNothingIsLive(t *testing.T) {
-	orphans := orphanVolumes([]string{"shop-wt-1-feat-x_pgdata", "shop_pgdata"}, "shop", nil)
-	if len(orphans) != 1 || orphans[0] != "shop-wt-1-feat-x_pgdata" {
+	orphans := orphanVolumes([]string{"webshop-wt-1-feat-x_pgdata", "webshop_pgdata"}, "webshop", nil)
+	if len(orphans) != 1 || orphans[0] != "webshop-wt-1-feat-x_pgdata" {
 		t.Fatalf("orphans = %v", orphans)
 	}
 }
 
 func TestOrphanImagesKeepsWhatALiveWorktreeOwns(t *testing.T) {
 	all := []string{
-		"gallia-utopia-wt-1-worktree-parsed-frontend",
-		"gallia-utopia-wt-2-fix-migration-frontend",
-		"gallia-utopia-wt-2-fix-migration-celery_worker",
+		"my-app-wt-1-feat-x-frontend",
+		"my-app-wt-2-fix-migration-frontend",
+		"my-app-wt-2-fix-migration-worker",
 		"other-project-wt-1-feat-x-api", // another repository's, not ours to report
-		"gallia-utopia-frontend",        // the main stack, not a worktree
+		"my-app-frontend",        // the main stack, not a worktree
 		"postgres",
 	}
-	orphans := orphanImages(all, "gallia-utopia", []string{"gallia-utopia-wt-1-worktree-parsed"})
+	orphans := orphanImages(all, "my-app", []string{"my-app-wt-1-feat-x"})
 	want := []string{
-		"gallia-utopia-wt-2-fix-migration-celery_worker",
-		"gallia-utopia-wt-2-fix-migration-frontend",
+		"my-app-wt-2-fix-migration-worker",
+		"my-app-wt-2-fix-migration-frontend",
 	}
 	if len(orphans) != len(want) {
 		t.Fatalf("orphans = %v, want %v", orphans, want)
@@ -121,5 +121,35 @@ func TestNoOrphanIsClaimedWhileAWorktreeHasNoIndex(t *testing.T) {
 	rw.Live = []string{stack.ProjectName("myapp", 1, "feat/x")}
 	if got := rw.orphanVolumes(all); len(got) != 1 || got[0] != "myapp-wt-9-gone_db_data" {
 		t.Fatalf("orphans = %v, want the one nobody owns", got)
+	}
+}
+
+func TestIntraProjectClashesNameBothBranches(t *testing.T) {
+	holders := []portHolder{
+		{Port: 26433, Project: "webshop", Branch: "feat/a", Label: "DB_PORT"},
+		{Port: 26434, Project: "webshop", Branch: "feat/a", Label: "DB_TEST_PORT"},
+		{Port: 26434, Project: "webshop", Branch: "feat/b", Label: "DB_PORT"},
+		{Port: 26435, Project: "webshop", Branch: "feat/b", Label: "DB_TEST_PORT"},
+		{Port: 26434, Project: "other", Branch: "main", Label: "X"}, // cross-project: not this report's
+	}
+	got := intraProjectClashes(holders)
+	if len(got) != 1 {
+		t.Fatalf("expected one line, got %v", got)
+	}
+	for _, want := range []string{"webshop", "26434", "feat/a DB_TEST_PORT", "feat/b DB_PORT"} {
+		if !strings.Contains(got[0], want) {
+			t.Fatalf("want %q in %q", want, got[0])
+		}
+	}
+}
+
+func TestIntraProjectClashesIgnoreOneBranchTwice(t *testing.T) {
+	// The allocator refuses this inside one worktree already; never report it twice.
+	holders := []portHolder{
+		{Port: 26434, Project: "webshop", Branch: "feat/a", Label: "A"},
+		{Port: 26434, Project: "webshop", Branch: "feat/a", Label: "B"},
+	}
+	if got := intraProjectClashes(holders); len(got) != 0 {
+		t.Fatalf("expected nothing, got %v", got)
 	}
 }
