@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"errors"
 	"path/filepath"
 	"strings"
@@ -14,20 +13,14 @@ import (
 // BackupConfig defaults to postgres even without a database, which is how a
 // project with no dump came to be reported as running one.
 func TestDoctorReportsAnEngineOnlyForProjectsWithADump(t *testing.T) {
-	var out bytes.Buffer
-	a := &app{
-		cfg: &config.Config{Projects: map[string]config.Project{
-			"withdump": {Dir: t.TempDir(), Dump: true},
-			"nodump":   {Dir: t.TempDir()},
-		}},
-		cfgPath: filepath.Join(t.TempDir(), "config.json"),
-		backups: t.TempDir(),
-		// Docker and git answer nothing here: the table is the subject.
-		runner: &execx.Fake{Handler: func(execx.Cmd) (execx.Result, error) {
-			return execx.Result{}, errors.New("unavailable")
-		}},
-		out: &out,
-	}
+	cfg := &config.Config{Projects: map[string]config.Project{
+		"withdump": {Dir: t.TempDir(), Dump: true},
+		"nodump":   {Dir: t.TempDir()},
+	}}
+	// Docker and git answer nothing here: the table is the subject.
+	a, _, out := newTestApp(t, cfg, "", func(execx.Cmd) (execx.Result, error) {
+		return execx.Result{}, errors.New("unavailable")
+	})
 
 	cmd := newDoctorCmd(a)
 	if err := cmd.RunE(cmd, nil); err != nil {
@@ -59,25 +52,19 @@ func TestDoctorReportsAnEngineOnlyForProjectsWithADump(t *testing.T) {
 // to drop them: on one machine, 153 of them for 40 worktrees long gone.
 func TestDoctorReportsOrphanImagesAndBuildCache(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "my-app")
-	var out bytes.Buffer
-	a := &app{
-		cfg:     &config.Config{Projects: map[string]config.Project{"myapp": {Dir: dir}}},
-		cfgPath: filepath.Join(t.TempDir(), "config.json"),
-		backups: t.TempDir(),
-		runner: &execx.Fake{Handler: func(c execx.Cmd) (execx.Result, error) {
-			switch line := c.String(); {
-			case strings.Contains(line, "images --format"):
-				return execx.Result{Stdout: "my-app-wt-7-refactor-form-frontend\n" +
-					"my-app-wt-7-refactor-form-worker\n" +
-					"my-app\n" + // the main stack's own image, not a worktree's
-					"postgres\n"}, nil
-			case strings.Contains(line, "buildx du"):
-				return execx.Result{Stdout: "Private:\t19.9GB\nReclaimable:\t57.8GB\nTotal:\t57.8GB\n"}, nil
-			}
-			return execx.Result{}, nil
-		}},
-		out: &out,
-	}
+	cfg := &config.Config{Projects: map[string]config.Project{"myapp": {Dir: dir}}}
+	a, _, out := newTestApp(t, cfg, "", func(c execx.Cmd) (execx.Result, error) {
+		switch line := c.String(); {
+		case strings.Contains(line, "images --format"):
+			return execx.Result{Stdout: "my-app-wt-7-refactor-form-frontend\n" +
+				"my-app-wt-7-refactor-form-worker\n" +
+				"my-app\n" + // the main stack's own image, not a worktree's
+				"postgres\n"}, nil
+		case strings.Contains(line, "buildx du"):
+			return execx.Result{Stdout: "Private:\t19.9GB\nReclaimable:\t57.8GB\nTotal:\t57.8GB\n"}, nil
+		}
+		return execx.Result{}, nil
+	})
 
 	cmd := newDoctorCmd(a)
 	if err := cmd.RunE(cmd, nil); err != nil {
@@ -103,19 +90,13 @@ func TestDoctorReportsOrphanImagesAndBuildCache(t *testing.T) {
 // label never sees them, and a project without a `volumes:` section leaks one
 // per start. doctor can at least count what docker holds that nothing mounts.
 func TestDoctorCountsDanglingAnonymousVolumes(t *testing.T) {
-	var out bytes.Buffer
-	a := &app{
-		cfg:     &config.Config{Projects: map[string]config.Project{}},
-		cfgPath: filepath.Join(t.TempDir(), "config.json"),
-		backups: t.TempDir(),
-		runner: &execx.Fake{Handler: func(c execx.Cmd) (execx.Result, error) {
-			if strings.Contains(c.String(), "dangling=true") && strings.Contains(c.String(), "com.docker.volume.anonymous") {
-				return execx.Result{Stdout: "aaa111\nbbb222\nccc333\n"}, nil
-			}
-			return execx.Result{}, nil
-		}},
-		out: &out,
-	}
+	cfg := &config.Config{Projects: map[string]config.Project{}}
+	a, _, out := newTestApp(t, cfg, "", func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(c.String(), "dangling=true") && strings.Contains(c.String(), "com.docker.volume.anonymous") {
+			return execx.Result{Stdout: "aaa111\nbbb222\nccc333\n"}, nil
+		}
+		return execx.Result{}, nil
+	})
 	cmd := newDoctorCmd(a)
 	if err := cmd.RunE(cmd, nil); err != nil {
 		t.Fatalf("doctor: %v", err)
@@ -134,22 +115,16 @@ func TestDoctorCountsDanglingAnonymousVolumes(t *testing.T) {
 // that branch look managed. doctor is where it has to show.
 func TestDoctorReportsIndicesWithoutAWorktree(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "my-app")
-	var out bytes.Buffer
-	a := &app{
-		cfg: &config.Config{Projects: map[string]config.Project{"myapp": {Dir: dir,
-			WorktreeIndices: map[string]int{"feat/live": 2, "feat/gone": 5, "worktree-curry": 7}}}},
-		cfgPath: filepath.Join(t.TempDir(), "config.json"),
-		backups: t.TempDir(),
-		runner: &execx.Fake{Handler: func(c execx.Cmd) (execx.Result, error) {
-			if strings.Contains(c.String(), "worktree list") {
-				return execx.Result{Stdout: "worktree " + dir + "\nbranch refs/heads/develop\n\n" +
-					"worktree " + dir + "/.worktrees/feat/live\nbranch refs/heads/feat/live\n\n" +
-					"worktree " + dir + "/.claude/worktrees/curry\nbranch refs/heads/worktree-curry\n"}, nil
-			}
-			return execx.Result{}, nil
-		}},
-		out: &out,
-	}
+	cfg := &config.Config{Projects: map[string]config.Project{"myapp": {Dir: dir,
+		WorktreeIndices: map[string]int{"feat/live": 2, "feat/gone": 5, "worktree-curry": 7}}}}
+	a, _, out := newTestApp(t, cfg, "", func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(c.String(), "worktree list") {
+			return execx.Result{Stdout: "worktree " + dir + "\nbranch refs/heads/develop\n\n" +
+				"worktree " + dir + "/.worktrees/feat/live\nbranch refs/heads/feat/live\n\n" +
+				"worktree " + dir + "/.claude/worktrees/curry\nbranch refs/heads/worktree-curry\n"}, nil
+		}
+		return execx.Result{}, nil
+	})
 	cmd := newDoctorCmd(a)
 	if err := cmd.RunE(cmd, nil); err != nil {
 		t.Fatalf("doctor: %v", err)

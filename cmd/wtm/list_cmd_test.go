@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -14,23 +13,15 @@ import (
 // worktree whose HEAD was moved off its branch, by a `git checkout <rev>` there.
 func TestListNamesTheBranchAndTheDetachedHead(t *testing.T) {
 	dir := t.TempDir()
-	var out bytes.Buffer
-	a := &app{
-		cfg: &config.Config{Projects: map[string]config.Project{
-			"myapp": {Dir: dir},
-		}},
-		cfgPath: filepath.Join(t.TempDir(), "config.json"),
-		backups: t.TempDir(),
-		runner: &execx.Fake{Handler: func(c execx.Cmd) (execx.Result, error) {
-			if strings.Contains(c.String(), "worktree list") {
-				return execx.Result{Stdout: "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n" +
-					"worktree " + filepath.Join(dir, ".worktrees", "refactor/x") +
-					"\nHEAD 37a276b48e772823\ndetached\n"}, nil
-			}
-			return execx.Result{}, nil
-		}},
-		out: &out,
-	}
+	cfg := &config.Config{Projects: map[string]config.Project{"myapp": {Dir: dir}}}
+	a, _, out := newTestApp(t, cfg, "", func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(c.String(), "worktree list") {
+			return execx.Result{Stdout: "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n" +
+				"worktree " + filepath.Join(dir, ".worktrees", "refactor/x") +
+				"\nHEAD 37a276b48e772823\ndetached\n"}, nil
+		}
+		return execx.Result{}, nil
+	})
 
 	cmd := newListCmd(a)
 	if err := cmd.RunE(cmd, []string{"myapp"}); err != nil {

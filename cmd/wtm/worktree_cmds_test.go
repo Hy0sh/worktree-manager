@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -32,19 +31,11 @@ func newAllFixture(t *testing.T, in string) *allFixture {
 	if err := os.WriteFile(filepath.Join(dir, "docker-compose.yml"), []byte("services: {}\n"), 0o644); err != nil {
 		t.Fatal(err)
 	}
-	cfgPath := filepath.Join(t.TempDir(), "config.json")
 	cfg := &config.Config{Projects: map[string]config.Project{
 		"myapp": {Dir: dir, WorktreeIndices: map[string]int{"feat/a": 1, "feat/b": 2, "feat/c": 3}},
 	}}
-	data, err := json.Marshal(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(cfgPath, data, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	f := &allFixture{out: &bytes.Buffer{}, dir: dir}
-	f.fake = &execx.Fake{Handler: func(c execx.Cmd) (execx.Result, error) {
+	f := &allFixture{dir: dir}
+	f.app, f.fake, f.out = newTestApp(t, cfg, in, func(c execx.Cmd) (execx.Result, error) {
 		if strings.Contains(c.String(), "worktree list") {
 			return execx.Result{Stdout: "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n" +
 				"worktree " + filepath.Join(dir, ".worktrees", "feat/a") + "\nHEAD aaa\nbranch refs/heads/feat/a\n\n" +
@@ -52,9 +43,7 @@ func newAllFixture(t *testing.T, in string) *allFixture {
 				"worktree " + filepath.Join(dir, ".worktrees", "feat/c") + "\nHEAD ccc\nbranch refs/heads/feat/c\n"}, nil
 		}
 		return execx.Result{}, nil
-	}}
-	f.app = &app{cfg: cfg, cfgPath: cfgPath, backups: t.TempDir(),
-		runner: f.fake, out: f.out, in: strings.NewReader(in)}
+	})
 	return f
 }
 
