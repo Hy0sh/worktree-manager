@@ -5,6 +5,7 @@ package execx
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -78,10 +79,28 @@ func (e *Error) Error() string {
 	if msg == "" && e.Err != nil {
 		msg = e.Err.Error()
 	}
+	if name := MissingBinary(e.Err); name != "" {
+		msg = name + " is not installed, or not in $PATH"
+	}
+	// A command that never started leaves ProcessState nil, and one a signal
+	// killed reports -1: either printed as an exit code would read as success.
+	if e.ExitCode <= 0 {
+		return fmt.Sprintf("`%s` failed: %s", e.Cmd, msg)
+	}
 	return fmt.Sprintf("`%s` failed (exit %d): %s", e.Cmd, e.ExitCode, msg)
 }
 
 func (e *Error) Unwrap() error { return e.Err }
+
+// MissingBinary names the executable a command could not find, or "" for any
+// other failure, so a caller can say where that binary is meant to come from.
+func MissingBinary(err error) string {
+	var lookup *exec.Error
+	if errors.As(err, &lookup) && errors.Is(lookup.Err, exec.ErrNotFound) {
+		return lookup.Name
+	}
+	return ""
+}
 
 // OSRunner is the production runner. Live output goes to the process streams;
 // a command wanting its output elsewhere sets Cmd.Stdout.

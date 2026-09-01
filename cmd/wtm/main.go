@@ -5,15 +5,29 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/spf13/cobra"
+
+	"github.com/Hy0sh/worktree-manager/internal/execx"
 )
 
 func main() {
 	if err := newRootCmd().Execute(); err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
+		reportError(os.Stderr, err)
 		os.Exit(1)
+	}
+}
+
+// reportError adds, under the failure, where a missing binary is meant to come
+// from: on macOS the docker CLI is a symlink into an application bundle, so a
+// lookup failure is what installing or moving OrbStack looks like from here.
+func reportError(w io.Writer, err error) {
+	fmt.Fprintln(w, "error:", err)
+	if execx.MissingBinary(err) == "docker" {
+		fmt.Fprintln(w, "hint: every command touching a stack shells out to the docker CLI, "+
+			"which ships with OrbStack and with Docker Desktop")
 	}
 }
 
