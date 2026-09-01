@@ -83,6 +83,16 @@ func (a *app) resolveOne(args []string) (string, config.Project, string, error) 
 	return name, p, rest[0], nil
 }
 
+// optionsFor is what the commands naming a single branch run on, resolve
+// included: none of them has anything to say about the project it lands in.
+func (a *app) optionsFor(args []string) (worktree.Options, error) {
+	name, p, branch, err := a.resolveOne(args)
+	if err != nil {
+		return worktree.Options{}, err
+	}
+	return a.options(name, p, branch), nil
+}
+
 func (a *app) options(name string, p config.Project, branch string) worktree.Options {
 	return worktree.Options{
 		Name:       name,
@@ -127,6 +137,12 @@ func (a *app) confirmer() func(string) bool {
 		return nil
 	}
 	return func(question string) bool { return confirm(a.in, a.out, question) }
+}
+
+// warnf is what the registry helpers report through, so what they have to say
+// reaches the same writer the command prints on.
+func (a *app) warnf(format string, args ...any) {
+	fmt.Fprintf(a.out, format+"\n", args...)
 }
 
 func (a *app) manager() *backup.Manager {

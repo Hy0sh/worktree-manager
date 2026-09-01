@@ -189,12 +189,12 @@ func askName(p *prompter, current string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		if err := config.ValidateIdentifier("project name", answer); err == nil {
+		err = config.ValidateIdentifier("project name", answer)
+		if err == nil {
 			return answer, nil
-		} else {
-			p.logf("  %v", err)
-			current = ""
 		}
+		p.logf("  %v", err)
+		current = ""
 	}
 }
 
