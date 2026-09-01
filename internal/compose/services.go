@@ -1,11 +1,6 @@
 package compose
 
-import (
-	"os"
-	"sort"
-
-	"gopkg.in/yaml.v3"
-)
+import "sort"
 
 // Services lists the service names declared across the project's compose
 // files, in declaration order, then alphabetically for what the overrides add.
@@ -37,17 +32,9 @@ func Services(dir string) ([]string, error) {
 }
 
 func servicesOf(path string) ([]string, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
+	services, err := servicesMapping(path)
+	if err != nil || services == nil {
 		return nil, err
-	}
-	var doc yaml.Node
-	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return nil, err
-	}
-	services := servicesNode(&doc)
-	if services == nil || services.Kind != yaml.MappingNode {
-		return nil, nil
 	}
 	var names []string
 	for i := 0; i+1 < len(services.Content); i += 2 {

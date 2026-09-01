@@ -1,10 +1,6 @@
 package compose
 
-import (
-	"os"
-
-	"gopkg.in/yaml.v3"
-)
+import "gopkg.in/yaml.v3"
 
 // ServiceImage returns the image a service runs, reading the project's merged
 // compose configuration: an override redefining the service wins.
@@ -22,15 +18,11 @@ func ServiceImage(dir, service string) (string, bool) {
 }
 
 func serviceImageOf(path, service string) (string, bool) {
-	data, err := os.ReadFile(path)
+	services, err := servicesMapping(path)
 	if err != nil {
 		return "", false
 	}
-	var doc yaml.Node
-	if err := yaml.Unmarshal(data, &doc); err != nil {
-		return "", false
-	}
-	img := mapValue(mapValue(servicesNode(&doc), service), "image")
+	img := mapValue(mapValue(services, service), "image")
 	if img == nil || img.Kind != yaml.ScalarNode || img.Value == "" {
 		return "", false
 	}

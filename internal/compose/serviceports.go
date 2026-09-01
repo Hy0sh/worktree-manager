@@ -37,11 +37,33 @@ var (
 	hostIP = regexp.MustCompile(`^[\d.]+$`)
 )
 
-// ServicePorts lists the published ports per service, from that one file
-// only: merging across files is MergedServicePorts' job. The file is walked
-// as a YAML tree rather than decoded into structs, so compose's own tags
-// (!override, !reset) and anchors pass through instead of failing the parse.
+// ServicePorts lists the published ports per service, from that one file only:
+// merging across files is MergedServicePorts' job.
 func ServicePorts(path string) ([]ServicePort, error) {
+	services, err := servicesMapping(path)
+	if err != nil || services == nil {
+		return nil, err
+	}
+	var out []ServicePort
+	for i := 0; i+1 < len(services.Content); i += 2 {
+		name := services.Content[i].Value
+		ports := mapValue(deref(services.Content[i+1]), "ports")
+		if ports == nil || ports.Kind != yaml.SequenceNode {
+			continue
+		}
+		for _, entry := range ports.Content {
+			if sp, ok := parsePortNode(name, deref(entry)); ok {
+				out = append(out, sp)
+			}
+		}
+	}
+	return out, nil
+}
+
+// servicesMapping is one file's `services:` block, nil when it declares none.
+// The file is walked as a YAML tree rather than decoded into structs, so
+// compose's own tags (!override, !reset) and anchors pass through.
+func servicesMapping(path string) (*yaml.Node, error) {
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -50,38 +72,15 @@ func ServicePorts(path string) ([]ServicePort, error) {
 	if err := yaml.Unmarshal(data, &doc); err != nil {
 		return nil, err
 	}
-	var out []ServicePort
-	walkPorts(&doc, func(service string, entry *yaml.Node) {
-		if sp, ok := parsePortNode(service, entry); ok {
-			out = append(out, sp)
-		}
-	})
-	return out, nil
-}
-
-func servicesNode(doc *yaml.Node) *yaml.Node {
-	root := deref(doc)
+	root := deref(&doc)
 	if root.Kind == yaml.DocumentNode && len(root.Content) > 0 {
 		root = deref(root.Content[0])
 	}
-	return mapValue(root, "services")
-}
-
-func walkPorts(doc *yaml.Node, visit func(service string, entry *yaml.Node)) {
-	services := servicesNode(doc)
+	services := mapValue(root, "services")
 	if services == nil || services.Kind != yaml.MappingNode {
-		return
+		return nil, nil
 	}
-	for i := 0; i+1 < len(services.Content); i += 2 {
-		name := services.Content[i].Value
-		ports := mapValue(deref(services.Content[i+1]), "ports")
-		if ports == nil || ports.Kind != yaml.SequenceNode {
-			continue
-		}
-		for _, entry := range ports.Content {
-			visit(name, deref(entry))
-		}
-	}
+	return services, nil
 }
 
 func mapValue(n *yaml.Node, key string) *yaml.Node {
@@ -153,9 +152,8 @@ func PortLabel(s ServicePort) string {
 }
 
 // MergedServicePorts reads the base file then lets the project's own override
-// win, service by service. A project that already remaps its ports on purpose
-// (to avoid a clash on the machine) must keep that mapping as the reference,
-// otherwise rebasing from the base file would silently undo it.
+// win, service by service: a project already remapping a port on purpose must
+// keep that mapping, or rebasing from the base file would silently undo it.
 func MergedServicePorts(dir string) ([]ServicePort, error) {
 	files, err := Files(dir)
 	if err != nil {
