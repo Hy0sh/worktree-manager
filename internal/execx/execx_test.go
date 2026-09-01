@@ -101,3 +101,29 @@ func TestFailureNamesACommandAShellTakesBack(t *testing.T) {
 		t.Fatalf("error should quote the command, got %q", err.Error())
 	}
 }
+
+// A command that never started has no exit status: reporting the zero value of
+// the field would read as a success.
+func TestFailureBeforeStartNamesTheMissingBinary(t *testing.T) {
+	_, err := OSRunner{}.Run(context.Background(), Cmd{Name: "wtm-no-such-binary", Args: []string{"down"}})
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+	if strings.Contains(err.Error(), "exit") {
+		t.Fatalf("error should not claim an exit code, got %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "wtm-no-such-binary is not installed") {
+		t.Fatalf("error should name the missing binary, got %q", err.Error())
+	}
+}
+
+func TestMissingBinaryOnlyAnswersForALookupFailure(t *testing.T) {
+	_, err := OSRunner{}.Run(context.Background(), Cmd{Name: "wtm-no-such-binary"})
+	if got := MissingBinary(err); got != "wtm-no-such-binary" {
+		t.Fatalf("MissingBinary = %q, want the binary name", got)
+	}
+	_, err = OSRunner{}.Run(context.Background(), Cmd{Name: "sh", Args: []string{"-c", "exit 3"}})
+	if got := MissingBinary(err); got != "" {
+		t.Fatalf("MissingBinary = %q for a command that ran and failed", got)
+	}
+}

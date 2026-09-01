@@ -8,6 +8,13 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ### Fixed
 
+- A command wtm could not even start no longer claims to have exited 0. The
+  exit code is read from the process, and a lookup failure never made one, so
+  `docker` missing from `$PATH` was reported as a success code next to the
+  word "failed". Such a failure now names the binary rather than an exit
+  status, and a missing `docker` says where the CLI comes from: on macOS it is
+  a symlink into an application bundle, so it disappears while OrbStack or
+  Docker Desktop is being installed or moved.
 - The memory warning no longer sends the reader to Docker Desktop's RAM
   setting. Every VM-backed engine holds a budget of its own, under another name
   and in another place, so an OrbStack or Colima user was pointed at an
