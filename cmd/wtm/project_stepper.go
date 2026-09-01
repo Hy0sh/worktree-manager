@@ -76,9 +76,9 @@ func askBaseBranch(p *prompter, current, inherited string, u *config.ProjectUpda
 	return nil
 }
 
-// askBackup works on the project's raw backup section, not the defaulted view:
-// an unset engine must fall back to what the compose image says, not to the
-// postgres default.
+// askBackup only runs when the backup is on: a migration command a project will
+// never run is noise. It reads the raw backup section, not the defaulted view,
+// so an unset engine falls back to the compose image and not to postgres.
 func askBackup(p *prompter, dir string, project config.Project, u *config.ProjectUpdate) error {
 	current := project.BackupConfig()
 	if services, err := compose.Services(dir); err == nil && len(services) > 0 {

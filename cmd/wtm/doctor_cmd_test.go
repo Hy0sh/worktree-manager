@@ -110,9 +110,8 @@ func TestDoctorCountsDanglingAnonymousVolumes(t *testing.T) {
 }
 
 // An index whose branch has no worktree any more is what a removal outside
-// `wtm remove` leaves behind. It pushes every new worktree further out, and
-// with adoption keyed on recorded indices it also makes a foreign worktree on
-// that branch look managed. doctor is where it has to show.
+// `wtm remove` leaves behind: it pushes every new worktree further out, and
+// makes a foreign worktree on that branch look managed. doctor has to show it.
 func TestDoctorReportsIndicesWithoutAWorktree(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "my-app")
 	cfg := &config.Config{Projects: map[string]config.Project{"myapp": {Dir: dir,

@@ -285,10 +285,9 @@ func TestStepperStopsWhenTheInputIsClosed(t *testing.T) {
 	}
 }
 
-// A project that names no base branch of its own must keep inheriting: the
-// stepper used to offer the inherited value as its default and record it back,
-// which pinned every project to whatever applied the day it was registered and
-// left default_base_branch applying to nobody.
+// A project that names no base branch of its own must keep inheriting: offering
+// the inherited value as a default and recording it back pinned every project to
+// whatever applied the day it was registered, leaving the setting for nobody.
 func TestStepperKeepsTheBaseBranchInheritedWhenNothingIsTyped(t *testing.T) {
 	dir := repoWithCompose(t)
 	var out bytes.Buffer

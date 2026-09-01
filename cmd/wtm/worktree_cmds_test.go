@@ -15,9 +15,8 @@ import (
 )
 
 // allFixture registers a project holding three worktrees, each with a recorded
-// index, which is what `stop` and `remove` need to name a compose project. The
-// middle one is what makes the fixture worth three: a failure there must leave
-// the first and the last handled all the same.
+// index, which is what `stop` and `remove` need to name a compose project. Three
+// because a failure on the middle one must leave the others handled all the same.
 type allFixture struct {
 	app  *app
 	out  *bytes.Buffer
@@ -139,8 +138,7 @@ func TestRemoveAllYesRemovesEveryWorktree(t *testing.T) {
 
 // --exec enters the application container, and --no-start leaves none running.
 // Discovering that after the worktree, the fetch and the restore is a warning
-// nobody wanted: the two flags are refused together, and the message names the
-// flag that does work without a stack.
+// nobody wanted, so the refusal comes first and names --run.
 func TestCreateRefusesExecWithoutAStack(t *testing.T) {
 	f := newAllFixture(t, "")
 	cmd := newCreateCmd(f.app)
@@ -162,10 +160,7 @@ func TestCreateRefusesExecWithoutAStack(t *testing.T) {
 
 // An automation that allocated a terminal without anybody behind it would hang
 // on the memory question, so both commands that can ask must offer the way out.
-// It is named after what it overrides and carries no shorthand on purpose: a
-// generic `-y` is the flag one passes out of habit, which is how a caller ends
-// up answering a question it never read, and how a confirmation added later
-// would be swallowed by callers that never agreed to it.
+// Why it has no shorthand is on bindIgnoreMemory.
 func TestCreateAndStartOfferAWayOutOfTheMemoryQuestion(t *testing.T) {
 	f := newAllFixture(t, "")
 	for _, cmd := range []*cobra.Command{newCreateCmd(f.app), newStartCmd(f.app)} {
@@ -186,9 +181,8 @@ func TestCreateAndStartOfferAWayOutOfTheMemoryQuestion(t *testing.T) {
 }
 
 // pflag does not treat `--` specially in the value of a long flag, so a caller
-// reaching for the argv form of `wtm exec` puts a flag, or the separator
-// itself, into the shell line: `--exec --no-start` left noStart false and slid
-// the string "--no-start" past the guard that refuses those two together.
+// reaching for the argv form of `wtm exec` puts a flag, or the separator itself,
+// into the shell line: `--exec --no-start` left noStart false.
 func TestCreateRefusesAFlagAsAShellLine(t *testing.T) {
 	f := newAllFixture(t, "")
 	for _, args := range [][]string{
@@ -215,9 +209,8 @@ func TestCreateRefusesAFlagAsAShellLine(t *testing.T) {
 }
 
 // resolve hands back every argument when the first is not a registered project,
-// and the commands naming one branch read only the first: `wtm stop myap
-// feat/x` stopped a branch called `myap`, then complained that no such worktree
-// existed while listing the one that had been asked for.
+// and the commands naming one branch read only the first: `wtm stop myap feat/x`
+// stopped a branch called `myap`, then said no such worktree existed.
 func TestATypoedProjectNameIsNotTakenForABranch(t *testing.T) {
 	f := newAllFixture(t, "")
 	commands := map[string]func(*app) *cobra.Command{

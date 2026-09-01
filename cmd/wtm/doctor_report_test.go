@@ -95,9 +95,8 @@ func TestOrphanImagesKeepsWhatALiveWorktreeOwns(t *testing.T) {
 }
 
 // Compose sanitises the project name it builds from the repository directory,
-// so a directory whose name is not already lowercase and alphanumeric never
-// matched the prefix doctor looked for: it reported zero orphan, silently, and
-// the volumes squatting the indices stayed invisible.
+// so a directory not already lowercase and alphanumeric never matched the prefix
+// doctor looked for: it reported zero orphan, silently.
 func TestOrphanVolumesMatchTheNameComposeActuallyBuilds(t *testing.T) {
 	all := []string{"myapp-wt-1-feat-x_db_data", "myapp-wt-2-old_db_data", "unrelated_data"}
 	live := []string{stack.ProjectName("MyApp", 1, "feat/x")}
@@ -109,8 +108,7 @@ func TestOrphanVolumesMatchTheNameComposeActuallyBuilds(t *testing.T) {
 
 // A worktree whose index was never recorded cannot be turned into the compose
 // project name that would claim its volumes, so it looked orphan. doctor prints
-// `docker volume rm` lines: guessing wrong here loses a running worktree's
-// database.
+// `docker volume rm` lines: guessing wrong loses a live worktree its database.
 func TestNoOrphanIsClaimedWhileAWorktreeHasNoIndex(t *testing.T) {
 	all := []string{"myapp-wt-1-feat-x_db_data", "myapp-wt-9-gone_db_data"}
 	rw := repoWorktrees{Repo: "myapp", Live: nil, Unindexed: []string{"feat/x"}}

@@ -46,7 +46,7 @@ func (a *app) completePosition(args []string, branches func(string) []string) ([
 
 // completeCreate answers each position of `create` in turn: the projects, then
 // nothing for the branch being created, then the bases and the flags. Once a
-// base is there --from-here leaves the list, which is where it is refused too.
+// base is there --from-here leaves it: never offer what the command rejects.
 func (a *app) completeCreate(cmd *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
 	if !a.ensureLoaded() {
 		return nil, cobra.ShellCompDirectiveNoFileComp

@@ -78,9 +78,9 @@ type repoWorktrees struct {
 	// created before indices were recorded or started while docker was down.
 	// Their compose project name cannot be derived, so none can be called orphan.
 	Unindexed []string
-	// Stale are branches the registry holds an index for but git holds no
-	// worktree for: a removal made outside wtm, or before remove released it.
-	// Each also makes a foreign worktree on that branch read as managed.
+	// Stale are branches with a recorded index and no worktree, left by a removal
+	// outside wtm. Each pushes new worktrees one index further out, and makes a
+	// foreign worktree on that branch read as managed.
 	Stale []string
 }
 

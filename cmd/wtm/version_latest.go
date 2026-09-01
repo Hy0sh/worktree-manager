@@ -74,7 +74,7 @@ func olderVersion(local, published string) bool {
 }
 
 // semverFields reads the numbers of a version, and whether a pre-release suffix
-// follows them. `go install ...@main` stamps "v0.8.1-0.20260828143234-4c0fbbb",
+// follows them. `go install ...@main` stamps "v0.8.1-0.20260828143234-4c0fbbb36bed",
 // which split on dots alone read as four fields and never compared as behind.
 func semverFields(v string) (out [3]int, pre bool, ok bool) {
 	// The toolchain stamps a build made over local edits "v0.4.8+dirty", and
