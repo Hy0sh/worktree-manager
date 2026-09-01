@@ -25,10 +25,9 @@ type Options struct {
 	Base         string
 	NoStart      bool
 	NoPostCreate bool // skip the project's post_create on this create
-	// RunAfter and ExecAfter are the commands of `create --run` and
-	// `create --exec`, played once the create is done: the first on the host
-	// from the worktree, the second in the application container. Both are
-	// shell lines and never persisted, unlike post_create.
+	// RunAfter and ExecAfter are the commands of `create --run` and `create
+	// --exec`, played once the create is done: the first on the host from the
+	// worktree, the second in the container. Shell lines, never persisted.
 	RunAfter   string
 	ExecAfter  string
 	Force      bool // remove despite uncommitted tracked changes
@@ -38,15 +37,12 @@ type Options struct {
 	Stack      *stack.Client
 	Resolver   *index.Resolver // resolves and records each branch's stable index
 	// Confirm asks a yes-or-no question, and is nil when nobody is there to
-	// answer. The memory advisory is its only caller: it rests on an average
-	// over the running stacks, which predicts neither a light stack nor a heavy
-	// one, so it is worth a question to a person and never worth failing the
-	// create of a script or an agent.
+	// answer. Its only caller is the memory advisory, an average over the
+	// running stacks: worth a question, never worth failing a create on.
 	Confirm func(question string) bool
-	// BaseFromHere says Base came from `create --from-here` rather than from
-	// the project or the command line. An existing branch is checked out as-is
-	// and ignores the base, so the flag would quietly do nothing there, and
-	// that combination is refused rather than logged.
+	// BaseFromHere says Base came from `create --from-here` rather than from the
+	// project or the command line. An existing branch is checked out as-is and
+	// ignores the base, so that combination is refused rather than logged.
 	BaseFromHere bool
 	// RenameTo is the name an adopted branch takes. Adoption is the only
 	// moment a rename is free: the compose project name carries the branch, so
@@ -145,9 +141,7 @@ func provisionAndStart(ctx context.Context, o Options, dest string, mode provisi
 
 // Adopt gives a worktree wtm did not create everything it gives one it did: a
 // stable index, provisioned .env files and compose overrides, a restored
-// snapshot and a stack. The worktree stays where it is, because the whole point
-// is a directory somebody else opened, a `claude -w` one at the head of the
-// list, possibly with an agent working in it right now.
+// snapshot and a stack. It stays where it is: an agent may be working in it.
 func Adopt(ctx context.Context, o Options) error {
 	wt, err := adoptTarget(ctx, &o)
 	if err != nil {
@@ -179,10 +173,7 @@ func Adopt(ctx context.Context, o Options) error {
 		return errors.New("cancelled: nothing was written (pass -y to answer for a script)")
 	}
 	if o.RenameTo != "" {
-		if _, err := o.Runner.Run(ctx, execx.Cmd{
-			Name: "git",
-			Args: []string{"-C", o.Project.Dir, "branch", "-m", wt.Branch, o.RenameTo},
-		}); err != nil {
+		if _, err := o.git(ctx, "branch", "-m", wt.Branch, o.RenameTo); err != nil {
 			return fmt.Errorf("renaming %s to %s: %w", wt.Branch, o.RenameTo, err)
 		}
 		// git moves the worktree's HEAD along with the branch, so everything
@@ -240,13 +231,9 @@ func adoptTarget(ctx context.Context, o *Options) (stack.Worktree, error) {
 		cur.Path, o.Project.Dir)
 }
 
-// removeArtifacts takes wtm's own files back out of a checkout it never owned.
-// Only what it can prove is its own: the two generated compose files, the two
-// symlinks, and the delimited port block. A copied .env or compose override is
-// indistinguishable from a file the worktree already had, and a file-based
-// database is data, so both stay. None of this unblocks anything, git already
-// tolerates them all through info/exclude; it is about not leaving a dead port
-// block behind in a worktree that outlives its stack.
+// removeArtifacts takes back only what wtm can prove is its own: the generated
+// compose files, the symlinks, the port block. A copied .env or a file-based
+// database is the worktree's own, and a dead port block is worse than none.
 func removeArtifacts(o Options, dest string) {
 	for _, name := range []string{portsOverride, snapshotOverride, snapshotLink, gitContainerLink} {
 		if err := os.Remove(filepath.Join(dest, name)); err != nil && !os.IsNotExist(err) {
@@ -271,8 +258,7 @@ func sameDir(a, b string) bool {
 
 // Start brings an existing worktree's stack back up. Without it, restarting a
 // stopped worktree means calling docker compose with the index wtm derives,
-// which is
-// exactly the internal knowledge this tool exists to hide.
+// which is exactly the internal knowledge this tool exists to hide.
 func Start(ctx context.Context, o Options) error {
 	wt, err := o.Stack.FindByBranch(ctx, o.Branch)
 	if err != nil {
@@ -322,12 +308,8 @@ func Remove(ctx context.Context, o Options) error {
 		return err
 	}
 	// Checked before anything is taken down: a refusal must leave the worktree
-	// exactly as it was, stack included. Only tracked changes are work worth
-	// protecting; git refuses to remove a worktree holding any untracked file,
-	// which this tool always put there, so the removal below forces past those.
-	// An adopted worktree is spared the whole question: its checkout stays, so
-	// there is nothing to protect it from, and refusing over the uncommitted
-	// work a worktree in use always holds would make the command unusable.
+	// as it was, stack included. An adopted worktree is spared, its checkout
+	// stays; the removal below forces past the untracked files wtm laid down.
 	if !o.Force && wt.UnderRoot {
 		if wt.Locked {
 			return fmt.Errorf("worktree %s is locked%s: unlock it (`git -C %s worktree unlock %s`), "+

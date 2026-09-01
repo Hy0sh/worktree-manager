@@ -88,11 +88,9 @@ func TestStopUsesResolvedIndex(t *testing.T) {
 
 func TestStopWithoutAnyRecordedStackIsANoOp(t *testing.T) {
 	f := newFixture(t)
-	// The branch exists as a worktree but never started a stack and docker
-	// has no trace of it — and its git position is squatted by another
-	// branch's debris, so the fallback must not fire either. The label is
-	// built with the real naming function because the fixture's repo name is
-	// a temp directory, not a fixed string.
+	// The branch never started a stack and docker has no trace of it, and its
+	// git position is squatted by another branch's debris, so the fallback must
+	// not fire either. The fixture's repo name is a temp dir, hence ProjectName.
 	f.dockerLabels = []string{stack.ProjectName(filepath.Base(f.root), 1, "someone-else")}
 	// feat/x is listed at position 1 by the fixture's porcelain output.
 	if err := Stop(context.Background(), f.opts("feat/x")); err != nil {

@@ -19,42 +19,36 @@ import (
 // project. Empty on a stack that never came up, which is how a first start is
 // told from a restart, and on an unreachable docker.
 func stackVolumes(ctx context.Context, o Options, wt stack.Worktree) []string {
-	res, err := o.Runner.Run(ctx, execx.Cmd{
-		Name: "docker",
-		Args: []string{"volume", "ls", "-q", "--filter", "label=com.docker.compose.project=" + o.projectName(wt)},
-	})
-	if err != nil {
-		return nil
-	}
-	return strings.Fields(res.Stdout)
+	return labelled(ctx, o, wt, "volume", "ls", "-q")
 }
 
 // removeVolumes drops the stack's volumes once the worktree is gone. `docker
 // compose down`, which stop runs, deliberately keeps them: without this
 // every removed worktree leaves its database behind forever.
 func removeVolumes(ctx context.Context, o Options, wt stack.Worktree) {
-	volumes := stackVolumes(ctx, o, wt)
-	if len(volumes) == 0 {
-		return
-	}
-	project := o.projectName(wt)
-	if _, err := o.Runner.Run(ctx, execx.Cmd{
-		Name: "docker",
-		Args: append([]string{"volume", "rm"}, volumes...),
-	}); err != nil {
-		o.logf("warning: %d volume(s) of %s could not be removed: %v", len(volumes), project, err)
-		return
-	}
-	o.logf("%d volume(s) removed (%s)", len(volumes), project)
+	removeLabelled(ctx, o, wt, "volume", stackVolumes(ctx, o, wt), []string{"volume", "rm"})
 }
 
 // stackImages lists the images compose built for this stack. Compose labels
 // what it builds with the project name; a pulled image carries no such label,
 // so the postgres the main stack also runs can never be caught here.
 func stackImages(ctx context.Context, o Options, wt stack.Worktree) []string {
+	return labelled(ctx, o, wt, "images", "-q")
+}
+
+// removeImages drops what the stack built once the worktree is gone. `docker
+// compose down` keeps images as it keeps volumes, and a stack builds its own
+// copy of every service image: without this each removal leaves gigabytes.
+func removeImages(ctx context.Context, o Options, wt stack.Worktree) {
+	removeLabelled(ctx, o, wt, "image", stackImages(ctx, o, wt), []string{"rmi"})
+}
+
+// labelled runs a docker listing filtered on this stack's compose project, and
+// answers nothing at all when docker cannot be reached.
+func labelled(ctx context.Context, o Options, wt stack.Worktree, args ...string) []string {
 	res, err := o.Runner.Run(ctx, execx.Cmd{
 		Name: "docker",
-		Args: []string{"images", "-q", "--filter", "label=com.docker.compose.project=" + o.projectName(wt)},
+		Args: append(args, "--filter", "label=com.docker.compose.project="+o.projectName(wt)),
 	})
 	if err != nil {
 		return nil
@@ -62,24 +56,22 @@ func stackImages(ctx context.Context, o Options, wt stack.Worktree) []string {
 	return strings.Fields(res.Stdout)
 }
 
-// removeImages drops what the stack built once the worktree is gone. `docker
-// compose down` keeps images as it keeps volumes, and a worktree stack builds
-// its own copy of every service image under its own project name: without this
-// every removed worktree leaves gigabytes behind that nothing ever reuses.
-func removeImages(ctx context.Context, o Options, wt stack.Worktree) {
-	images := stackImages(ctx, o, wt)
-	if len(images) == 0 {
+// removeLabelled drops the ids one of those listings returned. A failure is a
+// warning and not an error: the worktree is gone either way, and what is left
+// behind costs disk space and nothing else.
+func removeLabelled(ctx context.Context, o Options, wt stack.Worktree, noun string, ids, rm []string) {
+	if len(ids) == 0 {
 		return
 	}
 	project := o.projectName(wt)
 	if _, err := o.Runner.Run(ctx, execx.Cmd{
 		Name: "docker",
-		Args: append([]string{"rmi"}, images...),
+		Args: append(rm, ids...),
 	}); err != nil {
-		o.logf("warning: %d image(s) of %s could not be removed: %v", len(images), project, err)
+		o.logf("warning: %d %s(s) of %s could not be removed: %v", len(ids), noun, project, err)
 		return
 	}
-	o.logf("%d image(s) removed (%s)", len(images), project)
+	o.logf("%d %s(s) removed (%s)", len(ids), noun, project)
 }
 
 func start(ctx context.Context, o Options, dest string) error {
@@ -89,10 +81,9 @@ func start(ctx context.Context, o Options, dest string) error {
 		o.logf("no compose file in this project: no stack to start, the worktree is ready")
 		return nil
 	}
-	// Advisory only: the measurement can fail for a dozen harmless reasons and
-	// the user knows their machine better than an extrapolation does. Which is
-	// why a person is asked rather than refused, and a script is not asked at
-	// all: an average over the running stacks is not a fact worth failing on.
+	// Advisory only: an average over the running stacks is not a fact worth
+	// failing on, so a person is asked rather than refused, and a script is not
+	// asked at all.
 	if u, err := dockermem.Read(ctx, o.Runner); err == nil {
 		if msg := u.Warning(); msg != "" {
 			o.logf("%s", msg)

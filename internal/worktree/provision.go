@@ -72,9 +72,8 @@ func provision(ctx context.Context, o Options, dest string, mode provisionMode) 
 }
 
 // linkGitContainer works around VirtioFS on macOS: in a linked worktree .git is
-// a pointer file, which docker refuses to bind-mount onto /app/.git. The main
-// repository needs its own link too, because the compose override copied into
-// the worktree references ./.git-container on both sides.
+// a pointer file docker refuses to bind-mount onto /app/.git. The main repository
+// needs one too: the copied compose override names ./.git-container on both sides.
 func linkGitContainer(ctx context.Context, o Options, dest string) error {
 	for _, target := range []struct{ repo, link string }{
 		{dest, filepath.Join(dest, gitContainerLink)},
@@ -109,10 +108,9 @@ func linkSnapshotDir(o Options, dest string) error {
 	return forceSymlink(target, filepath.Join(dest, snapshotLink))
 }
 
-// forceSymlink is `ln -sfn` restrained to what it may replace: a symlink, or
-// the empty directory tree Docker materialises at the source of a missing
-// bind-mount. A path holding real content is a conflict for the user to
-// resolve, not something to delete.
+// forceSymlink is `ln -sfn` restrained to what it may replace: a symlink, or the
+// empty directory tree Docker materialises at the source of a missing bind-mount.
+// Real content is a conflict for the user to resolve, not something to delete.
 func forceSymlink(target, link string) error {
 	info, err := os.Lstat(link)
 	switch {

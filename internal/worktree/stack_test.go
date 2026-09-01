@@ -21,10 +21,9 @@ func TestRemoveDropsTheStackVolumes(t *testing.T) {
 		// `-q` is what tells the scoped listing from the label sweep the index
 		// resolver does, which the old stub caught too.
 		if strings.Contains(c.String(), "volume ls -q") {
-			// The label filter is what tells this stack's volumes from every
-			// volume on the machine, including the main stack's database. It is
-			// the only thing standing between `wtm remove` and someone else's
-			// data, and nothing held it.
+			// The label filter tells this stack's volumes from every volume on
+			// the machine, the main stack's database included: the only thing
+			// between `wtm remove` and someone else's data, and nothing held it.
 			want := "--filter label=com.docker.compose.project=" +
 				stack.ProjectName(filepath.Base(f.root), 1, "feat/x")
 			if !strings.Contains(c.String(), want) {
@@ -102,8 +101,7 @@ func TestCreateWarnsAboutMemoryBeforeStartingTheStack(t *testing.T) {
 
 // fullMachine makes the memory measurement report a machine with no room for
 // another stack. The total is a gibibyte, which no machine running this suite
-// has, so the daemon never looks like it shares the local kernel and the
-// measure stays the sum of the containers.
+// has, so the daemon never looks like it shares the local kernel.
 func fullMachine(f *fixture) {
 	inner := f.fake.Handler
 	f.fake.Handler = func(c execx.Cmd) (execx.Result, error) {
@@ -162,10 +160,9 @@ func TestCreateAsksNothingWhenThereIsRoom(t *testing.T) {
 	}
 }
 
-// Calling off the stack on memory used to lose the project's post_create and
-// the create's own --exec without a word: both are played by afterCreate, which
-// that path skips. `wtm start` does not replay post_create either, so the way
-// back has to be named here or nowhere.
+// Calling off the stack on memory used to lose post_create and --exec without a
+// word: afterCreate plays both, and that path skips it. `wtm start` does not
+// replay post_create either, so the way back is named here or nowhere.
 func TestCallingOffTheStackStillNamesWhatWasNotPlayed(t *testing.T) {
 	f := newFixture(t)
 	fullMachine(f)

@@ -51,10 +51,8 @@ func TestCreateListsServiceEndpointsAfterStart(t *testing.T) {
 }
 
 // The port block in the worktree's own .env is the whole isolation mechanism,
-// and no test reached it: the fixture answered every `ls-files` successfully,
-// so git looked like it versioned .env and wtm took the branch that writes
-// nothing. Without this, the block could stop being written and the suite would
-// stay green while every new worktree kept the main stack's ports.
+// and no test reached it: the fixture answered every `ls-files` successfully, so
+// git looked like it versioned .env and wtm took the branch that writes nothing.
 func TestCreateWritesTheAllocatedPortsIntoTheWorktreeEnv(t *testing.T) {
 	f := newFixture(t)
 	if err := Create(context.Background(), f.opts("feat/x")); err != nil {

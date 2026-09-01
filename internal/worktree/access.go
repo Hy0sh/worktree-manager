@@ -81,9 +81,8 @@ func runAfter(ctx context.Context, o Options) {
 		return
 	}
 	// The index was allocated by the start that just happened, so it is in the
-	// registry by now, but not in the copy of the project this call was given.
-	// Nothing allocated one under --no-start, and a command working on the
-	// files has no stack to be pointed at anyway.
+	// registry but not in the copy of the project this call was given. Under
+	// --no-start nothing allocated one, and a host command needs no stack.
 	if !o.NoStart && hasCompose(o.Project.Dir) {
 		if err := o.resolveIndex(ctx, &wt, index.MustExist); err != nil {
 			o.logf("warning: the compose environment is not set: %v", err)
@@ -97,21 +96,16 @@ func runAfter(ctx context.Context, o Options) {
 	}
 }
 
-// composeEnv is what makes a project's own `docker compose` line address the
-// worktree's stack instead of a stack named after the directory it runs from.
-// The file list matters as much as the project: the overrides wtm generates are
-// not named `override`, so compose would load neither the port remapping nor
-// the snapshot mount. A `-f` the command passes itself still wins, which is
-// compose's own precedence. Nothing is set for a project without a stack.
+// composeEnv makes a project's own `docker compose` line address the worktree's
+// stack instead of one named after the directory it runs from. The file list
+// counts too: wtm's overrides are not named `override`, so compose skips them.
 func composeEnv(o Options, wt stack.Worktree) []string {
 	if !hasCompose(o.Project.Dir) {
 		return nil
 	}
-	// The index comes from the registry and not from the resolver: `wtm run`
-	// runs on the host, must work with docker stopped, and a recorded index is
-	// exactly what says a stack was once started here. A caller holding a
-	// freshly resolved one passes it in, the registry having nothing to say
-	// about a stack started seconds ago by this very process.
+	// The registry and not the resolver: `wtm run` works with docker stopped,
+	// and a recorded index is what says a stack was once started here. A caller
+	// holding a freshly resolved one passes it in instead.
 	if wt.Index <= 0 {
 		wt.Index = o.Project.WorktreeIndices[o.Branch]
 	}

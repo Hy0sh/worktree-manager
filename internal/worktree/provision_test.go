@@ -97,10 +97,9 @@ func TestForceSymlinkNamesTheOffendingFile(t *testing.T) {
 	}
 }
 
-// A checkout can lay a symlink down where a copy lands (a branch tracking
-// .env as a link, even one escaping the worktree): writing through it would
-// put the developer's env values at a path the branch chose. The copy must
-// replace the link with the worktree's own regular file.
+// A checkout can lay a symlink down where a copy lands (a branch tracking .env
+// as a link, even one escaping the worktree): writing through it would put the
+// developer's env values at a path the branch chose, so the copy replaces it.
 func TestCopyEnvFilesNeverWritesThroughADestinationSymlink(t *testing.T) {
 	root, dest := t.TempDir(), t.TempDir()
 	mustWrite(t, filepath.Join(root, ".env"), "SECRET=1")
