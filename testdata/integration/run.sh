@@ -5,6 +5,8 @@ set -euo pipefail
 WTM=${WTM:-./wtm}
 HERE=$(cd "$(dirname "$0")" && pwd)
 export WTM_CONFIG_DIR=$(mktemp -d)
+create_two_out=""
+trap 'rm -rf "$WTM_CONFIG_DIR" "$create_two_out"' EXIT
 fail() { echo "FAIL: $*" >&2; exit 1; }
 
 cd "$HERE" && git init -q . 2>/dev/null || true
@@ -24,11 +26,19 @@ grep -q "index 2 skipped" "$create_two_out" || fail "create did not report skipp
 $WTM list fx
 $WTM list fx | grep -q "^3 *it/two" || fail "index 2 must have been skipped for its port clash: it/two should be at index 3"
 
-port1=$(docker port "$(docker ps -q --filter label=com.docker.compose.project=integration-wt-1-it-one --filter label=com.docker.compose.service=db)" 5432 | head -1)
+db1_cid=$(docker ps -q --filter label=com.docker.compose.project=integration-wt-1-it-one --filter label=com.docker.compose.service=db)
+[[ -n "$db1_cid" ]] || fail "no db container for it/one (project integration-wt-1-it-one)"
+port1=$(docker port "$db1_cid" 5432 | head -1)
 [[ "$port1" == 127.0.0.1:* ]] || fail "db must bind on 127.0.0.1, got $port1"
-api1=$(docker port "$(docker ps -q --filter label=com.docker.compose.project=integration-wt-1-it-one --filter label=com.docker.compose.service=api)" 8099 | head -1 | cut -d: -f2)
+
+api1_cid=$(docker ps -q --filter label=com.docker.compose.project=integration-wt-1-it-one --filter label=com.docker.compose.service=api)
+[[ -n "$api1_cid" ]] || fail "no api container for it/one (project integration-wt-1-it-one)"
+api1=$(docker port "$api1_cid" 8099 | head -1 | cut -d: -f2)
 for i in $(seq 1 30); do curl -sf "http://localhost:$api1/widgets" | grep -q from-migration && break; sleep 2; done
-curl -sf "http://localhost:$api1/widgets" | grep -q from-migration || fail "the worktree did not come up on the restored dump"
+if ! curl -sf "http://localhost:$api1/widgets" | grep -q from-migration; then
+  docker compose -p integration-wt-1-it-one logs --tail=50 api
+  fail "the worktree did not come up on the restored dump"
+fi
 
 $WTM remove fx it/one
 $WTM remove fx it/two
