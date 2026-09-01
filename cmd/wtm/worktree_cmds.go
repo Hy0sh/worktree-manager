@@ -11,10 +11,9 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// bindIgnoreMemory names what it overrides and carries no shorthand on purpose:
-// a generic -y is the flag one passes out of habit, which is how a caller ends
-// up answering a question it never read. start takes it alone; create and adopt
-// take it through afterFlags.
+// bindIgnoreMemory gives the three commands that can ask about memory one flag,
+// named after what it overrides and with no shorthand: a generic -y is the one
+// passed out of habit, which is how a caller answers a question it never read.
 func bindIgnoreMemory(cmd *cobra.Command, into *bool) {
 	cmd.Flags().BoolVar(into, "ignore-memory", false,
 		"start the stack without asking, however tight the machine's memory is")

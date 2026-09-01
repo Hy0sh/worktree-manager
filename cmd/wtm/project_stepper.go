@@ -234,9 +234,9 @@ func projectDir(input string) (string, error) {
 	if err != nil || !info.IsDir() {
 		return "", fmt.Errorf("%s is not an accessible directory", abs)
 	}
-	// Saying it here beats failing four steps later, once a refresh has built an
-	// image. The entry is a file in a linked worktree and a directory in a main
-	// repository, hence Stat rather than IsDir.
+	// A directory that is not a repository would fail four steps later, once a
+	// refresh has built an image. The entry is a file in a linked worktree and a
+	// directory in a main repository, hence Stat rather than IsDir.
 	if _, err := os.Stat(filepath.Join(abs, ".git")); err != nil {
 		return "", fmt.Errorf("%s is not a git repository: wtm creates worktrees, which git alone can do", abs)
 	}

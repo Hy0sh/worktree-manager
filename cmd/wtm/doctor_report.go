@@ -63,9 +63,9 @@ func orphanVolumes(all []string, repoName string, live []string) []string {
 	return unclaimed(all, repoName, "_", live)
 }
 
-// Both methods answer nothing while a worktree of the project has no recorded
-// index: it cannot be turned into the compose project name that would claim its
-// volumes, and a wrong `docker volume rm` costs a running worktree its database.
+// orphanVolumes and orphanImages answer nothing while a worktree of the project
+// has no recorded index: it cannot be turned into the compose project name that
+// would claim its volumes, and a wrong `docker rmi` costs a live worktree.
 func (rw repoWorktrees) orphanVolumes(all []string) []string {
 	if len(rw.Unindexed) > 0 {
 		return nil

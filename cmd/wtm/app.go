@@ -139,8 +139,8 @@ func (a *app) confirmer() func(string) bool {
 	return func(question string) bool { return confirm(a.in, a.out, question) }
 }
 
-// warnf is what the registry helpers report through, so what they have to say
-// reaches the same writer the command prints on.
+// warnf is the logf detectEngineIfUnset and warnPinnedContainers take: the
+// newline is added here, and the warnings land where the command prints.
 func (a *app) warnf(format string, args ...any) {
 	fmt.Fprintf(a.out, format+"\n", args...)
 }
