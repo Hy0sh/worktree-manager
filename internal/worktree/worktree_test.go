@@ -439,6 +439,39 @@ func TestRemoveReleasesAnIndexWhoseWorktreeIsGone(t *testing.T) {
 	}
 }
 
+// A failed Down means containers may still be running under the old project
+// name, so releasing the index would let the next worktree at n collide with
+// them: the index must stay reserved, same as Stop and the normal Remove tail.
+func TestRemoveKeepsAStaleIndexWhenItsStackCannotBeTakenDown(t *testing.T) {
+	f := newFixture(t)
+	if err := config.WithLock(f.cfgPath, func(c *config.Config) error {
+		p := c.Projects["myapp"]
+		p.WorktreeIndices = map[string]int{"feat/gone": 5}
+		c.Projects["myapp"] = p
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	inner := f.fake.Handler
+	f.fake.Handler = func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(c.String(), " down") {
+			return execx.Result{ExitCode: 1}, errors.New("daemon busy")
+		}
+		return inner(c)
+	}
+	err := Remove(context.Background(), f.opts("feat/gone"))
+	if err == nil || !strings.Contains(err.Error(), "index 5") {
+		t.Fatalf("expected an error naming index 5, got %v", err)
+	}
+	cfg, err := config.Load(f.cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Projects["myapp"].WorktreeIndices["feat/gone"]; got != 5 {
+		t.Fatalf("the index must be kept, got %d", got)
+	}
+}
+
 func TestRemoveStillFailsOnABranchNobodyKnows(t *testing.T) {
 	f := newFixture(t)
 	if err := Remove(context.Background(), f.opts("feat/unknown")); err == nil {

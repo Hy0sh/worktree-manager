@@ -396,8 +396,11 @@ func Remove(ctx context.Context, o Options) error {
 func releaseStale(ctx context.Context, o Options, n int) error {
 	wt := stack.Worktree{Index: n, Branch: o.Branch}
 	if hasCompose(o.Project.Dir) {
+		// A failed Down means containers may still be running under the old
+		// project name, so the index must stay reserved or the next worktree
+		// allocated there would collide with them: same rule as Stop and Remove.
 		if err := o.Stack.Down(ctx, o.projectName(wt), o.Project.Dir, true); err != nil {
-			o.logf("warning: the stack of %s could not be taken down: %v", o.Branch, err)
+			return fmt.Errorf("taking down the stack left at index %d for %s (index kept): %w", n, o.Branch, err)
 		}
 		removeVolumes(ctx, o, wt)
 		removeImages(ctx, o, wt)
