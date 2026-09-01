@@ -89,6 +89,10 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   stack nothing of which was up ended with a database container nobody asked
   for, counted by `doctor` as a running stack. A refresh that fails now cleans
   up the same way, rather than leaving a created container and its network.
+- A port docker refuses to bind is followed by the container that publishes it,
+  read from `docker ps`: docker's own message names the port and nobody else.
+  And a command whose output streamed to the terminal no longer has that whole
+  output repeated in its error: the last line, the diagnosis, is kept.
 
 ## [0.9.1] - 2026-08-28
 

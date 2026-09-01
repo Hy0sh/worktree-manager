@@ -72,10 +72,19 @@ type Error struct {
 	ExitCode int
 	Stderr   string
 	Err      error
+	// Live says the output already reached the terminal as the command ran.
+	// The error then keeps the last line alone, the diagnosis, rather than
+	// printing the whole block a second time.
+	Live bool
 }
 
 func (e *Error) Error() string {
 	msg := strings.TrimSpace(e.Stderr)
+	if e.Live {
+		if i := strings.LastIndex(msg, "\n"); i >= 0 {
+			msg = strings.TrimSpace(msg[i+1:])
+		}
+	}
 	if msg == "" && e.Err != nil {
 		msg = e.Err.Error()
 	}
@@ -155,7 +164,7 @@ func (r OSRunner) Run(ctx context.Context, c Cmd) (Result, error) {
 		res.ExitCode = cmd.ProcessState.ExitCode()
 	}
 	if runErr != nil {
-		return res, &Error{Cmd: c.String(), ExitCode: res.ExitCode, Stderr: res.Stderr, Err: runErr}
+		return res, &Error{Cmd: c.String(), ExitCode: res.ExitCode, Stderr: res.Stderr, Err: runErr, Live: c.Live}
 	}
 	return res, nil
 }

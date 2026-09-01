@@ -52,3 +52,48 @@ func TestDownKeepsVolumes(t *testing.T) {
 		t.Fatal("stopping must not destroy the database")
 	}
 }
+
+// docker says a port is taken and names nobody. `docker ps` knows who publishes
+// it, and that is the one line that turns the error into a fix.
+func TestUpNamesTheContainerHoldingABusyPort(t *testing.T) {
+	f := &execx.Fake{Handler: func(c execx.Cmd) (execx.Result, error) {
+		switch {
+		case strings.Contains(c.String(), "up -d"):
+			return execx.Result{ExitCode: 1}, &execx.Error{Cmd: c.String(), ExitCode: 1, Live: true,
+				Stderr: "Error response from daemon: driver failed programming external connectivity on endpoint x: Bind for 0.0.0.0:3306 failed: port is already allocated\n"}
+		case strings.Contains(c.String(), "ps --format"):
+			return execx.Result{Stdout: "my-app-tunnel-1\t0.0.0.0:3306->3306/tcp, 0.0.0.0:5434->5434/tcp\nother\t0.0.0.0:8080->80/tcp\n"}, nil
+		}
+		return execx.Result{}, nil
+	}}
+	c := &Client{Runner: f, Dir: "/repo"}
+	err := c.Up(context.Background(), "p", "/repo/wt", nil)
+	if err == nil {
+		t.Fatal("expected the failure")
+	}
+	if !strings.Contains(err.Error(), "port 3306 is published by container my-app-tunnel-1") {
+		t.Fatalf("name the holder, got %v", err)
+	}
+}
+
+func TestUpLeavesOtherFailuresAlone(t *testing.T) {
+	f := &execx.Fake{Handler: func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(c.String(), "up -d") {
+			return execx.Result{ExitCode: 1}, &execx.Error{Cmd: c.String(), ExitCode: 1, Stderr: "build failed\n"}
+		}
+		return execx.Result{}, nil
+	}}
+	c := &Client{Runner: f, Dir: "/repo"}
+	err := c.Up(context.Background(), "p", "/repo/wt", nil)
+	if err == nil || strings.Contains(err.Error(), "published by") {
+		t.Fatalf("no port in that failure, got %v", err)
+	}
+	if got := lastLine(f); strings.Contains(got, "ps --format") {
+		t.Fatalf("docker ps is only asked about a port, ran %q", got)
+	}
+}
+
+func lastLine(f *execx.Fake) string {
+	l := f.Lines()
+	return l[len(l)-1]
+}
