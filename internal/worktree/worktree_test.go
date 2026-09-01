@@ -372,3 +372,36 @@ func TestRemoveWithForceOverridesTheLock(t *testing.T) {
 		t.Fatalf("overriding a lock takes `remove -f -f`, got %q", line)
 	}
 }
+
+// A project that names no volume leaves its database image an anonymous one,
+// which carries no compose label: nothing filtering on the project label ever
+// sees it. `down --volumes` is what takes those along, and remove is the one
+// place they must go.
+func TestRemoveTakesTheVolumesDownWithTheStack(t *testing.T) {
+	f := newFixture(t)
+	f.dockerLabels = []string{"com.docker.compose.project=" + filepath.Base(f.root) + "-wt-1-feat-x"}
+	if err := Create(context.Background(), f.opts("feat/x")); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := Remove(context.Background(), f.opts("feat/x")); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	down := lastCall(f, " down")
+	if !strings.Contains(down, "--volumes") {
+		t.Fatalf("remove must take the volumes with the stack, got %q", down)
+	}
+}
+
+func TestStopKeepsTheVolumes(t *testing.T) {
+	f := newFixture(t)
+	f.dockerLabels = []string{"com.docker.compose.project=" + filepath.Base(f.root) + "-wt-1-feat-x"}
+	if err := Create(context.Background(), f.opts("feat/x")); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := Stop(context.Background(), f.opts("feat/x")); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if down := lastCall(f, " down"); strings.Contains(down, "--volumes") {
+		t.Fatalf("a stopped worktree keeps its database, got %q", down)
+	}
+}

@@ -41,7 +41,7 @@ func TestUpTargetsTheWorktreeProject(t *testing.T) {
 func TestDownKeepsVolumes(t *testing.T) {
 	f := &execx.Fake{}
 	c, _ := newClient(t, f)
-	if err := c.Down(context.Background(), "myapp-wt-1-feat-x", "/wt"); err != nil {
+	if err := c.Down(context.Background(), "myapp-wt-1-feat-x", "/wt", false); err != nil {
 		t.Fatalf("Down: %v", err)
 	}
 	line := f.Lines()[0]

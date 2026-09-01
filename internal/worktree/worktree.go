@@ -302,7 +302,7 @@ func Stop(ctx context.Context, o Options) error {
 		}
 		return err
 	}
-	if err := o.Stack.Down(ctx, o.projectName(wt), wt.Path); err != nil {
+	if err := o.Stack.Down(ctx, o.projectName(wt), wt.Path, false); err != nil {
 		return fmt.Errorf("stopping the stack: %w", err)
 	}
 	o.logf("stack stopped (worktree %d, %s)", wt.Index, o.Branch)
@@ -347,7 +347,7 @@ func Remove(ctx context.Context, o Options) error {
 			return err
 		default:
 			stackKnown = true
-			if err := o.Stack.Down(ctx, o.projectName(wt), wt.Path); err != nil {
+			if err := o.Stack.Down(ctx, o.projectName(wt), wt.Path, true); err != nil {
 				return fmt.Errorf("stopping the stack: %w", err)
 			}
 		}

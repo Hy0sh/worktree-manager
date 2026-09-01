@@ -128,6 +128,24 @@ func (a *app) reportOrphanVolumes(ctx context.Context) {
 	fmt.Fprintf(a.out, "  drop them with `docker volume rm %s`\n", strings.Join(orphans, " "))
 }
 
+// reportAnonymousVolumes counts what the orphan report cannot see: volumes an
+// image created on its own, labelled anonymous, that no container mounts.
+// Machine-wide by nature, hence a count and a command rather than an attribution.
+func (a *app) reportAnonymousVolumes(ctx context.Context) {
+	res, err := a.runner.Run(ctx, execx.Cmd{Name: "docker", Args: []string{"volume", "ls", "-q",
+		"--filter", "dangling=true", "--filter", "label=com.docker.volume.anonymous"}})
+	if err != nil {
+		return
+	}
+	ids := strings.Fields(res.Stdout)
+	if len(ids) == 0 {
+		return
+	}
+	fmt.Fprintln(a.out)
+	fmt.Fprintf(a.out, "%d anonymous volume(s) no container mounts, left by images that name their own data directory:\n", len(ids))
+	fmt.Fprintf(a.out, "  drop them with `docker volume rm %s`\n", strings.Join(ids, " "))
+}
+
 // reportOrphanImages lists what worktrees that no longer exist had compose
 // build for them. A stack builds one image per service, so this list is several
 // times longer than the volume one for the same removed worktrees.
@@ -211,26 +229,29 @@ func newDoctorCmd(a *app) *cobra.Command {
 			if line := a.buildCache(cmd.Context()); line != "" {
 				fmt.Fprintf(a.out, "cache    %s\n", line)
 			}
-			if len(a.cfg.Projects) == 0 {
-				return nil
-			}
-			fmt.Fprintln(a.out)
-			w := tabwriter.NewWriter(a.out, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "PROJECT\tDIRECTORY\tSTRIDE\tOFFSET\tENGINE")
-			for _, name := range a.cfg.Names() {
-				p := a.cfg.Projects[name]
-				// BackupConfig defaults to postgres even without a database.
-				engine := "-"
-				if p.Dump {
-					engine = p.BackupConfig().DBEngine
+			if len(a.cfg.Projects) > 0 {
+				fmt.Fprintln(a.out)
+				w := tabwriter.NewWriter(a.out, 0, 0, 2, ' ', 0)
+				fmt.Fprintln(w, "PROJECT\tDIRECTORY\tSTRIDE\tOFFSET\tENGINE")
+				for _, name := range a.cfg.Names() {
+					p := a.cfg.Projects[name]
+					// BackupConfig defaults to postgres even without a database.
+					engine := "-"
+					if p.Dump {
+						engine = p.BackupConfig().DBEngine
+					}
+					fmt.Fprintf(w, "%s\t%s\t%d\t%d\t%s\n", name, p.Dir, stack.Stride(p.Dir), p.PortOffset, engine)
 				}
-				fmt.Fprintf(w, "%s\t%s\t%d\t%d\t%s\n", name, p.Dir, stack.Stride(p.Dir), p.PortOffset, engine)
+				if err := w.Flush(); err != nil {
+					return err
+				}
 			}
-			if err := w.Flush(); err != nil {
-				return err
-			}
+			// Anonymous volumes are machine-wide, not tied to a registered
+			// project, so this must still run with zero of them; the others
+			// below are harmless no-ops in that case.
 			a.reportPortClashes()
 			a.reportOrphanVolumes(cmd.Context())
+			a.reportAnonymousVolumes(cmd.Context())
 			a.reportOrphanImages(cmd.Context())
 			return nil
 		},

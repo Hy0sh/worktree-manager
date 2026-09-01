@@ -37,11 +37,17 @@ func (c *Client) Up(ctx context.Context, project, worktreeDir string, files []st
 	return err
 }
 
-// Down stops a worktree's stack, keeping its volumes.
-func (c *Client) Down(ctx context.Context, project, worktreeDir string) error {
+// Down stops a worktree's stack. volumes takes the anonymous ones along too:
+// they carry no compose label, so a project naming none leaks one per start.
+// stop keeps them, remove takes them.
+func (c *Client) Down(ctx context.Context, project, worktreeDir string, volumes bool) error {
+	args := []string{"compose", "-p", project, "down"}
+	if volumes {
+		args = append(args, "--volumes")
+	}
 	_, err := c.Runner.Run(ctx, execx.Cmd{
 		Name: "docker",
-		Args: []string{"compose", "-p", project, "down"},
+		Args: args,
 		Dir:  worktreeDir,
 		Live: true,
 	})

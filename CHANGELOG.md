@@ -69,6 +69,12 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   publish, with the `portStride` remedy. It only ever looked between projects,
   so a clash inside one, the very case that happens with `db` and `db_test`
   one port apart, went unreported until docker refused the second stack.
+- `wtm remove` takes the stack's anonymous volumes down with it. A project that
+  names no volume leaves its database image an anonymous one, which carries no
+  compose label, so neither the removal nor `doctor` ever saw it and every
+  stop/start pair leaked one more. `stop` still keeps volumes, named or not.
+- `wtm doctor` counts the anonymous volumes no container mounts and prints the
+  line that drops them.
 
 ## [0.9.1] - 2026-08-28
 
