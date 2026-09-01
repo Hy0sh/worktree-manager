@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/Hy0sh/worktree-manager/internal/compose"
@@ -15,40 +16,50 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
 
+// A sweep is one kind of resource a stack leaves behind: how docker lists it,
+// how docker drops it, and the noun the report uses. The three travel together
+// because a listing dropped with another kind's verb compiles and lies.
+type sweep struct {
+	noun string
+	list []string
+	rm   []string
+}
+
+var (
+	volumeSweep = sweep{noun: "volume", list: []string{"volume", "ls", "-q"}, rm: []string{"volume", "rm"}}
+	// Only what compose built: a pulled image carries no project label, so the
+	// postgres the main stack also runs can never be caught by this sweep.
+	imageSweep = sweep{noun: "image", list: []string{"images", "-q"}, rm: []string{"rmi"}}
+)
+
 // stackVolumes lists the volumes docker labelled with this stack's compose
 // project. Empty on a stack that never came up, which is how a first start is
 // told from a restart, and on an unreachable docker.
 func stackVolumes(ctx context.Context, o Options, wt stack.Worktree) []string {
-	return labelled(ctx, o, wt, "volume", "ls", "-q")
+	return labelled(ctx, o, wt, volumeSweep)
 }
 
 // removeVolumes drops the stack's volumes once the worktree is gone. `docker
 // compose down`, which stop runs, deliberately keeps them: without this
 // every removed worktree leaves its database behind forever.
 func removeVolumes(ctx context.Context, o Options, wt stack.Worktree) {
-	removeLabelled(ctx, o, wt, "volume", stackVolumes(ctx, o, wt), []string{"volume", "rm"})
-}
-
-// stackImages lists the images compose built for this stack. Compose labels
-// what it builds with the project name; a pulled image carries no such label,
-// so the postgres the main stack also runs can never be caught here.
-func stackImages(ctx context.Context, o Options, wt stack.Worktree) []string {
-	return labelled(ctx, o, wt, "images", "-q")
+	removeSwept(ctx, o, wt, volumeSweep)
 }
 
 // removeImages drops what the stack built once the worktree is gone. `docker
 // compose down` keeps images as it keeps volumes, and a stack builds its own
 // copy of every service image: without this each removal leaves gigabytes.
 func removeImages(ctx context.Context, o Options, wt stack.Worktree) {
-	removeLabelled(ctx, o, wt, "image", stackImages(ctx, o, wt), []string{"rmi"})
+	removeSwept(ctx, o, wt, imageSweep)
 }
 
-// labelled runs a docker listing filtered on this stack's compose project, and
-// answers nothing at all when docker cannot be reached.
-func labelled(ctx context.Context, o Options, wt stack.Worktree, args ...string) []string {
+// labelled answers nothing at all when docker cannot be reached: a caller
+// cannot tell that from a stack that never came up.
+func labelled(ctx context.Context, o Options, wt stack.Worktree, s sweep) []string {
 	res, err := o.Runner.Run(ctx, execx.Cmd{
 		Name: "docker",
-		Args: append(args, "--filter", "label=com.docker.compose.project="+o.projectName(wt)),
+		Args: append(slices.Clone(s.list), "--filter",
+			"label=com.docker.compose.project="+o.projectName(wt)),
 	})
 	if err != nil {
 		return nil
@@ -56,22 +67,23 @@ func labelled(ctx context.Context, o Options, wt stack.Worktree, args ...string)
 	return strings.Fields(res.Stdout)
 }
 
-// removeLabelled drops the ids one of those listings returned. A failure is a
+// removeSwept drops what the listing of that kind returned. A failure is a
 // warning and not an error: the worktree is gone either way, and what is left
 // behind costs disk space and nothing else.
-func removeLabelled(ctx context.Context, o Options, wt stack.Worktree, noun string, ids, rm []string) {
+func removeSwept(ctx context.Context, o Options, wt stack.Worktree, s sweep) {
+	ids := labelled(ctx, o, wt, s)
 	if len(ids) == 0 {
 		return
 	}
 	project := o.projectName(wt)
 	if _, err := o.Runner.Run(ctx, execx.Cmd{
 		Name: "docker",
-		Args: append(rm, ids...),
+		Args: append(slices.Clone(s.rm), ids...),
 	}); err != nil {
-		o.logf("warning: %d %s(s) of %s could not be removed: %v", len(ids), noun, project, err)
+		o.logf("warning: %d %s(s) of %s could not be removed: %v", len(ids), s.noun, project, err)
 		return
 	}
-	o.logf("%d %s(s) removed (%s)", len(ids), noun, project)
+	o.logf("%d %s(s) removed (%s)", len(ids), s.noun, project)
 }
 
 func start(ctx context.Context, o Options, dest string) error {

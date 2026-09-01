@@ -97,8 +97,8 @@ func runAfter(ctx context.Context, o Options) {
 }
 
 // composeEnv makes a project's own `docker compose` line address the worktree's
-// stack instead of one named after the directory it runs from. The file list
-// counts too: wtm's overrides are not named `override`, so compose skips them.
+// stack, not one named after the directory it runs from. wtm's overrides are not
+// named `override`, hence COMPOSE_FILE, which compose lets an explicit -f beat.
 func composeEnv(o Options, wt stack.Worktree) []string {
 	if !hasCompose(o.Project.Dir) {
 		return nil

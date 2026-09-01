@@ -11,9 +11,8 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
 
-// git runs a git command in the project repository, which is where every
-// question about branches, remotes and refs is asked from: a worktree's own
-// directory would answer the same, and this one always exists.
+// git runs a git command in the project repository, which always exists where
+// a worktree's own directory may not.
 func (o Options) git(ctx context.Context, args ...string) (execx.Result, error) {
 	return o.Runner.Run(ctx, execx.Cmd{
 		Name: "git",
