@@ -133,3 +133,40 @@ func TestDockerIsAskedUnderADeadline(t *testing.T) {
 		t.Fatal("this resolution should have had to ask docker")
 	}
 }
+
+// The allocator already steps over an index docker holds leftovers for. A
+// caller who knows the ports can tell it to step over an index whose ports
+// would clash with a recorded neighbour, which is how two worktrees of one
+// project stop fighting over 26434.
+func TestResolveSkipsAnIndexTheCallerRefuses(t *testing.T) {
+	r, path, _ := newResolver(t, map[string]int{"feat/a": 1}, []string{})
+	var out strings.Builder
+	r.Out = &out
+	r.Conflicts = func(n int) string {
+		if n == 2 {
+			return "db would publish 26434, which feat/a already publishes for db_test"
+		}
+		return ""
+	}
+	got, err := r.Resolve(context.Background(), "feat/b", 0, MayAllocate)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if got != 3 {
+		t.Fatalf("index 2 clashes, expected 3, got %d", got)
+	}
+	if recorded(t, path, "feat/b") != 3 {
+		t.Fatal("the skipped index must not be recorded")
+	}
+	if !strings.Contains(out.String(), "index 2 skipped") || !strings.Contains(out.String(), "26434") {
+		t.Fatalf("the skip must say why:\n%s", out.String())
+	}
+}
+
+func TestResolveWithoutConflictsBehavesAsBefore(t *testing.T) {
+	r, _, _ := newResolver(t, map[string]int{"feat/a": 1}, []string{})
+	got, err := r.Resolve(context.Background(), "feat/b", 0, MayAllocate)
+	if err != nil || got != 2 {
+		t.Fatalf("expected 2, got %d (%v)", got, err)
+	}
+}

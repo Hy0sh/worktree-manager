@@ -34,6 +34,11 @@ type Resolver struct {
 	Name       string // project name in the registry
 	RepoName   string // filepath.Base of the project directory
 	Out        io.Writer
+	// Conflicts says why index n must not be handed out, or "" when it may.
+	// The resolver knows nothing about ports; the worktree package does, and
+	// with a stride of 1 two neighbouring indices publish the same port when
+	// two services sit one port apart (db 5432, db_test 5433).
+	Conflicts func(n int) string
 }
 
 func (r *Resolver) logf(format string, args ...any) {
@@ -124,6 +129,12 @@ func (r *Resolver) Resolve(ctx context.Context, branch string, pos int, mode Mod
 			if dockerOK && hasLeftovers(labels, r.RepoName, n, branch) {
 				r.logf("index %d skipped: docker still holds containers or volumes of a previous worktree there", n)
 				continue
+			}
+			if r.Conflicts != nil {
+				if why := r.Conflicts(n); why != "" {
+					r.logf("index %d skipped: %s", n, why)
+					continue
+				}
 			}
 			if !dockerOK {
 				// Same reasoning as the fallback above: an allocation made
