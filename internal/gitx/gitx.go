@@ -12,13 +12,9 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 )
 
-// RepoRoot returns the main repository root, even when called from inside a
-// linked worktree.
-//
-// `--show-toplevel` cannot be used: inside a worktree it returns the worktree
-// itself, which is never the path a project is registered under, so every
-// command run from a worktree would fail to find its own project.
-// `--git-common-dir` always points at the main repository's git directory.
+// RepoRoot returns the main repository root, even from inside a linked
+// worktree: `--show-toplevel` would answer the worktree itself, which is never
+// the path a project is registered under, while `--git-common-dir` is stable.
 func RepoRoot(ctx context.Context, runner execx.Runner) (string, error) {
 	res, err := runner.Run(ctx, execx.Cmd{
 		Name: "git",
