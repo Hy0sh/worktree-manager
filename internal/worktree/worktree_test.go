@@ -373,10 +373,9 @@ func TestRemoveWithForceOverridesTheLock(t *testing.T) {
 	}
 }
 
-// A project that names no volume leaves its database image an anonymous one,
-// which carries no compose label: nothing filtering on the project label ever
-// sees it. `down --volumes` is what takes those along, and remove is the one
-// place they must go.
+// An anonymous volume carries no compose label, so nothing filtering on the
+// project label ever sees it. `down --volumes` is what takes those along, and
+// remove is the one place they must go.
 func TestRemoveTakesTheVolumesDownWithTheStack(t *testing.T) {
 	f := newFixture(t)
 	f.dockerLabels = []string{"com.docker.compose.project=" + filepath.Base(f.root) + "-wt-1-feat-x"}
