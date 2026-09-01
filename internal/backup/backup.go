@@ -68,9 +68,8 @@ func (m *Manager) lockRefresh(name string) (func(), error) {
 }
 
 // Refresh regenerates the dump: it starts the database if needed, migrates a
-// throwaway one and dumps it as migrate left it, data included. Everything the
-// migrations create is therefore captured, permissions and reference data
-// among them; only what they did not create, seed data first of all, is out.
+// throwaway one and dumps it as migrate left it. What the migrations create is
+// captured, permissions and reference data included; seed data is not.
 func (m *Manager) Refresh(ctx context.Context, name string, p config.Project) error {
 	cfg := p.BackupConfig()
 	if err := cfg.Validate(); err != nil {

@@ -40,7 +40,6 @@ func (m *Manager) refreshFile(ctx context.Context, name string, p config.Project
 	if err := m.publishFile(host, name); err != nil {
 		return err
 	}
-	m.logf("dump written: %s", m.DumpPath(name))
 	m.writeMetaOrWarn(ctx, name, p)
 	return nil
 }
@@ -52,35 +51,14 @@ func removeDBFiles(path string) {
 	}
 }
 
-// publishFile moves the migrated file into the backups directory the same way
-// dump() does: through a .tmp neighbour and a rename, never in place.
 func (m *Manager) publishFile(src, name string) error {
-	final := m.DumpPath(name)
-	if err := os.MkdirAll(filepath.Dir(final), 0o700); err != nil {
-		return err
-	}
 	in, err := os.Open(src)
 	if err != nil {
 		return err
 	}
 	defer in.Close()
-	tmpPath := final + ".tmp"
-	tmp, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
-	if err != nil {
-		return fmt.Errorf("creating the temporary dump: %w", err)
-	}
-	_, copyErr := io.Copy(tmp, in)
-	closeErr := tmp.Close()
-	if copyErr == nil {
-		copyErr = closeErr
-	}
-	if copyErr != nil {
-		_ = os.Remove(tmpPath)
-		return copyErr
-	}
-	if err := os.Rename(tmpPath, final); err != nil {
-		_ = os.Remove(tmpPath)
-		return fmt.Errorf("publishing the dump: %w", err)
-	}
-	return nil
+	return m.publish(name, func(w io.Writer) error {
+		_, err := io.Copy(w, in)
+		return err
+	})
 }

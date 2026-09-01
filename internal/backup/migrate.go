@@ -13,9 +13,8 @@ import (
 )
 
 // migrate replays the migration history in a throwaway container whose memory
-// cap is lifted. Running it through `exec` would put the peak inside the
-// developer's own backend, where a mem_limit sized for day-to-day work gets it
-// OOM-killed, taking the running server down as collateral.
+// cap is lifted: through `exec` the peak would land in the developer's own
+// backend, where a day-to-day mem_limit OOM-kills it and the server with it.
 func (m *Manager) migrate(ctx context.Context, p config.Project, cfg config.Backup, db string) error {
 	files, err := compose.Files(p.Dir)
 	if err != nil {
@@ -53,10 +52,9 @@ func (m *Manager) migrate(ctx context.Context, p config.Project, cfg config.Back
 	return nil
 }
 
-// writeMemOverride lifts the memory cap for the disposable container only:
-// mem_limit 0 means unlimited, so the peak is bounded by the Docker VM alone.
-// The service name is re-checked here because config.json can be hand-edited,
-// and the file lives under wtm's own 0700 tree rather than the shared temp one.
+// writeMemOverride lifts the cap for the disposable container alone: mem_limit
+// 0 means unlimited. The service name is re-checked because config.json can be
+// hand-edited, and the file lands in wtm's 0700 tree, not the shared temp one.
 func writeMemOverride(dir, service string) (string, error) {
 	if err := config.ValidateIdentifier("application service", service); err != nil {
 		return "", err
@@ -91,7 +89,7 @@ func sortedKeys(m map[string]string) []string {
 func withOOMHint(err error) error {
 	var e *execx.Error
 	if errors.As(err, &e) && e.ExitCode == 137 {
-		return fmt.Errorf("%w\nprocess killed (exit 137), most likely out of memory: increase the RAM allocated to Docker, or stop non-essential services during the refresh (frontend, celery, pgadmin)", err)
+		return fmt.Errorf("%w\nprocess killed (exit 137), most likely out of memory: increase the RAM allocated to Docker, or stop non-essential services during the refresh (a frontend, a worker, an admin UI)", err)
 	}
 	return err
 }

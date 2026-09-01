@@ -43,9 +43,9 @@ func (m *Manager) ensureUp(ctx context.Context, name string, p config.Project, c
 	return m.cleanupStarted(ctx, p, cfg, existing), nil
 }
 
-// cleanupStarted undoes only what wtm itself started. Nothing existed: down,
-// volumes included, they are all wtm's. A stopped db existed: up reused it and
-// the developer's data in it, so it goes back to stopped, nothing removed.
+// cleanupStarted undoes only what wtm itself started: the volumes go with the
+// stack when nothing was there, while a database that merely was stopped holds
+// the developer's data and goes back to stopped, nothing removed.
 func (m *Manager) cleanupStarted(ctx context.Context, p config.Project, cfg config.Backup, existing map[string]bool) func() {
 	return func() {
 		var args []string
@@ -91,11 +91,9 @@ func (m *Manager) waitFor(ctx context.Context, label string, defaultAttempts int
 	return execx.WaitFor(ctx, m.Runner, label, attempts, interval, probe)
 }
 
-// assertPopulated refuses to dump a throwaway database no migration reached.
-// {{database}} only works if the app honours the variable it is mapped to; when
-// it does not, the migrations hit the project's own database and this dump would
-// bring every worktree up empty. Only a count that reads as zero fails: an
-// unreadable probe is a diagnosis wtm could not make, not a verdict.
+// assertPopulated refuses to dump a throwaway database no migration reached:
+// an app ignoring the variable {{database}} is mapped to migrates its own
+// database instead. An unreadable count is no verdict, only a zero one is.
 func (m *Manager) assertPopulated(ctx context.Context, p config.Project, cfg config.Backup, eng dbengine.Engine, db string) error {
 	res, err := m.execInDB(ctx, p, cfg, eng.ObjectCountArgs(cfg.DBUser, db))
 	if err != nil {
