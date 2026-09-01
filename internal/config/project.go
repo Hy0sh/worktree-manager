@@ -13,25 +13,21 @@ type Project struct {
 	// projects whose compose bind-mounts the git directory into a container
 	// (macOS/VirtioFS cannot mount the pointer file a linked worktree uses).
 	GitContainer bool `json:"git_container,omitempty"`
-	// PortOffset shifts every rebased port: the formula only knows the default
+	// PortOffset shifts every rebased port: the formula knows only the default
 	// port, the index and the stride, so without it two projects whose database
-	// listens on 5432 fight over the same host port. Zero for the first one,
-	// which keeps the ports it already had.
+	// listens on 5432 clash. Zero for the first, which keeps its ports.
 	PortOffset int `json:"port_offset,omitempty"`
 	// WorktreeIndices pins each branch to the index its stack was created with.
 	// Deriving it from git's listing order, which resorts alphabetically, would
 	// renumber running stacks: the index feeds ports and the compose project name.
 	WorktreeIndices map[string]int `json:"worktree_indices,omitempty"`
 	// PostCreate runs in the application container once a new worktree's stack
-	// answers. The dump carries what the migrations create and never seed data,
-	// so this is where a project puts what makes a fresh worktree usable, e.g.
+	// answers. The dump holds no seed data, so this is where it comes from, e.g.
 	// "python manage.py seed_data && python manage.py create_dev_users".
 	PostCreate string `json:"post_create,omitempty"`
 	// ReadyTimeout and ReadyInterval bound the wait a new worktree grants each
-	// service before post_create runs: how long it may take to answer, and how
-	// often it is asked. Durations, as in "2m" and "10s". Empty means the
-	// built-in bounds, which are not the same for a database as for an
-	// application installing its dependencies at boot.
+	// service before post_create runs, as durations ("2m", "10s"). Empty means
+	// the built-in bounds, which differ for a database and for an application.
 	ReadyTimeout  string  `json:"ready_timeout,omitempty"`
 	ReadyInterval string  `json:"ready_interval,omitempty"`
 	Backup        *Backup `json:"backup,omitempty"`

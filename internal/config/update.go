@@ -1,6 +1,9 @@
 package config
 
-import "fmt"
+import (
+	"fmt"
+	"maps"
+)
 
 // ProjectUpdate carries the fields an edit actually names. A nil pointer means
 // "leave it alone": an edit must not reset what it says nothing about, the port
@@ -86,7 +89,7 @@ func (u ProjectUpdate) Apply(p Project) (Project, []FieldChange) {
 	str("deps_command", &b.DepsCommand, u.DepsCommand)
 	str("migrate_command", &b.MigrateCommand, u.MigrateCommand)
 	str("migrations_path", &b.MigrationsPath, u.MigrationsPath)
-	if u.Env != nil && !sameEnv(b.Env, u.Env) {
+	if u.Env != nil && !maps.Equal(b.Env, u.Env) {
 		changes = append(changes, FieldChange{"env", fmt.Sprint(b.Env), fmt.Sprint(u.Env)})
 		b.Env = u.Env
 	}
@@ -98,16 +101,4 @@ func (u ProjectUpdate) touchesBackup() bool {
 	return u.DBService != nil || u.DBUser != nil || u.DBEngine != nil ||
 		u.DBPath != nil || u.AppService != nil || u.DepsCommand != nil ||
 		u.MigrateCommand != nil || u.MigrationsPath != nil || u.Env != nil
-}
-
-func sameEnv(a, b map[string]string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for k, v := range a {
-		if b[k] != v {
-			return false
-		}
-	}
-	return true
 }
