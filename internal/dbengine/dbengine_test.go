@@ -121,7 +121,7 @@ func TestTempDBNameSanitisesTheProjectName(t *testing.T) {
 
 func TestPostgresCommands(t *testing.T) {
 	eng, _ := ByName("postgres")
-	if got := strings.Join(eng.ReadyArgs("postgres"), " "); got != "pg_isready -U postgres" {
+	if got := strings.Join(eng.ReadyArgs("postgres"), " "); got != "pg_isready -h 127.0.0.1 -U postgres" {
 		t.Fatalf("ready = %q", got)
 	}
 	if got := strings.Join(eng.DumpArgs("postgres", "x_tmp"), " "); got != "pg_dump -U postgres -Fc --no-owner --no-privileges -d x_tmp" {
@@ -138,5 +138,20 @@ func TestPostgresCommands(t *testing.T) {
 		if !strings.Contains(script, want) {
 			t.Fatalf("restore script must contain %q:\n%s", want, script)
 		}
+	}
+}
+
+// The postgres image runs a temporary server on the unix socket alone while it
+// initialises a new data directory, then restarts for good. pg_isready over the
+// socket answers during that window, and a migration launched then dies with
+// "database system is shutting down". Only a TCP probe waits for the real one.
+func TestPostgresReadyProbesOverTCP(t *testing.T) {
+	eng, err := ByName("postgres")
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := strings.Join(eng.ReadyArgs("postgres"), " ")
+	if !strings.Contains(args, "-h 127.0.0.1") {
+		t.Fatalf("the probe must go over TCP to skip the init-phase server, got %q", args)
 	}
 }

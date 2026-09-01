@@ -46,6 +46,12 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ### Fixed
 
+- The first `backup refresh` on a brand-new postgres volume no longer races the
+  image's own start. Its entrypoint runs a temporary server on the unix socket
+  while it initialises the data directory, then restarts for good; `pg_isready`
+  over that socket said ready in between, and the migration launched then died
+  with "database system is shutting down". The probe now goes over TCP, which
+  only the final server answers, as the mysql probe already did in its own way.
 - Two worktrees of one project no longer land on the same host port. With the
   default stride of 1, a project publishing `db` on 5432 and `db_test` on 5433
   had index 1 put `db_test` on 26434 and index 2 put `db` there too, so the

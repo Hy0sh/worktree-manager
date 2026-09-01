@@ -8,8 +8,11 @@ func (postgres) DetectImage(repo string) bool {
 	return baseIs(repo, "postgres", "postgresql", "postgis", "postgresql-repmgr")
 }
 
+// ReadyArgs probes over TCP on purpose: while the image initialises a new data
+// directory it runs a temporary server on the unix socket alone, which
+// pg_isready would answer for, then restarts; only the final server listens on TCP.
 func (postgres) ReadyArgs(user string) []string {
-	return []string{"pg_isready", "-U", user}
+	return []string{"pg_isready", "-h", "127.0.0.1", "-U", user}
 }
 
 func (postgres) DropTempDBArgs(user, db string) []string {
