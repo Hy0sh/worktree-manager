@@ -45,8 +45,7 @@ func TestDetectMatchesCommonImages(t *testing.T) {
 
 // Detection decides which commands run against the container: an image that
 // merely mentions an engine in its name (a proxy, a sidecar, a toolbox) must
-// not be mistaken for the server itself. Detection is a default the stepper
-// offers; missing one costs a question, matching wrong breaks the backup.
+// not be mistaken for the server itself.
 func TestDetectRejectsLookalikeImages(t *testing.T) {
 	for _, image := range []string{
 		"mycompany/mysql-proxy:1",
