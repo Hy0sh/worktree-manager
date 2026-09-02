@@ -141,3 +141,40 @@ func TestDoctorReportsIndicesWithoutAWorktree(t *testing.T) {
 		t.Fatalf("an adopted worktree is not stale:\n%s", got)
 	}
 }
+
+// The listing of what removed worktrees left behind is one command line per
+// finding, seven of them on a busy machine: the reader has to be told there is
+// a single verb for the lot.
+func TestDoctorPointsAtCleanWhenSomethingWasLeftBehind(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "my-app")
+	cfg := &config.Config{Projects: map[string]config.Project{"myapp": {Dir: dir,
+		WorktreeIndices: map[string]int{"feat/gone": 5}}}}
+	a, _, out := newTestApp(t, cfg, "", func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(c.String(), "worktree list") {
+			return execx.Result{Stdout: "worktree " + dir + "\nbranch refs/heads/develop\n"}, nil
+		}
+		return execx.Result{}, nil
+	})
+	cmd := newDoctorCmd(a)
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("doctor: %v", err)
+	}
+	if !strings.Contains(out.String(), "wtm clean") {
+		t.Fatalf("doctor should name the verb that drops all of it:\n%s", out.String())
+	}
+}
+
+func TestDoctorStaysSilentAboutCleanWithNothingToClean(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "my-app")
+	cfg := &config.Config{Projects: map[string]config.Project{"myapp": {Dir: dir}}}
+	a, _, out := newTestApp(t, cfg, "", func(execx.Cmd) (execx.Result, error) {
+		return execx.Result{}, nil
+	})
+	cmd := newDoctorCmd(a)
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("doctor: %v", err)
+	}
+	if strings.Contains(out.String(), "wtm clean") {
+		t.Fatalf("nothing was left behind, so nothing to advertise:\n%s", out.String())
+	}
+}

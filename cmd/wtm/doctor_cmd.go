@@ -84,9 +84,9 @@ type repoWorktrees struct {
 	Stale []string
 }
 
-func (a *app) liveProjects(ctx context.Context) []repoWorktrees {
+func (a *app) liveProjects(ctx context.Context, names []string) []repoWorktrees {
 	var out []repoWorktrees
-	for _, name := range a.cfg.Names() {
+	for _, name := range names {
 		p := a.cfg.Projects[name]
 		// Managed is what lets an adopted worktree count as present: without
 		// it every adopted branch would read as stale.
@@ -119,14 +119,11 @@ func (a *app) liveProjects(ctx context.Context) []repoWorktrees {
 	return out
 }
 
-func (a *app) reportStaleIndices(ctx context.Context) {
+func (a *app) reportStaleIndices(stale []staleIndex) {
 	var lines, cmds []string
-	for _, rw := range a.liveProjects(ctx) {
-		p := a.cfg.Projects[rw.Name]
-		for _, branch := range rw.Stale {
-			lines = append(lines, fmt.Sprintf("%s: index %d is recorded for %s, which has no worktree", rw.Name, p.WorktreeIndices[branch], branch))
-			cmds = append(cmds, fmt.Sprintf("wtm remove %s %s", rw.Name, branch))
-		}
+	for _, s := range stale {
+		lines = append(lines, fmt.Sprintf("%s: index %d is recorded for %s, which has no worktree", s.Project, s.Index, s.Branch))
+		cmds = append(cmds, fmt.Sprintf("wtm remove %s %s", s.Project, s.Branch))
 	}
 	if len(lines) == 0 {
 		return
@@ -142,16 +139,7 @@ func (a *app) reportStaleIndices(ctx context.Context) {
 // reportOrphanVolumes lists the volumes of worktrees that no longer exist.
 // They squat the indices their stacks were created at, which pushes every new
 // worktree further out, and nothing else ever mentions them.
-func (a *app) reportOrphanVolumes(ctx context.Context) {
-	res, err := a.runner.Run(ctx, execx.Cmd{Name: "docker", Args: []string{"volume", "ls", "-q"}})
-	if err != nil {
-		return
-	}
-	all := strings.Fields(res.Stdout)
-	var orphans []string
-	for _, rw := range a.liveProjects(ctx) {
-		orphans = append(orphans, rw.orphanVolumes(all)...)
-	}
+func (a *app) reportOrphanVolumes(orphans []string) {
 	if len(orphans) == 0 {
 		return
 	}
@@ -186,19 +174,7 @@ func (a *app) reportAnonymousVolumes(ctx context.Context) {
 // reportOrphanImages lists what worktrees that no longer exist had compose
 // build for them. A stack builds one image per service, so this list is several
 // times longer than the volume one for the same removed worktrees.
-func (a *app) reportOrphanImages(ctx context.Context) {
-	res, err := a.runner.Run(ctx, execx.Cmd{
-		Name: "docker",
-		Args: []string{"images", "--format", "{{.Repository}}"},
-	})
-	if err != nil {
-		return
-	}
-	all := strings.Fields(res.Stdout)
-	var orphans []string
-	for _, rw := range a.liveProjects(ctx) {
-		orphans = append(orphans, rw.orphanImages(all)...)
-	}
+func (a *app) reportOrphanImages(orphans []string) {
 	if len(orphans) == 0 {
 		return
 	}
@@ -280,9 +256,19 @@ func newDoctorCmd(a *app) *cobra.Command {
 					return err
 				}
 				a.reportPortClashes()
-				a.reportStaleIndices(cmd.Context())
-				a.reportOrphanVolumes(cmd.Context())
-				a.reportOrphanImages(cmd.Context())
+				rws := a.liveProjects(cmd.Context(), a.cfg.Names())
+				stale := a.staleIndices(rws)
+				volumes := a.orphanVolumeNames(cmd.Context(), rws)
+				images := a.orphanImageNames(cmd.Context(), rws)
+				a.reportStaleIndices(stale)
+				a.reportOrphanVolumes(volumes)
+				a.reportOrphanImages(images)
+				// Each block above ends on its own command line, one per
+				// finding: seven of them on a busy machine, and nothing would
+				// otherwise say a single verb covers the lot.
+				if len(stale)+len(volumes)+len(images) > 0 {
+					fmt.Fprintln(a.out, "\n`wtm clean` runs all of that in one go.")
+				}
 			}
 			// Anonymous volumes are machine-wide, not tied to a registered
 			// project: the only report an empty registry still has an answer for.
