@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 # Drives the real binary through the cycle the unit suite cannot: refresh,
 # create, the stack's own bindings, remove, and what docker keeps afterwards.
+# For CI: it initialises a git repository here and leaves docker state behind,
+# so it is not to be run from inside a worktree.
 set -euo pipefail
 WTM=${WTM:-./wtm}
 HERE=$(cd "$(dirname "$0")" && pwd)

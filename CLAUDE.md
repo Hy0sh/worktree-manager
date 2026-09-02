@@ -34,7 +34,9 @@ go build ./...
 ```
 
 The workflow adds `govulncheck` and `staticcheck`, both fetched on the fly; run
-them too when the change touches dependencies or adds a package.
+them too when the change touches dependencies or adds a package. A fifth gate,
+`testdata/integration/run.sh`, drives the real binary against docker; it runs on
+CI only, since it creates a git repository in the fixture and docker state.
 
 ## Runtime proof
 
