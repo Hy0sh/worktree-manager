@@ -91,8 +91,10 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   indices, a `claude --worktree` checked out on such a branch read as adopted
   without anyone adopting it. `wtm remove <branch>` now releases such an index,
   taking down whatever stack was left at it.
-- `wtm backup refresh` takes back down the database it started for itself,
-  its anonymous volume with it; a database that already existed stopped is
+- `wtm backup refresh` takes back down the database it started for itself: the
+  container it created and its anonymous volumes go, and a named volume the
+  compose file declares never does, since that is where a developer whose stack
+  is simply down keeps their data. A database that already existed stopped is
   stopped again, never removed. It only ever started what was missing, and
   then left it running: a refresh on a stack nothing of which was up ended
   with a database container nobody asked for, counted by `doctor` as a

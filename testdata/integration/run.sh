@@ -17,6 +17,7 @@ $WTM project create fx --dir "$HERE" --base main --dump --app-service api \
   --migrate 'sh migrate.sh' --env 'DATABASE_URL=postgresql://postgres:fixture@db:5432/{{database}}' --no-input
 $WTM backup refresh fx
 docker compose -f "$HERE/compose.yaml" ps --services --status running | grep -q . && fail "refresh left the main stack running"
+docker volume ls -q | grep -q '^integration_pgdata$' || fail "refresh removed the main stack's named volume"
 
 before=$(docker volume ls -q | wc -l)
 $WTM create fx it/one --ignore-memory

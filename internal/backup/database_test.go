@@ -89,10 +89,21 @@ func TestRefreshTakesDownWhatItStartedWhenNothingWasThere(t *testing.T) {
 	if err := m.Refresh(context.Background(), "myapp", newProject(t)); err != nil {
 		t.Fatalf("Refresh: %v", err)
 	}
-	lines := f.Lines()
-	last := lines[len(lines)-1]
-	if !strings.HasSuffix(last, "compose down --volumes") {
-		t.Fatalf("the whole stack was wtm's to start, so it is wtm's to take down, last call %q", last)
+	assertCleanupOfADownedStack(t, f.Lines())
+}
+
+// The db container and its anonymous volumes are wtm's to remove, and the
+// network goes with the `down`; a named volume the developer's stack declares
+// holds their data even with no container left, so it stays.
+func assertCleanupOfADownedStack(t *testing.T, lines []string) {
+	t.Helper()
+	if n := len(lines); n < 2 || !strings.HasSuffix(lines[n-2], "compose rm -f -s -v db") || !strings.HasSuffix(lines[n-1], "compose down") {
+		t.Fatalf("cleanup must remove the db container then the network, ran %v", lines)
+	}
+	for _, l := range lines {
+		if strings.Contains(l, "--volumes") {
+			t.Fatalf("a named volume of the developer's stack would go with it: %q", l)
+		}
 	}
 }
 
@@ -191,10 +202,7 @@ func TestRefreshCleansUpAfterAFailedMigration(t *testing.T) {
 	if err := m.Refresh(context.Background(), "myapp", newProject(t)); err == nil {
 		t.Fatal("expected the migration failure")
 	}
-	lines := f.Lines()
-	if last := lines[len(lines)-1]; !strings.HasSuffix(last, "compose down --volumes") {
-		t.Fatalf("cleanup must run on failure too, last call %q", last)
-	}
+	assertCleanupOfADownedStack(t, f.Lines())
 }
 
 // A failed `compose up` can still leave a created container and its network
@@ -213,8 +221,36 @@ func TestRefreshCleansUpAfterAFailedStart(t *testing.T) {
 	if err := m.Refresh(context.Background(), "myapp", newProject(t)); err == nil {
 		t.Fatal("expected the start failure")
 	}
-	lines := f.Lines()
-	if last := lines[len(lines)-1]; !strings.HasSuffix(last, "compose down --volumes") {
-		t.Fatalf("cleanup must run after a failed start too, last call %q", last)
+	assertCleanupOfADownedStack(t, f.Lines())
+}
+
+// `down --volumes` removes the named volumes the compose file declares, which
+// is where a developer whose stack is simply down keeps their database.
+func TestRefreshNeverTakesNamedVolumesDown(t *testing.T) {
+	for _, tc := range []struct{ name, existing string }{
+		{"nothing there", ""},
+		{"the db is stopped", "db\nbackend\n"},
+		{"other services are stopped", "backend\nfrontend\n"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			f := &execx.Fake{Handler: func(c execx.Cmd) (execx.Result, error) {
+				switch {
+				case strings.Contains(c.String(), "ps -a --services"):
+					return execx.Result{Stdout: tc.existing}, nil
+				case strings.Contains(c.String(), "ps --services"):
+					return execx.Result{}, nil
+				}
+				return okHandler(c)
+			}}
+			m := newManager(t, f)
+			if err := m.Refresh(context.Background(), "myapp", newProject(t)); err != nil {
+				t.Fatalf("Refresh: %v", err)
+			}
+			for _, l := range f.Lines() {
+				if strings.Contains(l, "down --volumes") {
+					t.Fatalf("the developer's data must survive the cleanup: %q", l)
+				}
+			}
+		})
 	}
 }
