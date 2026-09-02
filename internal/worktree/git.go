@@ -52,6 +52,7 @@ func addWorktree(ctx context.Context, o Options, dest string) error {
 			return err
 		}
 		if remote == "" {
+			noteBaseBehind(ctx, o)
 			args = append(args, "-b", o.Branch, dest, o.Base)
 		} else {
 			o.logf("branch %s only exists on %s: checked out from %s/%s with its upstream set, base %q ignored",
@@ -63,6 +64,45 @@ func addWorktree(ctx context.Context, o Options, dest string) error {
 		return fmt.Errorf("creating the worktree: %w", err)
 	}
 	return nil
+}
+
+// noteBaseBehind says when the local base the worktree is about to be cut from
+// trails its remote. Nothing else refreshes it: remoteBranch only ever fetches
+// the branch being created, so a create can start from a ref weeks old without
+// a word.
+//
+// The cut does not move. Taking the tracking ref instead cannot conflict, but
+// it changes the starting point, and someone holding unpushed commits on the
+// base would silently get a worktree without them. wtm states the gap and
+// names nothing to run: which ref to start from is the caller's call.
+func noteBaseBehind(ctx context.Context, o Options) {
+	for _, r := range remotes(ctx, o) {
+		if !refExists(ctx, o, "refs/remotes/"+r+"/"+o.Base) {
+			continue
+		}
+		// Only the first remote carrying the base is asked. A base living on
+		// two remotes is a repository wtm has no business picking sides in.
+		_, _ = o.Runner.Run(ctx, execx.Cmd{
+			Name: "git",
+			Args: []string{"-C", o.Project.Dir, "fetch", "--quiet", r, o.Base},
+		})
+		res, err := o.Runner.Run(ctx, execx.Cmd{
+			Name: "git",
+			Args: []string{"-C", o.Project.Dir, "rev-list", "--count",
+				o.Base + ".." + r + "/" + o.Base},
+		})
+		// Offline, behind a VPN, or a base that only exists on the remote: no
+		// count, so no gap to claim. A create is not where a network problem
+		// gets reported.
+		if err != nil {
+			return
+		}
+		if n := strings.TrimSpace(res.Stdout); n != "" && n != "0" {
+			o.logf("note: %s is %s commit(s) behind %s/%s, this worktree starts from the local ref",
+				o.Base, n, r, o.Base)
+		}
+		return
+	}
 }
 
 // remoteBranch returns the single remote that carries o.Branch, or "" when none

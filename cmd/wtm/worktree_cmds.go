@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/Hy0sh/worktree-manager/internal/config"
+	"github.com/Hy0sh/worktree-manager/internal/gitx"
 	"github.com/Hy0sh/worktree-manager/internal/worktree"
 	"github.com/spf13/cobra"
 )
@@ -57,6 +58,7 @@ func (f *afterFlags) applyTo(o *worktree.Options) {
 
 func newCreateCmd(a *app) *cobra.Command {
 	var flags afterFlags
+	var fromHere bool
 	cmd := &cobra.Command{
 		Use:   "create [project] <branch> [base]",
 		Short: "Creates a worktree and starts its stack",
@@ -68,11 +70,15 @@ func newCreateCmd(a *app) *cobra.Command {
 			"--run and --exec each play a shell line once the worktree is ready, on\n" +
 			"your machine and in the application container respectively. They can be\n" +
 			"combined, and neither is remembered from one create to the next.\n\n" +
+			"--from-here cuts from the branch of the current directory instead of the\n" +
+			"project's base, which is what living in worktrees calls for: the base is\n" +
+			"otherwise resolved in the main repository and never in the worktree.\n\n" +
 			"  wtm create feat/my-branch --run claude\n" +
-			"  wtm create feat/my-branch --exec 'manage.py load_fixture demo'",
+			"  wtm create feat/my-branch --exec 'manage.py load_fixture demo'\n" +
+			"  wtm create feat/my-branch --from-here",
 		Args: flags.args(
 			needArgs(1, 3, "name the branch to create, as in `wtm create feat/my-branch`")),
-		ValidArgsFunction: a.completeProjects,
+		ValidArgsFunction: a.completeCreate,
 		SilenceUsage:      true,
 		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -91,7 +97,25 @@ func newCreateCmd(a *app) *cobra.Command {
 			o := a.options(name, p, rest[0])
 			o.Base = a.cfg.BaseBranchFor(p)
 			if len(rest) == 2 {
+				if fromHere {
+					return fmt.Errorf("--from-here and the base %q both say where to cut from: "+
+						"drop one", rest[1])
+				}
 				o.Base = rest[1]
+			}
+			if fromHere {
+				// Resolved in the current directory and passed by name: the base
+				// is applied with -C on the main repository, where HEAD is a
+				// different commit than the one the caller is standing on.
+				cur, err := gitx.CurrentWorktree(cmd.Context(), a.runner)
+				if err != nil {
+					return err
+				}
+				if cur.Branch == "" {
+					return fmt.Errorf("%s is on a detached HEAD: --from-here has no branch to cut from",
+						cur.Path)
+				}
+				o.Base, o.BaseFromHere = cur.Branch, true
 			}
 			flags.applyTo(&o)
 			if p.Dump && !flags.noStart {
@@ -103,6 +127,8 @@ func newCreateCmd(a *app) *cobra.Command {
 			return worktree.Create(cmd.Context(), o)
 		},
 	}
+	cmd.Flags().BoolVar(&fromHere, "from-here", false,
+		"cut from the branch of the current directory instead of the project's base")
 	flags.bind(cmd)
 	return cmd
 }

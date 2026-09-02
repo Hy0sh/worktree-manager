@@ -43,6 +43,11 @@ type Options struct {
 	// one, so it is worth a question to a person and never worth failing the
 	// create of a script or an agent.
 	Confirm func(question string) bool
+	// BaseFromHere says Base came from `create --from-here` rather than from
+	// the project or the command line. An existing branch is checked out as-is
+	// and ignores the base, so the flag would quietly do nothing there, and
+	// that combination is refused rather than logged.
+	BaseFromHere bool
 	// RenameTo is the name an adopted branch takes. Adoption is the only
 	// moment a rename is free: the compose project name carries the branch, so
 	// renaming once a stack exists orphans the stack it names.
@@ -85,6 +90,10 @@ func Create(ctx context.Context, o Options) error {
 	}
 	if _, err := os.Lstat(dest); err == nil {
 		return fmt.Errorf("worktree %s already exists, remove it first (`wtm remove %s`)", dest, o.Branch)
+	}
+	if o.BaseFromHere && branchExists(ctx, o) {
+		return fmt.Errorf("branch %s already exists, so --from-here would be ignored: "+
+			"drop the flag and it is checked out as-is", o.Branch)
 	}
 
 	if err := addWorktree(ctx, o, dest); err != nil {

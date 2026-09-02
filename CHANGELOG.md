@@ -29,6 +29,21 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   stack, the volumes and the images, takes wtm's own files back out of the
   checkout, and leaves the checkout where it found it.
 
+- `wtm create --from-here` cuts from the branch of the current directory
+  instead of the project's base. The base is resolved with `-C` on the main
+  repository, so from a worktree on `feat/a` a create started from `develop`
+  and never from `feat/a`, which is the wrong default for anyone living in
+  worktrees. The flag resolves the branch where the command was typed and
+  passes it by name. It refuses alongside a positional base, and on a branch
+  that already exists, since the base is ignored there.
+- The base position of `wtm create` completes, which it never did: the local
+  branches, plus the remote ones no local branch stands for.
+- A create says when the local base it cuts from trails its remote, and leaves
+  the cut where it is. Only the branch being created was ever fetched, so a
+  worktree could start from a ref weeks old without a word. Starting from the
+  tracking ref instead was rejected: it moves the starting point, and unpushed
+  commits on the base would silently be left out.
+
 ### Fixed
 
 - A command wtm could not even start no longer claims to have exited 0. The
