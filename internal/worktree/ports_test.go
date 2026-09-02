@@ -160,6 +160,27 @@ func TestPortClashNamesTheNeighbourAndItsPort(t *testing.T) {
 	}
 }
 
+// Two recorded branches clash with index 2, one on each side. Naming whichever
+// the map yielded first turned one clash into two different diagnoses.
+func TestPortClashNamesTheSameNeighbourEveryRun(t *testing.T) {
+	f := twoDBFixture(t)
+	if err := config.WithLock(f.cfgPath, func(c *config.Config) error {
+		p := c.Projects["myapp"]
+		p.WorktreeIndices = map[string]int{"feat/x": 1, "feat/a": 3}
+		c.Projects["myapp"] = p
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	o := f.opts("feat/y")
+	o.Project.PortOffset = 1000
+	for i := 0; i < 20; i++ {
+		if why := portClash(o)(2); !strings.Contains(why, "feat/a") {
+			t.Fatalf("the first neighbour in order must be the one named, got %q", why)
+		}
+	}
+}
+
 func TestPortClashIsSilentOnAFreeIndex(t *testing.T) {
 	f := twoDBFixture(t)
 	o := f.opts("feat/y")

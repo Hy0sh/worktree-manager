@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 
 	"github.com/Hy0sh/worktree-manager/internal/compose"
@@ -70,12 +71,20 @@ func portClash(o Options) func(n int) string {
 		return func(int) string { return "" }
 	}
 	recorded := o.Resolver.Recorded()
+	// Two recorded branches can clash with the same candidate: map order would
+	// name a different one each run, for what is one and the same clash.
+	branches := make([]string, 0, len(recorded))
+	for branch := range recorded {
+		branches = append(branches, branch)
+	}
+	sort.Strings(branches)
 	return func(n int) string {
 		mine, err := stack.Allocate(services, n, stride, o.Project.PortOffset)
 		if err != nil {
 			return ""
 		}
-		for branch, idx := range recorded {
+		for _, branch := range branches {
+			idx := recorded[branch]
 			if branch == o.Branch || idx == n {
 				continue
 			}
