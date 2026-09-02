@@ -428,6 +428,23 @@ container mounts, left by images that name their own data directory: those
 belong to no project, so they are counted even with an empty registry. Each of
 those lines carries the command that drops them.
 
+```sh
+wtm clean            # every registered project, as doctor reads them
+wtm clean my-app     # that project alone
+wtm clean -y         # do not ask, for a script
+```
+
+`wtm clean` plays those commands for you, on the three findings that are
+leftovers rather than advice: the recorded indices, and the volumes and images
+of worktrees that no longer exist. It prints what it found and asks once. Port
+clashes stay out, being a configuration matter; so do the anonymous volumes and
+the build cache, which belong to no project.
+
+Indices go first, because releasing one takes down the stack left at that index
+and sweeps whatever carries its label. Docker is then scanned again before
+anything is dropped by name, so a volume the release already took is never
+asked for twice, and a cleanup that went through is never reported as failed.
+
 The build cache is only ever reported. Buildkit attributes none of it to a
 project, so only you can decide it is expendable.
 

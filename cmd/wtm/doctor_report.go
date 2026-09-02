@@ -1,10 +1,12 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"sort"
 	"strings"
 
+	"github.com/Hy0sh/worktree-manager/internal/execx"
 	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
 
@@ -52,6 +54,57 @@ func portClashes(holders []portHolder) []string {
 			who = append(who, fmt.Sprintf("%s/%s %s", h.Project, h.Branch, h.Label))
 		}
 		out = append(out, fmt.Sprintf("port %d is claimed by %s", port, strings.Join(who, " and ")))
+	}
+	return out
+}
+
+// staleIndex names one recorded index no worktree stands behind, and the
+// project that recorded it: what `wtm remove <project> <branch>` releases.
+type staleIndex struct {
+	Project string
+	Branch  string
+	Index   int
+}
+
+func (a *app) staleIndices(rws []repoWorktrees) []staleIndex {
+	var out []staleIndex
+	for _, rw := range rws {
+		p := a.cfg.Projects[rw.Name]
+		for _, branch := range rw.Stale {
+			out = append(out, staleIndex{Project: rw.Name, Branch: branch, Index: p.WorktreeIndices[branch]})
+		}
+	}
+	return out
+}
+
+// The two below answer nothing at all when docker cannot be reached, which a
+// caller cannot tell from a machine that holds no leftovers. That suits both
+// of them: the report has nothing to print, and the cleanup nothing to drop.
+func (a *app) orphanVolumeNames(ctx context.Context, rws []repoWorktrees) []string {
+	res, err := a.runner.Run(ctx, execx.Cmd{Name: "docker", Args: []string{"volume", "ls", "-q"}})
+	if err != nil {
+		return nil
+	}
+	all := strings.Fields(res.Stdout)
+	var out []string
+	for _, rw := range rws {
+		out = append(out, rw.orphanVolumes(all)...)
+	}
+	return out
+}
+
+func (a *app) orphanImageNames(ctx context.Context, rws []repoWorktrees) []string {
+	res, err := a.runner.Run(ctx, execx.Cmd{
+		Name: "docker",
+		Args: []string{"images", "--format", "{{.Repository}}"},
+	})
+	if err != nil {
+		return nil
+	}
+	all := strings.Fields(res.Stdout)
+	var out []string
+	for _, rw := range rws {
+		out = append(out, rw.orphanImages(all)...)
 	}
 	return out
 }

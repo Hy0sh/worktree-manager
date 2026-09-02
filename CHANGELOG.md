@@ -6,6 +6,22 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Added
+
+- `wtm clean` drops what `wtm doctor` reports as left behind: the recorded
+  indices no worktree stands behind, and the volumes and images of worktrees
+  that no longer exist. Without an argument it covers every registered project,
+  as `doctor` does; with one it covers that project alone. It lists what it
+  found and asks once, and `-y` answers for a script.
+  Indices are released first, since releasing one takes down the stack left at
+  that index and sweeps whatever carries its label. Docker is scanned again
+  before anything is dropped by name, so nothing is asked for twice and a
+  cleanup that went through is never reported as failed.
+  Port clashes are left out, being a configuration matter rather than a
+  leftover, and so are the anonymous volumes and the build cache, which belong
+  to no project. `doctor` now ends its findings by naming the verb that covers
+  them, which was otherwise one command line per finding to copy by hand.
+
 ## [0.10.0] - 2026-09-02
 
 ### Added

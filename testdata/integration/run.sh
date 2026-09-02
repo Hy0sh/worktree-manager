@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Drives the real binary through the cycle the unit suite cannot: refresh,
-# create, the stack's own bindings, remove, and what docker keeps afterwards.
+# create, the stack's own bindings, remove, what docker keeps afterwards, and
+# the cleanup of a worktree removed behind wtm's back.
 # For CI: it initialises a git repository here and leaves docker state behind,
 # so it is not to be run from inside a worktree.
 set -euo pipefail
@@ -47,5 +48,19 @@ $WTM remove fx it/one
 $WTM remove fx it/two
 after=$(docker volume ls -q | wc -l)
 [[ "$after" -le "$before" ]] || fail "remove leaked $((after - before)) volume(s)"
+# A worktree removed outside wtm keeps its index, its stack and its volumes.
+# That is what `clean` exists for, and the one state no unit test can produce.
+$WTM create fx it/three --ignore-memory
+git -C "$HERE" worktree remove --force "$($WTM path fx it/three)"
+# doctor goes through a variable rather than a pipe: `grep -q` closes the pipe
+# on its first match, and a Go program writing to a closed stdout dies of SIGPIPE.
+left=$($WTM doctor)
+grep -q "is recorded for it/three, which has no worktree" <<<"$left" \
+  || fail "doctor should report the index left by a removal outside wtm"
+$WTM clean fx -y
+cleaned=$($WTM doctor)
+grep -q "it/three" <<<"$cleaned" && fail "clean left the stale index behind"
+docker volume ls -q | grep -q '^integration-wt-' && fail "clean left a worktree volume behind"
+
 $WTM doctor
 echo "integration: OK"
