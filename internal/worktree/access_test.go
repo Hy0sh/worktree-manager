@@ -92,9 +92,8 @@ func TestRunExecutesOnTheHostFromTheWorktree(t *testing.T) {
 }
 
 // A project's own script calling `docker compose` used to reach a stack named
-// after the directory it ran from, which does not exist. The file list is part
-// of the answer: `.wtm-ports.yaml` and `.wtm-snapshot.yaml` are not named
-// `override`, so compose ignores them unless it is told.
+// after the directory it ran from, which does not exist. The file list counts
+// too: wtm's overrides are not named `override`, so compose ignores them.
 func TestRunPointsComposeAtTheWorktreeStack(t *testing.T) {
 	f := newFixture(t)
 	o := f.opts("feat/x")
@@ -135,10 +134,9 @@ func TestRunSetsNothingWithoutAStack(t *testing.T) {
 	}
 }
 
-// `create --run` hands the terminal to the command once everything else is
-// done, and its compose environment must be the one `wtm run` would set. The
-// index is the trap: it was allocated by the start that just happened, so the
-// copy of the project this call was given does not carry it.
+// `create --run` hands the terminal to the command once everything else is done,
+// with the compose environment `wtm run` would set. The index is the trap: the
+// start that just happened allocated it, and this call's project copy lacks it.
 func TestCreateRunsTheHostCommandWithTheComposeEnvironment(t *testing.T) {
 	f := newFixture(t)
 	o := f.opts("feat/x")

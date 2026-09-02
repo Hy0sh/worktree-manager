@@ -1,7 +1,6 @@
-// Package safefile writes files at paths a git checkout controls, where any
-// component may be a symlink a hostile branch committed. It never writes
-// through one: a link at the leaf is replaced by a regular file, and a
-// directory chain that resolves outside the root is refused.
+// Package safefile writes at paths a git checkout controls, where a component
+// may be a symlink a hostile branch committed: a link at the leaf is replaced
+// by a regular file, a directory chain resolving outside the root is refused.
 package safefile
 
 import (
@@ -13,9 +12,8 @@ import (
 )
 
 // Write puts data at path, which must live under root once every directory
-// symlink is resolved. MkdirAll may still create directories through a
-// hostile link before the check fires; creating empty directories outside
-// the root is harmless, writing content there is what must never happen.
+// symlink is resolved. MkdirAll can still create directories through a hostile
+// link first: empty directories outside the root are harmless, content is not.
 func Write(root, path string, data []byte, perm fs.FileMode) error {
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 		return err

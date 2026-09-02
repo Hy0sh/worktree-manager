@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 
 	"github.com/Hy0sh/worktree-manager/internal/compose"
@@ -12,12 +13,22 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
 
-func allocations(o Options, wt stack.Worktree) ([]stack.Allocation, error) {
+// projectPorts reads the two inputs of every allocation: the ports the merged
+// compose file publishes, and the stride the indices step by.
+func projectPorts(o Options) ([]compose.ServicePort, int, error) {
 	services, err := compose.MergedServicePorts(o.Project.Dir)
+	if err != nil {
+		return nil, 0, err
+	}
+	return services, stack.Stride(o.Project.Dir), nil
+}
+
+func allocations(o Options, wt stack.Worktree) ([]stack.Allocation, error) {
+	services, stride, err := projectPorts(o)
 	if err != nil {
 		return nil, err
 	}
-	return stack.Allocate(services, wt.Index, stack.Stride(o.Project.Dir), o.Project.PortOffset)
+	return stack.Allocate(services, wt.Index, stride, o.Project.PortOffset)
 }
 
 func allocatePorts(ctx context.Context, o Options, wt stack.Worktree, dest string) error {
@@ -29,11 +40,9 @@ func allocatePorts(ctx context.Context, o Options, wt stack.Worktree, dest strin
 		o.logf("warning: this project publishes no port, nothing to isolate")
 		return nil
 	}
-	// Ports written as literals cannot be reached through the environment, so
-	// they are rebased in a generated compose file instead. A versioned .env
-	// cannot carry that environment at all, and the file then has to restate
-	// every port: leaving the parametrised ones out isolated nothing, while the
-	// note below said they were covered.
+	// Literal ports cannot be reached through the environment, so a generated
+	// compose file rebases them. A versioned .env carries no environment at all,
+	// and that file then has to restate every port or it isolates nothing.
 	envTracked := tracked(ctx, o, dest, ".env")
 	override := stack.PortsOverride(allocations, envTracked)
 	path := filepath.Join(dest, portsOverride)
@@ -51,6 +60,50 @@ func allocatePorts(ctx context.Context, o Options, wt stack.Worktree, dest strin
 		return nil
 	}
 	return stack.WriteEnvOverrides(dest, allocations)
+}
+
+// portClash checks a candidate index against recorded worktrees only, since
+// those are the ones that can run at the same time as the new one. The stride
+// stays put: changing it would move every existing worktree's ports.
+func portClash(o Options) func(n int) string {
+	services, stride, err := projectPorts(o)
+	if err != nil {
+		return func(int) string { return "" }
+	}
+	recorded := o.Resolver.Recorded()
+	// Two recorded branches can clash with the same candidate: map order would
+	// name a different one each run, for what is one and the same clash.
+	branches := make([]string, 0, len(recorded))
+	for branch := range recorded {
+		branches = append(branches, branch)
+	}
+	sort.Strings(branches)
+	return func(n int) string {
+		mine, err := stack.Allocate(services, n, stride, o.Project.PortOffset)
+		if err != nil {
+			return ""
+		}
+		for _, branch := range branches {
+			idx := recorded[branch]
+			if branch == o.Branch || idx == n {
+				continue
+			}
+			theirs, err := stack.Allocate(services, idx, stride, o.Project.PortOffset)
+			if err != nil {
+				continue
+			}
+			for _, a := range mine {
+				for _, b := range theirs {
+					if a.Port == b.Port {
+						return fmt.Sprintf("%s would publish %d, which %s already publishes for %s "+
+							"(raise portStride in .wtcrc.json to spread the indices further apart)",
+							a.Service, a.Port, branch, b.Service)
+					}
+				}
+			}
+		}
+		return ""
+	}
 }
 
 // endpoints pairs each service with the port it actually listens on in this

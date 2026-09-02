@@ -42,11 +42,9 @@ func allArgs(all *bool, branchForm cobra.PositionalArgs) cobra.PositionalArgs {
 	}
 }
 
-// shellLineArgs refuses a --run or --exec value that is really a flag, before
-// the positionals are even counted. pflag takes whatever follows a long flag as
-// its value, `--` and another flag included, so a caller reaching for the argv
-// form of `wtm exec` hides a flag inside the shell line: `--exec --no-start`
-// leaves --no-start unset, and the failure surfaces as an argument count.
+// shellLineArgs refuses a --run or --exec value that is really a flag. pflag
+// takes whatever follows a long flag as its value, `--` and another flag
+// included, so `--exec --no-start` left --no-start unset.
 func shellLineArgs(run, exec *string, form cobra.PositionalArgs) cobra.PositionalArgs {
 	return func(cmd *cobra.Command, given []string) error {
 		for _, f := range []struct {

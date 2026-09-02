@@ -1,15 +1,6 @@
 // Package dockermem measures the memory a stack has to fit into, and what is
-// already in it.
-//
-// Declared limits are useless for this: one my-app stack declares more
-// than 13 GB of mem_limit across its services yet runs in about 2 GB, because
-// mem_limit is a ceiling and not a reservation. Only measurement tells you
-// whether one more stack fits.
-//
-// Where that memory lives decides what counts as used. Docker Desktop holds a
-// budget of its own, so the containers are all of it; a native Linux docker
-// shares the machine with the user's session, so the desktop and the browser
-// count too. See Usage.Shared.
+// already in it. mem_limit is a ceiling and not a reservation, so a stack
+// declaring 13 GB across its services can run in 2 GB. See Usage.Shared.
 package dockermem
 
 import (
@@ -34,14 +25,9 @@ type Usage struct {
 	// would triple the estimate.
 	StackUsed int64
 	Projects  int // distinct compose projects, one-offs excluded
-	// Shared says the daemon runs on the very machine wtm does, which is a
-	// native Linux docker. There the containers compete with the user's own
-	// session for one pool of RAM, so Used is what the whole machine uses and
-	// not the sum of the containers: a desktop holding 6 GB is pressure the
-	// containers cannot see, and ignoring it made the warning fire long after
-	// the machine had started to thrash. Docker Desktop, on macOS or through
-	// WSL2, gives the containers a budget of their own, where that sum IS the
-	// pressure.
+	// Shared says the daemon runs on the very machine wtm does, a native Linux
+	// docker: Used is then what the whole machine uses, since a desktop holding
+	// 6 GB is pressure the containers compete with but cannot see.
 	Shared bool
 }
 
@@ -152,9 +138,8 @@ func read(ctx context.Context, runner execx.Runner, meminfo string) (Usage, erro
 		}
 	}
 	// One kernel for both: the daemon reports the same total the local
-	// /proc/meminfo does. A VM (Docker Desktop, on any host) reports its own
-	// budget, and a remote daemon somebody else's machine, so the totals differ
-	// and the sum of the containers stays the right measure.
+	// /proc/meminfo does. A VM (Docker Desktop) or a remote daemon reports
+	// another budget, where the containers' own sum stays the right measure.
 	if used, total, ok := hostMemory(meminfo); ok && sameMachine(u.Total, total) {
 		u.Used = used
 		u.Shared = true
@@ -176,9 +161,8 @@ func sameMachine(reported, local int64) bool {
 }
 
 // hostMemory reads what the machine uses and what it has. MemAvailable is the
-// kernel's own estimate of what a new workload could claim without swapping,
-// which is the question being asked here; MemFree would ignore the caches the
-// kernel gives back under pressure.
+// kernel's estimate of what a new workload could claim without swapping;
+// MemFree would ignore the caches the kernel gives back under pressure.
 func hostMemory(path string) (used, total int64, ok bool) {
 	if path == "" {
 		return 0, 0, false

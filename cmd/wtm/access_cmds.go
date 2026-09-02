@@ -27,11 +27,11 @@ func newExecCmd(a *app) *cobra.Command {
 				return fmt.Errorf("separate the command with --, as in " +
 					"`wtm exec <branch> -- python manage.py seed_data`")
 			}
-			name, p, branch, err := a.resolveOne(args[:dash])
+			o, err := a.optionsFor(args[:dash])
 			if err != nil {
 				return err
 			}
-			return worktree.Exec(cmd.Context(), a.options(name, p, branch), service, args[dash:])
+			return worktree.Exec(cmd.Context(), o, service, args[dash:])
 		},
 	}
 	cmd.Flags().StringVar(&service, "service", "", "compose service to run in (defaults to the project's app_service)")
@@ -60,11 +60,11 @@ func newRunCmd(a *app) *cobra.Command {
 			if dash < 1 {
 				return fmt.Errorf("separate the command with --, as in `wtm run <branch> -- claude`")
 			}
-			name, p, branch, err := a.resolveOne(args[:dash])
+			o, err := a.optionsFor(args[:dash])
 			if err != nil {
 				return err
 			}
-			return worktree.Run(cmd.Context(), a.options(name, p, branch), args[dash:])
+			return worktree.Run(cmd.Context(), o, args[dash:])
 		},
 	}
 }
@@ -79,11 +79,10 @@ func newPathCmd(a *app) *cobra.Command {
 		SilenceUsage:      true,
 		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			name, p, branch, err := a.resolveOne(args)
+			o, err := a.optionsFor(args)
 			if err != nil {
 				return err
 			}
-			o := a.options(name, p, branch)
 			// This one line is meant to be substituted: `cd $(wtm path feat/x)`.
 			o.Stack.Out = io.Discard
 			path, err := worktree.Path(cmd.Context(), o)

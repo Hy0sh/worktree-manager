@@ -16,9 +16,9 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
 
-// reportPortClashes says which ports two projects would fight over. Everything
-// it needs is already recorded: each project's offset, stride, compose ports
-// and the index of every branch that owns a stack.
+// reportPortClashes says which ports two stacks would fight over, between
+// projects and between worktrees of one. Everything it needs is already
+// recorded: each project's offset, stride, compose ports and branch indices.
 func (a *app) reportPortClashes() {
 	var holders []portHolder
 	for _, name := range a.cfg.Names() {
@@ -47,17 +47,24 @@ func (a *app) reportPortClashes() {
 			}
 		}
 	}
-	clashes := portClashes(holders)
-	if len(clashes) == 0 {
-		return
+	if clashes := portClashes(holders); len(clashes) > 0 {
+		fmt.Fprintln(a.out)
+		fmt.Fprintln(a.out, "port clashes between projects (those stacks cannot run at the same time):")
+		for _, line := range clashes {
+			fmt.Fprintf(a.out, "  %s\n", line)
+		}
+		fmt.Fprintln(a.out, "  offsets are handed out once, at registration: keep those stacks from running together, or")
+		fmt.Fprintln(a.out, "  raise `port_offset` for one project in config.json and recreate its worktrees, whose .env carry the old ports")
 	}
-	fmt.Fprintln(a.out)
-	fmt.Fprintln(a.out, "port clashes between projects (those stacks cannot run at the same time):")
-	for _, line := range clashes {
-		fmt.Fprintf(a.out, "  %s\n", line)
+	if clashes := intraProjectClashes(holders); len(clashes) > 0 {
+		fmt.Fprintln(a.out)
+		fmt.Fprintln(a.out, "port clashes between worktrees of one project (those two cannot run at the same time):")
+		for _, line := range clashes {
+			fmt.Fprintf(a.out, "  %s\n", line)
+		}
+		fmt.Fprintln(a.out, "  the stride is too small for ports that sit close together: set `portStride` in the project's")
+		fmt.Fprintln(a.out, "  .wtcrc.json above their spread, then recreate the worktrees, whose .env carry the old ports")
 	}
-	fmt.Fprintln(a.out, "  offsets are handed out once, at registration: keep those stacks from running together, or")
-	fmt.Fprintln(a.out, "  raise `port_offset` for one project in config.json and recreate its worktrees, whose .env carry the old ports")
 }
 
 // repoWorktrees pairs a registered project's repository name with the compose
@@ -65,19 +72,25 @@ func (a *app) reportPortClashes() {
 // left out: assuming everything it owns is orphan would be worse.
 type repoWorktrees struct {
 	Repo string
+	Name string // project name in the registry, for the command lines
 	Live []string
-	// Unindexed holds the branches whose index the registry does not carry, a
-	// worktree created before indices were recorded or started while docker was
-	// unreachable. Their compose project name cannot be derived, so nothing
-	// this project owns can be called orphan while any of them stands.
+	// Unindexed holds the branches whose index the registry does not carry,
+	// created before indices were recorded or started while docker was down.
+	// Their compose project name cannot be derived, so none can be called orphan.
 	Unindexed []string
+	// Stale are branches with a recorded index and no worktree, left by a removal
+	// outside wtm. Each pushes new worktrees one index further out, and makes a
+	// foreign worktree on that branch read as managed.
+	Stale []string
 }
 
 func (a *app) liveProjects(ctx context.Context) []repoWorktrees {
 	var out []repoWorktrees
 	for _, name := range a.cfg.Names() {
 		p := a.cfg.Projects[name]
-		client := &stack.Client{Runner: a.runner, Dir: p.Dir}
+		// Managed is what lets an adopted worktree count as present: without
+		// it every adopted branch would read as stale.
+		client := &stack.Client{Runner: a.runner, Dir: p.Dir, Managed: managed(p)}
 		worktrees, err := client.Worktrees(ctx)
 		if err != nil {
 			continue
@@ -85,16 +98,45 @@ func (a *app) liveProjects(ctx context.Context) []repoWorktrees {
 		repo := filepath.Base(p.Dir)
 		live := make([]string, 0, len(worktrees))
 		var unindexed []string
+		present := map[string]bool{}
 		for _, wt := range worktrees {
+			present[wt.Branch] = true
 			if idx := p.WorktreeIndices[wt.Branch]; idx > 0 {
 				live = append(live, stack.ProjectName(repo, idx, wt.Branch))
 				continue
 			}
 			unindexed = append(unindexed, wt.Branch)
 		}
-		out = append(out, repoWorktrees{Repo: repo, Live: live, Unindexed: unindexed})
+		var stale []string
+		for branch := range p.WorktreeIndices {
+			if !present[branch] {
+				stale = append(stale, branch)
+			}
+		}
+		sort.Strings(stale)
+		out = append(out, repoWorktrees{Repo: repo, Name: name, Live: live, Unindexed: unindexed, Stale: stale})
 	}
 	return out
+}
+
+func (a *app) reportStaleIndices(ctx context.Context) {
+	var lines, cmds []string
+	for _, rw := range a.liveProjects(ctx) {
+		p := a.cfg.Projects[rw.Name]
+		for _, branch := range rw.Stale {
+			lines = append(lines, fmt.Sprintf("%s: index %d is recorded for %s, which has no worktree", rw.Name, p.WorktreeIndices[branch], branch))
+			cmds = append(cmds, fmt.Sprintf("wtm remove %s %s", rw.Name, branch))
+		}
+	}
+	if len(lines) == 0 {
+		return
+	}
+	fmt.Fprintln(a.out)
+	fmt.Fprintln(a.out, "recorded indices with no worktree behind them (each pushes new worktrees one index further out):")
+	for _, l := range lines {
+		fmt.Fprintf(a.out, "  %s\n", l)
+	}
+	fmt.Fprintf(a.out, "  release them with `%s`\n", strings.Join(cmds, "`, `"))
 }
 
 // reportOrphanVolumes lists the volumes of worktrees that no longer exist.
@@ -119,6 +161,26 @@ func (a *app) reportOrphanVolumes(ctx context.Context) {
 		fmt.Fprintf(a.out, "  %s\n", name)
 	}
 	fmt.Fprintf(a.out, "  drop them with `docker volume rm %s`\n", strings.Join(orphans, " "))
+}
+
+// reportAnonymousVolumes counts what the orphan report cannot see: volumes an
+// image created on its own, labelled anonymous, that no container mounts.
+// Machine-wide by nature, hence a count and a command rather than an attribution.
+func (a *app) reportAnonymousVolumes(ctx context.Context) {
+	res, err := a.runner.Run(ctx, execx.Cmd{Name: "docker", Args: []string{"volume", "ls", "-q",
+		"--filter", "dangling=true", "--filter", "label=com.docker.volume.anonymous"}})
+	if err != nil {
+		return
+	}
+	ids := strings.Fields(res.Stdout)
+	if len(ids) == 0 {
+		return
+	}
+	fmt.Fprintln(a.out)
+	fmt.Fprintf(a.out, "%d anonymous volume(s) no container mounts, left by images that name their own data directory:\n", len(ids))
+	// The same filters that found them, rather than a line of 64-character ids.
+	fmt.Fprintln(a.out, "  drop them with `docker volume rm $(docker volume ls -q "+
+		"--filter dangling=true --filter label=com.docker.volume.anonymous)`")
 }
 
 // reportOrphanImages lists what worktrees that no longer exist had compose
@@ -148,12 +210,9 @@ func (a *app) reportOrphanImages(ctx context.Context) {
 	fmt.Fprintf(a.out, "  drop them with `docker rmi %s`\n", strings.Join(orphans, " "))
 }
 
-// buildCache is what buildkit keeps between builds. It is reported and never
-// removed: the cache is shared by every project on the machine and buildkit
-// attributes none of it, so only the developer can decide it is expendable.
-// `docker system df` also has the number but walks the whole image store for
-// it, which took a minute on a machine busy building; `buildx du` prints its
-// Private/Reclaimable/Total summary in under a second.
+// buildCache is reported and never removed: buildkit attributes none of it, so
+// only the developer can decide it is expendable. `docker system df` has the
+// number too, but walks the image store for it where `buildx du` takes a second.
 func (a *app) buildCache(ctx context.Context) string {
 	res, err := a.runner.Run(ctx, execx.Cmd{Name: "docker", Args: []string{"buildx", "du"}})
 	if err != nil {
@@ -204,27 +263,30 @@ func newDoctorCmd(a *app) *cobra.Command {
 			if line := a.buildCache(cmd.Context()); line != "" {
 				fmt.Fprintf(a.out, "cache    %s\n", line)
 			}
-			if len(a.cfg.Projects) == 0 {
-				return nil
-			}
-			fmt.Fprintln(a.out)
-			w := tabwriter.NewWriter(a.out, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "PROJECT\tDIRECTORY\tSTRIDE\tOFFSET\tENGINE")
-			for _, name := range a.cfg.Names() {
-				p := a.cfg.Projects[name]
-				// BackupConfig defaults to postgres even without a database.
-				engine := "-"
-				if p.Dump {
-					engine = p.BackupConfig().DBEngine
+			if len(a.cfg.Projects) > 0 {
+				fmt.Fprintln(a.out)
+				w := tabwriter.NewWriter(a.out, 0, 0, 2, ' ', 0)
+				fmt.Fprintln(w, "PROJECT\tDIRECTORY\tSTRIDE\tOFFSET\tENGINE")
+				for _, name := range a.cfg.Names() {
+					p := a.cfg.Projects[name]
+					// BackupConfig defaults to postgres even without a database.
+					engine := "-"
+					if p.Dump {
+						engine = p.BackupConfig().DBEngine
+					}
+					fmt.Fprintf(w, "%s\t%s\t%d\t%d\t%s\n", name, p.Dir, stack.Stride(p.Dir), p.PortOffset, engine)
 				}
-				fmt.Fprintf(w, "%s\t%s\t%d\t%d\t%s\n", name, p.Dir, stack.Stride(p.Dir), p.PortOffset, engine)
+				if err := w.Flush(); err != nil {
+					return err
+				}
+				a.reportPortClashes()
+				a.reportStaleIndices(cmd.Context())
+				a.reportOrphanVolumes(cmd.Context())
+				a.reportOrphanImages(cmd.Context())
 			}
-			if err := w.Flush(); err != nil {
-				return err
-			}
-			a.reportPortClashes()
-			a.reportOrphanVolumes(cmd.Context())
-			a.reportOrphanImages(cmd.Context())
+			// Anonymous volumes are machine-wide, not tied to a registered
+			// project: the only report an empty registry still has an answer for.
+			a.reportAnonymousVolumes(cmd.Context())
 			return nil
 		},
 	}

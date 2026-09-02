@@ -11,12 +11,9 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/dbengine"
 )
 
-// runProjectStepper asks for what a project needs, one question at a time,
-// rather than expecting the ten flags of `project create` to be known in
-// advance. Every answer defaults to what the project already carries, so an
-// edit is a series of empty lines plus the one field being changed.
-// inheritedBase is what applies while the project names no base branch of its
-// own, i.e. the registry's default_base_branch or the fallback.
+// runProjectStepper asks for what a project needs one question at a time, each
+// answer defaulting to what it already carries. inheritedBase is what applies
+// while the project names no base of its own: default_base_branch, or fallback.
 func runProjectStepper(p *prompter, current config.Project, inheritedBase string) (config.ProjectUpdate, error) {
 	var u config.ProjectUpdate
 
@@ -57,10 +54,9 @@ func runProjectStepper(p *prompter, current config.Project, inheritedBase string
 	return u, nil
 }
 
-// askBaseBranch records an answer only when one is typed. Offering the
-// inherited branch as a default and writing it back would pin the project to
-// whatever default_base_branch said the day it was registered, which is how
-// that setting came to apply to nobody.
+// askBaseBranch records an answer only when one is typed. Writing the inherited
+// branch back would pin the project to whatever default_base_branch said the day
+// it was registered, which is how that setting came to apply to nobody.
 func askBaseBranch(p *prompter, current, inherited string, u *config.ProjectUpdate) error {
 	if current != "" {
 		base, err := p.ask("base branch", current)
@@ -80,10 +76,9 @@ func askBaseBranch(p *prompter, current, inherited string, u *config.ProjectUpda
 	return nil
 }
 
-// askBackup only runs when the backup is on: asking for a migration command a
-// project will never run is noise. It works on the project's raw backup
-// section, not the defaulted view: an unset engine must fall back to what the
-// compose image says, not to the postgres default.
+// askBackup only runs when the backup is on: a migration command a project will
+// never run is noise. It reads the raw backup section, not the defaulted view,
+// so an unset engine falls back to the compose image and not to postgres.
 func askBackup(p *prompter, dir string, project config.Project, u *config.ProjectUpdate) error {
 	current := project.BackupConfig()
 	if services, err := compose.Services(dir); err == nil && len(services) > 0 {
@@ -161,9 +156,8 @@ func askBackup(p *prompter, dir string, project config.Project, u *config.Projec
 }
 
 // askEngine offers what the compose image of the database service says as the
-// default, so registering a mysql project is a plain enter. An engine wtm does
-// not support is re-asked on the spot rather than discovered at the first
-// refresh.
+// default, so registering a mysql project is a plain enter. An unsupported one
+// is re-asked on the spot rather than discovered at the first refresh.
 func askEngine(p *prompter, dir, dbService, current string) (string, error) {
 	detected := config.DefaultDBEngine
 	if img, ok := compose.ServiceImage(dir, dbService); ok {
@@ -183,13 +177,9 @@ func askEngine(p *prompter, dir, dbService, current string) (string, error) {
 	}
 }
 
-// askDir keeps asking until the answer is a directory that exists: a typo
-// caught here costs one line, caught at the first `wtm create` it costs a
-// puzzled minute.
 // askName asks for the name every other command uses. It is the key of the
-// registry rather than a field of the project, which is why it is asked here
-// and not by the stepper: the directory has to be known first, since that is
-// what the answer defaults to.
+// registry rather than a field of the project, which is why the stepper does
+// not ask it: the directory it defaults to has to be known first.
 func askName(p *prompter, current string) (string, error) {
 	if config.ValidateIdentifier("project name", current) != nil {
 		current = "" // a directory whose name would not do as a project name
@@ -199,15 +189,18 @@ func askName(p *prompter, current string) (string, error) {
 		if err != nil {
 			return "", err
 		}
-		if err := config.ValidateIdentifier("project name", answer); err == nil {
+		err = config.ValidateIdentifier("project name", answer)
+		if err == nil {
 			return answer, nil
-		} else {
-			p.logf("  %v", err)
-			current = ""
 		}
+		p.logf("  %v", err)
+		current = ""
 	}
 }
 
+// askDir keeps asking until the answer is a directory that exists: a typo
+// caught here costs one line, caught at the first `wtm create` it costs a
+// puzzled minute.
 func askDir(p *prompter, current string) (string, error) {
 	for {
 		answer, err := p.askRequired("repository directory", current)
@@ -241,10 +234,9 @@ func projectDir(input string) (string, error) {
 	if err != nil || !info.IsDir() {
 		return "", fmt.Errorf("%s is not an accessible directory", abs)
 	}
-	// Every command goes through git, so saying it here beats failing four steps
-	// later, once a refresh has built an image and dumped a database. The entry
-	// is a file in a linked worktree and a directory in a main repository, hence
-	// Stat rather than IsDir.
+	// A directory that is not a repository would fail four steps later, once a
+	// refresh has built an image. The entry is a file in a linked worktree and a
+	// directory in a main repository, hence Stat rather than IsDir.
 	if _, err := os.Stat(filepath.Join(abs, ".git")); err != nil {
 		return "", fmt.Errorf("%s is not a git repository: wtm creates worktrees, which git alone can do", abs)
 	}

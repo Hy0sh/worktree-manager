@@ -45,8 +45,7 @@ func TestDetectMatchesCommonImages(t *testing.T) {
 
 // Detection decides which commands run against the container: an image that
 // merely mentions an engine in its name (a proxy, a sidecar, a toolbox) must
-// not be mistaken for the server itself. Detection is a default the stepper
-// offers; missing one costs a question, matching wrong breaks the backup.
+// not be mistaken for the server itself.
 func TestDetectRejectsLookalikeImages(t *testing.T) {
 	for _, image := range []string{
 		"mycompany/mysql-proxy:1",
@@ -121,7 +120,7 @@ func TestTempDBNameSanitisesTheProjectName(t *testing.T) {
 
 func TestPostgresCommands(t *testing.T) {
 	eng, _ := ByName("postgres")
-	if got := strings.Join(eng.ReadyArgs("postgres"), " "); got != "pg_isready -U postgres" {
+	if got := strings.Join(eng.ReadyArgs("postgres"), " "); got != "pg_isready -h 127.0.0.1 -U postgres" {
 		t.Fatalf("ready = %q", got)
 	}
 	if got := strings.Join(eng.DumpArgs("postgres", "x_tmp"), " "); got != "pg_dump -U postgres -Fc --no-owner --no-privileges -d x_tmp" {
@@ -137,6 +136,46 @@ func TestPostgresCommands(t *testing.T) {
 	for _, want := range []string{"/db-snapshot/myapp.dump", "pg_restore", "POSTGRES_DB"} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("restore script must contain %q:\n%s", want, script)
+		}
+	}
+}
+
+// The image runs a temporary server on the unix socket alone while initialising
+// a new data directory; pg_isready over the socket answers in that window, and a
+// migration launched then dies. Only a TCP probe waits for the real server.
+func TestPostgresReadyProbesOverTCP(t *testing.T) {
+	eng, err := ByName("postgres")
+	if err != nil {
+		t.Fatal(err)
+	}
+	args := strings.Join(eng.ReadyArgs("postgres"), " ")
+	if !strings.Contains(args, "-h 127.0.0.1") {
+		t.Fatalf("the probe must go over TCP to skip the init-phase server, got %q", args)
+	}
+}
+
+// The entrypoint runs the script as the database's own user. A mount it cannot
+// read used to take the "no dump" branch and exit 0, which brought the worktree
+// up on an empty database without a word.
+func TestRestoreScriptRefusesAnUnreadableSnapshot(t *testing.T) {
+	for _, name := range []string{"postgres", "mysql", "mariadb", "mongodb"} {
+		eng, err := ByName(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		script := eng.RestoreScript("myapp")
+		for _, want := range []string{
+			"[ ! -r /db-snapshot ]",
+			`[ ! -r "$dump" ]`,
+			"is not readable by",
+			"exit 1",
+		} {
+			if !strings.Contains(script, want) {
+				t.Fatalf("%s: the script must carry %q:\n%s", name, want, script)
+			}
+		}
+		if !strings.Contains(script, "starting from an empty database") {
+			t.Fatalf("%s: a project with no dump yet still starts empty, not in error", name)
 		}
 	}
 }

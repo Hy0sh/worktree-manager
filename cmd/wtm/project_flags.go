@@ -151,11 +151,9 @@ func validateUpdate(u config.ProjectUpdate) error {
 	return nil
 }
 
-// detectEngineIfUnset fills db_engine from the compose image when the backup
-// is on and no engine was given. The stepper offers the detection as its
-// default; a scripted --no-input call deserves the same instead of a silent
-// postgres fallback that only fails at the first refresh. When the image is
-// not recognised, logf is how that fallback risk reaches the caller.
+// detectEngineIfUnset fills db_engine from the compose image when the backup is
+// on and no engine was given: the stepper offers the detection as its default,
+// and a scripted --no-input call deserves the same rather than a silent postgres.
 func detectEngineIfUnset(p *config.Project, logf func(string, ...any)) {
 	if !p.Dump || p.Dir == "" || (p.Backup != nil && p.Backup.DBEngine != "") {
 		return
@@ -180,9 +178,8 @@ func detectEngineIfUnset(p *config.Project, logf func(string, ...any)) {
 }
 
 // warnPinnedContainers reports the services whose compose file fixes their
-// container_name. It is the one isolation wtm cannot provide: ports, volumes
-// and the compose project name are rebased, a container_name is not, so the
-// main stack and a worktree stack cannot both run.
+// container_name. It is the one isolation wtm cannot provide: ports, volumes and
+// the project name are rebased, so the main and worktree stacks collide there.
 func warnPinnedContainers(p config.Project, logf func(string, ...any)) {
 	if p.Dir == "" {
 		return
@@ -195,18 +192,14 @@ func warnPinnedContainers(p config.Project, logf func(string, ...any)) {
 		"cannot run at the same time until those lines go", strings.Join(pinned, ", "))
 }
 
-// stepper walks the questions, unless the command was told not to ask.
-func (f *projectFlags) stepper(a *app, current config.Project) (config.ProjectUpdate, error) {
+// steppedUpdate walks the questions, unless the command was told not to ask,
+// then applies the same gate the flag path gets in update(): answers typed at
+// the prompt land in generated files too.
+func (f *projectFlags) steppedUpdate(a *app, current config.Project) (config.ProjectUpdate, error) {
 	if f.noInput {
 		return config.ProjectUpdate{}, fmt.Errorf("nothing to do: pass the settings as flags, or drop --no-input to be asked")
 	}
-	return runProjectStepper(newPrompter(a.in, a.out), current, a.cfg.BaseBranchFor(config.Project{}))
-}
-
-// steppedUpdate walks the questions then applies the same gate the flag path
-// gets in update(): answers typed at the prompt land in generated files too.
-func (f *projectFlags) steppedUpdate(a *app, current config.Project) (config.ProjectUpdate, error) {
-	u, err := f.stepper(a, current)
+	u, err := runProjectStepper(newPrompter(a.in, a.out), current, a.cfg.BaseBranchFor(config.Project{}))
 	if err != nil {
 		return u, err
 	}

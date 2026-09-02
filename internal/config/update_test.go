@@ -111,3 +111,20 @@ func TestApplyRecordsTheMigrationsPath(t *testing.T) {
 		t.Fatalf("changes = %+v", changes)
 	}
 }
+
+// Two env maps of one size differing only by a key whose value is empty used
+// to read as equal, so renaming such a variable was applied nowhere and
+// reported as nothing.
+func TestApplyReportsARenamedEmptyEnvVariable(t *testing.T) {
+	p := Project{Backup: &Backup{Env: map[string]string{"DB_NAME": "{{database}}", "OLD": ""}}}
+	edited, changes := ProjectUpdate{
+		Env: map[string]string{"DB_NAME": "{{database}}", "NEW": ""},
+	}.Apply(p)
+
+	if _, ok := edited.Backup.Env["OLD"]; ok {
+		t.Fatalf("the old variable should be gone: %v", edited.Backup.Env)
+	}
+	if len(changes) != 1 || changes[0].Field != "env" {
+		t.Fatalf("changes = %+v", changes)
+	}
+}

@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"strings"
@@ -34,25 +33,14 @@ func adoptFixture(t *testing.T, in string) (*app, *execx.Fake, *bytes.Buffer, st
 	cfg := &config.Config{Projects: map[string]config.Project{
 		"myapp": {Dir: dir, WorktreeIndices: map[string]int{"feat/a": 1}},
 	}}
-	cfgPath := filepath.Join(t.TempDir(), "config.json")
-	data, err := json.Marshal(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(cfgPath, data, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	out := &bytes.Buffer{}
-	fake := &execx.Fake{Handler: func(c execx.Cmd) (execx.Result, error) {
+	a, fake, out := newTestApp(t, cfg, in, func(c execx.Cmd) (execx.Result, error) {
 		if strings.Contains(c.String(), "worktree list") {
 			return execx.Result{Stdout: "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n" +
 				"worktree " + filepath.Join(dir, ".worktrees", "feat/a") + "\nHEAD aaa\nbranch refs/heads/feat/a\n\n" +
 				"worktree " + foreign + "\nHEAD ccc\nbranch refs/heads/worktree-curry\n"}, nil
 		}
 		return execx.Result{}, nil
-	}}
-	a := &app{cfg: cfg, cfgPath: cfgPath,
-		backups: t.TempDir(), runner: fake, out: out, in: strings.NewReader(in)}
+	})
 	return a, fake, out, foreign
 }
 

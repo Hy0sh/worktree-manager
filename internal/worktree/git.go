@@ -11,6 +11,15 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
 
+// git runs a git command in the project repository, which always exists where
+// a worktree's own directory may not.
+func (o Options) git(ctx context.Context, args ...string) (execx.Result, error) {
+	return o.Runner.Run(ctx, execx.Cmd{
+		Name: "git",
+		Args: append([]string{"-C", o.Project.Dir}, args...),
+	})
+}
+
 // pruneEmptyParents drops the directories a slashed branch name created
 // (.worktrees/feat for feat/x), which git leaves behind empty. It stops at the
 // first non-empty directory and never touches root itself.
@@ -66,15 +75,9 @@ func addWorktree(ctx context.Context, o Options, dest string) error {
 	return nil
 }
 
-// noteBaseBehind says when the local base the worktree is about to be cut from
-// trails its remote. Nothing else refreshes it: remoteBranch only ever fetches
-// the branch being created, so a create can start from a ref weeks old without
-// a word.
-//
-// The cut does not move. Taking the tracking ref instead cannot conflict, but
-// it changes the starting point, and someone holding unpushed commits on the
-// base would silently get a worktree without them. wtm states the gap and
-// names nothing to run: which ref to start from is the caller's call.
+// noteBaseBehind says when the local base the worktree is cut from trails its
+// remote; nothing else refreshes it. The cut does not move: someone holding
+// unpushed commits on the base would silently get a worktree without them.
 func noteBaseBehind(ctx context.Context, o Options) {
 	for _, r := range remotes(ctx, o) {
 		if !refExists(ctx, o, "refs/remotes/"+r+"/"+o.Base) {
@@ -82,15 +85,8 @@ func noteBaseBehind(ctx context.Context, o Options) {
 		}
 		// Only the first remote carrying the base is asked. A base living on
 		// two remotes is a repository wtm has no business picking sides in.
-		_, _ = o.Runner.Run(ctx, execx.Cmd{
-			Name: "git",
-			Args: []string{"-C", o.Project.Dir, "fetch", "--quiet", r, o.Base},
-		})
-		res, err := o.Runner.Run(ctx, execx.Cmd{
-			Name: "git",
-			Args: []string{"-C", o.Project.Dir, "rev-list", "--count",
-				o.Base + ".." + r + "/" + o.Base},
-		})
+		_, _ = o.git(ctx, "fetch", "--quiet", r, o.Base)
+		res, err := o.git(ctx, "rev-list", "--count", o.Base+".."+r+"/"+o.Base)
 		// Offline, behind a VPN, or a base that only exists on the remote: no
 		// count, so no gap to claim. A create is not where a network problem
 		// gets reported.
@@ -106,9 +102,8 @@ func noteBaseBehind(ctx context.Context, o Options) {
 }
 
 // remoteBranch returns the single remote that carries o.Branch, or "" when none
-// does. Without this, a branch that exists only on the remote gets cut from
-// base instead: same name, none of its commits, no upstream, and a divergence
-// to sort out at the first push.
+// does. Without it, a branch living only on a remote gets cut from base: same
+// name, none of its commits, no upstream, a divergence at the first push.
 func remoteBranch(ctx context.Context, o Options) (string, error) {
 	all := remotes(ctx, o)
 	carriers := trackingRefs(ctx, o, all)
@@ -117,10 +112,7 @@ func remoteBranch(ctx context.Context, o Options) (string, error) {
 		// tracking ref can tell. A branch that exists nowhere makes this fail,
 		// which is the ordinary case of creating one, hence the silence.
 		for _, r := range all {
-			_, _ = o.Runner.Run(ctx, execx.Cmd{
-				Name: "git",
-				Args: []string{"-C", o.Project.Dir, "fetch", "--quiet", r, o.Branch},
-			})
+			_, _ = o.git(ctx, "fetch", "--quiet", r, o.Branch)
 		}
 		carriers = trackingRefs(ctx, o, all)
 	}
@@ -149,10 +141,7 @@ func trackingRefs(ctx context.Context, o Options, all []string) []string {
 }
 
 func remotes(ctx context.Context, o Options) []string {
-	res, err := o.Runner.Run(ctx, execx.Cmd{
-		Name: "git",
-		Args: []string{"-C", o.Project.Dir, "remote"},
-	})
+	res, err := o.git(ctx, "remote")
 	if err != nil {
 		return nil
 	}
@@ -164,10 +153,7 @@ func branchExists(ctx context.Context, o Options) bool {
 }
 
 func refExists(ctx context.Context, o Options, ref string) bool {
-	_, err := o.Runner.Run(ctx, execx.Cmd{
-		Name: "git",
-		Args: []string{"-C", o.Project.Dir, "rev-parse", "--verify", "--quiet", ref},
-	})
+	_, err := o.git(ctx, "rev-parse", "--verify", "--quiet", ref)
 	return err == nil
 }
 

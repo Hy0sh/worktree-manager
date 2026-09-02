@@ -32,8 +32,7 @@ func TestRefreshExplainsAnOOMKill(t *testing.T) {
 
 // Migrating through `exec` puts the peak inside the developer's own backend,
 // where a mem_limit sized for day-to-day work gets it OOM-killed and takes the
-// running server down with it. A disposable container with no cap keeps the
-// blast radius on something we own.
+// running server down with it.
 func TestRefreshMigratesInADisposableContainer(t *testing.T) {
 	var override string
 	f := &execx.Fake{Handler: func(c execx.Cmd) (execx.Result, error) {

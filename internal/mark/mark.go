@@ -1,7 +1,6 @@
 // Package mark maintains a delimited block inside a file whose other lines
 // belong to someone else: a project's .env, a repository's info/exclude. The
-// markers are what make the block recognisable, so a rewrite replaces it
-// instead of piling copies up.
+// markers make the block recognisable, so a rewrite replaces it in place.
 package mark
 
 import "strings"

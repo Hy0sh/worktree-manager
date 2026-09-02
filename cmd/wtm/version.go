@@ -6,9 +6,8 @@ import (
 )
 
 // version reports what this binary was built from. Nothing is stamped at build
-// time: the Go toolchain records the module version when installed from a tag,
-// and the commit otherwise, so `go install ...@v0.2.0` and a local build both
-// describe themselves accurately without any ldflags dance.
+// time: the Go toolchain records the module version when installed from a tag
+// and the commit otherwise, which spares wtm any ldflags dance.
 func version() string {
 	info, ok := debug.ReadBuildInfo()
 	if !ok {

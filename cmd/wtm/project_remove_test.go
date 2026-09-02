@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"errors"
 	"path/filepath"
 	"strings"
@@ -27,21 +26,16 @@ func porcelain(root string, branches ...string) string {
 func removeApp(t *testing.T, listing func(root string) (execx.Result, error)) *app {
 	t.Helper()
 	dir := t.TempDir()
-	return &app{
-		cfg: &config.Config{Projects: map[string]config.Project{
-			"myapp": {Dir: dir, PortOffset: 2000},
-		}},
-		cfgPath: filepath.Join(t.TempDir(), "config.json"),
-		backups: t.TempDir(),
-		runner: &execx.Fake{Handler: func(c execx.Cmd) (execx.Result, error) {
-			if strings.Contains(c.String(), "worktree list") {
-				return listing(dir)
-			}
-			return execx.Result{}, nil
-		}},
-		out: new(bytes.Buffer),
-		in:  strings.NewReader(""),
-	}
+	cfg := &config.Config{Projects: map[string]config.Project{
+		"myapp": {Dir: dir, PortOffset: 2000},
+	}}
+	a, _, _ := newTestApp(t, cfg, "", func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(c.String(), "worktree list") {
+			return listing(dir)
+		}
+		return execx.Result{}, nil
+	})
+	return a
 }
 
 // Removing the entry first would orphan those worktrees: every worktree command

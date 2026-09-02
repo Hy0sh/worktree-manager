@@ -48,12 +48,28 @@ func (m *Manager) logf(format string, args ...any) {
 	}
 }
 
+// ProjectDir is where a project's dump, its meta and the restore script live.
+// It is 0755 under a 0700 root on purpose: the database container mounts this
+// very directory and runs the restore as its own user, never as root.
+func ProjectDir(root, name string) (string, error) {
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return "", err
+	}
+	dir := filepath.Join(root, name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	// MkdirAll leaves an existing directory's mode alone, and every install
+	// before this created it 0700.
+	return dir, os.Chmod(dir, 0o755)
+}
+
 // lockRefresh serialises the refreshes of one project: two at once fight over
 // the same throwaway database and temporary file. Failing fast beats queueing,
 // since waiting behind another refresh only redoes its work.
 func (m *Manager) lockRefresh(name string) (func(), error) {
-	dir := filepath.Join(m.Root, name)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	dir, err := ProjectDir(m.Root, name)
+	if err != nil {
 		return nil, err
 	}
 	l := flock.New(filepath.Join(dir, refreshLockName))
@@ -68,9 +84,8 @@ func (m *Manager) lockRefresh(name string) (func(), error) {
 }
 
 // Refresh regenerates the dump: it starts the database if needed, migrates a
-// throwaway one and dumps it as migrate left it, data included. Everything the
-// migrations create is therefore captured, permissions and reference data
-// among them; only what they did not create, seed data first of all, is out.
+// throwaway one and dumps it as migrate left it. What the migrations create is
+// captured, permissions and reference data included; seed data is not.
 func (m *Manager) Refresh(ctx context.Context, name string, p config.Project) error {
 	cfg := p.BackupConfig()
 	if err := cfg.Validate(); err != nil {
@@ -91,9 +106,13 @@ func (m *Manager) Refresh(ctx context.Context, name string, p config.Project) er
 	}
 	db := dbengine.TempDBName(name)
 
-	if err := m.ensureUp(ctx, name, p, cfg); err != nil {
+	cleanup, err := m.ensureUp(ctx, name, p, cfg)
+	if err != nil {
 		return err
 	}
+	// Whatever the refresh started for itself goes back down, whether the dump
+	// was written or the migration failed halfway.
+	defer cleanup()
 	if err := m.waitFor(ctx, "the database", dbWaitAttempts, execx.Cmd{
 		Name: "docker",
 		Args: append([]string{"compose", "exec", "-T", cfg.DBService}, eng.ReadyArgs(cfg.DBUser)...),

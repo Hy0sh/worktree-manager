@@ -153,7 +153,7 @@ wtm run feat/my-branch -- scripts/some-compose-script.sh
 cd $(wtm path feat/my-branch)
 
 # database backup
-wtm backup refresh my-app            # starts db+backend if needed
+wtm backup refresh my-app            # starts the db if needed, and stops it again after
 wtm backup list
 wtm backup remove my-app
 ```
@@ -392,6 +392,13 @@ is only reused once docker — when it can be asked — no longer holds any
 container or volume of a previous worktree there; while docker is
 unreachable, wtm resolves indices in memory and records nothing.
 
+An index is also stepped over when a recorded worktree already publishes one of
+the ports it would take, which happens as soon as two services sit closer
+together than the stride: with the default stride of 1, a project publishing
+`db` on 5432 and `db_test` on 5433 has index 2 land on index 1's `db_test`
+port. The line `index N skipped: ...` names the port and the neighbour holding
+it, and the next index is tried.
+
 Three details earned their place the hard way. The reference is the project's
 *merged* compose configuration, not just the base file: a project already
 remapping a port on purpose keeps that mapping. The project offset exists
@@ -412,9 +419,14 @@ Reports, in order: the version running and whether a newer one is published,
 the config and backups paths, the memory actually used by the Docker VM, the
 size of the build cache, then per project its port stride, offset and database
 engine. Below that come the problems nothing else mentions: the ports two
-projects would both publish, and what removed worktrees left behind, their
-volumes (which squat the indices their ports came from) and the images their
-stacks built. Each of those lines carries the command that drops them.
+projects would both publish, the ports two worktrees of one project would both
+publish (with the `portStride` remedy), the recorded indices no worktree stands
+behind — each pushing new worktrees one index further out — and what removed
+worktrees left behind, their volumes (which squat the indices their ports came
+from) and the images their stacks built. Last come the anonymous volumes no
+container mounts, left by images that name their own data directory: those
+belong to no project, so they are counted even with an empty registry. Each of
+those lines carries the command that drops them.
 
 The build cache is only ever reported. Buildkit attributes none of it to a
 project, so only you can decide it is expendable.
@@ -535,7 +547,7 @@ a real project (my-app):
 2. Without `--no-start` -> the stack starts and the allocated ports are
    displayed.
 3. `wtm backup refresh <project>` with the stack stopped -> it starts on
-   its own, the dump shows up in `backup list`.
+   its own and stops it again, the dump shows up in `backup list`.
 4. `wtm stop` then `remove` -> stack stopped, worktree removed, local
    branch still present.
 
@@ -543,7 +555,8 @@ a real project (my-app):
 
 Pull requests are welcome. `main` is the only long-lived branch: branch off it,
 keep the branch short, open a PR. CI runs `go test -race`, `go vet`, `gofmt`,
-staticcheck and a build, and has to be green to merge. What changed between
+staticcheck, a build and a docker integration job driving the real binary
+through `testdata/integration/run.sh`, and has to be green to merge. What changed between
 published versions is in [CHANGELOG.md](CHANGELOG.md).
 
 The test suite needs neither git, docker nor node: every external command goes

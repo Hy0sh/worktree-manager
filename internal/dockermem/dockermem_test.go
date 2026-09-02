@@ -143,9 +143,8 @@ func meminfo(t *testing.T, totalKB, availableKB int64) string {
 }
 
 // On a native Linux docker the containers share the machine with the user's
-// session. Counting the containers alone made the warning blind to a desktop
-// holding 6 GB, which is how a colleague's machine froze on the third worktree
-// without wtm ever saying a word.
+// session. Counting the containers alone left the warning blind to a desktop
+// holding 6 GB, and a machine froze on its third worktree, unwarned.
 func TestReadCountsTheWholeMachineWhenDockerSharesIt(t *testing.T) {
 	const totalKB, availableKB = 16 * 1024 * 1024, 2 * 1024 * 1024
 	u, err := read(context.Background(), fake(

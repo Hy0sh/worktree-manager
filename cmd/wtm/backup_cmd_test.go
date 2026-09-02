@@ -36,9 +36,8 @@ func backupFixture(t *testing.T, in string) (*app, string) {
 }
 
 // The dump is the migration history wtm exists not to replay, and this command
-// takes the current directory's project when called without an argument: from
-// the wrong directory it used to delete it without a word, where `project
-// remove` asks before deleting the very same file.
+// takes the current directory's project: from the wrong one it used to delete it
+// without a word, where `project remove` asks before deleting that same file.
 func TestBackupRemoveAsksBeforeDeletingTheDump(t *testing.T) {
 	a, dump := backupFixture(t, "\n") // an empty answer is no
 	cmd := newBackupCmd(a)

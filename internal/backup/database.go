@@ -12,28 +12,23 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 )
 
-// ensureUp starts only the services that are down. Recreating a container that
-// already runs is never harmless: the developer's stack goes through a full
-// restart, dependency reinstall included, for no benefit here.
-func (m *Manager) ensureUp(ctx context.Context, name string, p config.Project, cfg config.Backup) error {
-	res, err := m.Runner.Run(ctx, execx.Cmd{
-		Name: "docker",
-		Args: []string{"compose", "ps", "--services", "--status", "running"},
-		Dir:  p.Dir,
-	})
+// ensureUp starts the database when it is down (recreating a running one
+// restarts the developer's stack for nothing) and returns the cleanup that
+// undoes only what wtm started; see cleanupStarted for which commands those are.
+func (m *Manager) ensureUp(ctx context.Context, name string, p config.Project, cfg config.Backup) (func(), error) {
+	noop := func() {}
+	running, err := m.services(ctx, p, "ps", "--services", "--status", "running")
 	if err != nil {
-		return fmt.Errorf("state of stack %s: %w", name, err)
-	}
-	running := map[string]bool{}
-	for _, line := range strings.Split(res.Stdout, "\n") {
-		if s := strings.TrimSpace(line); s != "" {
-			running[s] = true
-		}
+		return noop, fmt.Errorf("state of stack %s: %w", name, err)
 	}
 	// Only the database has to run: migrations happen in their own container.
 	if running[cfg.DBService] {
 		m.logf("database of %s already running", name)
-		return nil
+		return noop, nil
+	}
+	existing, err := m.services(ctx, p, "ps", "-a", "--services")
+	if err != nil {
+		return noop, fmt.Errorf("state of stack %s: %w", name, err)
 	}
 	if _, err := m.Runner.Run(ctx, execx.Cmd{
 		Name: "docker",
@@ -41,9 +36,48 @@ func (m *Manager) ensureUp(ctx context.Context, name string, p config.Project, c
 		Dir:  p.Dir,
 		Live: true,
 	}); err != nil {
-		return fmt.Errorf("starting stack %s: %w", name, err)
+		// The failed up may have left a created container behind: same cleanup.
+		m.cleanupStarted(ctx, p, cfg, existing)()
+		return noop, fmt.Errorf("starting stack %s: %w", name, err)
 	}
-	return nil
+	return m.cleanupStarted(ctx, p, cfg, existing), nil
+}
+
+// cleanupStarted undoes only what wtm itself started. A stack a developer had
+// merely downed keeps its data in named volumes, so even when no container was
+// there only the db container, its anonymous volumes and the network are wtm's.
+func (m *Manager) cleanupStarted(ctx context.Context, p config.Project, cfg config.Backup, existing map[string]bool) func() {
+	return func() {
+		var cmds [][]string
+		switch {
+		case len(existing) == 0:
+			cmds = [][]string{{"compose", "rm", "-f", "-s", "-v", cfg.DBService}, {"compose", "down"}}
+		case existing[cfg.DBService]:
+			cmds = [][]string{{"compose", "stop", cfg.DBService}}
+		default:
+			cmds = [][]string{{"compose", "rm", "-f", "-s", "-v", cfg.DBService}}
+		}
+		for _, args := range cmds {
+			if _, err := m.Runner.Run(ctx, execx.Cmd{Name: "docker", Args: args, Dir: p.Dir}); err != nil {
+				m.logf("warning: the database started for the refresh could not be taken down: %v", err)
+			}
+		}
+	}
+}
+
+// services lists what `compose ps` answers for the given selection.
+func (m *Manager) services(ctx context.Context, p config.Project, args ...string) (map[string]bool, error) {
+	res, err := m.Runner.Run(ctx, execx.Cmd{Name: "docker", Args: append([]string{"compose"}, args...), Dir: p.Dir})
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]bool{}
+	for _, line := range strings.Split(res.Stdout, "\n") {
+		if s := strings.TrimSpace(line); s != "" {
+			out[s] = true
+		}
+	}
+	return out, nil
 }
 
 func (m *Manager) waitFor(ctx context.Context, label string, defaultAttempts int, probe execx.Cmd) error {
@@ -59,11 +93,9 @@ func (m *Manager) waitFor(ctx context.Context, label string, defaultAttempts int
 	return execx.WaitFor(ctx, m.Runner, label, attempts, interval, probe)
 }
 
-// assertPopulated refuses to dump a throwaway database no migration reached.
-// {{database}} only works if the app honours the variable it is mapped to; when
-// it does not, the migrations hit the project's own database and this dump would
-// bring every worktree up empty. Only a count that reads as zero fails: an
-// unreadable probe is a diagnosis wtm could not make, not a verdict.
+// assertPopulated refuses to dump a throwaway database no migration reached:
+// an app ignoring the variable {{database}} is mapped to migrates its own
+// database instead. An unreadable count is no verdict, only a zero one is.
 func (m *Manager) assertPopulated(ctx context.Context, p config.Project, cfg config.Backup, eng dbengine.Engine, db string) error {
 	res, err := m.execInDB(ctx, p, cfg, eng.ObjectCountArgs(cfg.DBUser, db))
 	if err != nil {

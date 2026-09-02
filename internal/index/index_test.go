@@ -110,10 +110,8 @@ func TestReleaseForgetsTheBranch(t *testing.T) {
 }
 
 // A daemon that accepts a connection and never answers used to hang every
-// command that resolves an index, with nothing on screen: `wtm list` bounded
-// the same question from the start, resolution never did. Resolution already
-// knows how to degrade to the registry when docker refuses, so a deadline
-// costs it nothing.
+// command that resolves an index, with nothing on screen. Degrading to the
+// registry is what resolution already does when docker refuses.
 func TestDockerIsAskedUnderADeadline(t *testing.T) {
 	r, _, fake := newResolver(t, nil, []string{})
 	if _, err := r.Resolve(context.Background(), "feat/x", 0, MayAllocate); err != nil {
@@ -131,5 +129,67 @@ func TestDockerIsAskedUnderADeadline(t *testing.T) {
 	}
 	if !asked {
 		t.Fatal("this resolution should have had to ask docker")
+	}
+}
+
+// The allocator already steps over an index docker holds leftovers for. A
+// caller who knows the ports can also refuse one whose ports would clash with
+// a recorded neighbour: how two worktrees stop fighting over 26434.
+func TestResolveSkipsAnIndexTheCallerRefuses(t *testing.T) {
+	r, path, _ := newResolver(t, map[string]int{"feat/a": 1}, []string{})
+	var out strings.Builder
+	r.Out = &out
+	r.Conflicts = func(n int) string {
+		if n == 2 {
+			return "db would publish 26434, which feat/a already publishes for db_test"
+		}
+		return ""
+	}
+	got, err := r.Resolve(context.Background(), "feat/b", 0, MayAllocate)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if got != 3 {
+		t.Fatalf("index 2 clashes, expected 3, got %d", got)
+	}
+	if recorded(t, path, "feat/b") != 3 {
+		t.Fatal("the skipped index must not be recorded")
+	}
+	if !strings.Contains(out.String(), "index 2 skipped") || !strings.Contains(out.String(), "26434") {
+		t.Fatalf("the skip must say why:\n%s", out.String())
+	}
+}
+
+func TestResolveWithoutConflictsBehavesAsBefore(t *testing.T) {
+	r, _, _ := newResolver(t, map[string]int{"feat/a": 1}, []string{})
+	got, err := r.Resolve(context.Background(), "feat/b", 0, MayAllocate)
+	if err != nil || got != 2 {
+		t.Fatalf("expected 2, got %d (%v)", got, err)
+	}
+}
+
+// A brand-new worktree's git position is usually free, so the fallback meant
+// for older worktrees is what a plain create goes through: it must ask the
+// loop's question, or two db ports one apart collide on the second create.
+func TestResolveFallbackAsksTheCallerToo(t *testing.T) {
+	r, path, _ := newResolver(t, map[string]int{"feat/a": 1}, []string{})
+	var out strings.Builder
+	r.Out = &out
+	r.Conflicts = func(n int) string {
+		if n == 2 {
+			return "db would publish 26434, which feat/a already publishes for db_test"
+		}
+		return ""
+	}
+	got, err := r.Resolve(context.Background(), "feat/b", 2, MayAllocate)
+	if err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if got != 3 || recorded(t, path, "feat/b") != 3 {
+		t.Fatalf("position 2 clashes, expected 3 recorded, got %d", got)
+	}
+	// Once: the fallback asks, then the loop reaches 2 again with the same answer.
+	if strings.Count(out.String(), "index 2 skipped") != 1 {
+		t.Fatalf("the skip must be said exactly once:\n%s", out.String())
 	}
 }

@@ -45,7 +45,58 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   commits on the base would silently be left out.
 
 ### Fixed
+- A worktree no longer comes up on an empty database on a native docker. The
+  dump and the directory holding it were written 0700 and 0600, and the
+  `docker-entrypoint-initdb.d` script that restores them runs as the database
+  image's own user, never as root: on Linux it could not read the mount, took
+  the "no dump" branch and started an empty database without a word. Only that
+  directory is relaxed to 0755, the dump to 0644; the backups root stays 0700,
+  so no other user of the machine gains a way in. The script now tells a
+  missing dump from an unreadable one and fails loudly on the second, rather
+  than leaving a worktree that looks fine and holds nothing. A Docker Desktop
+  or OrbStack machine never saw this: their file sharing remaps ownership.
 
+- `wtm backup refresh` cleans up after itself, and never takes the developer's
+  data with it. It only ever started what was missing and then left it running:
+  a refresh on a stack nothing of which was up ended with a database container
+  nobody asked for, counted by `doctor` as a running stack. It now takes back
+  down what it started — the container it created, its anonymous volumes and
+  the network — while a named volume the compose file declares is never
+  touched, since a stack that is merely down keeps its data there. A database
+  that already existed stopped is stopped again, never removed, and a refresh
+  that fails cleans up the same way rather than leaving a created container
+  behind.
+  The first refresh on a brand-new postgres volume no longer races the image's
+  own start either. Its entrypoint runs a temporary server on the unix socket
+  while it initialises the data directory, then restarts for good; `pg_isready`
+  over that socket said ready in between, and the migration launched then died
+  with "database system is shutting down". The probe now goes over TCP, which
+  only the final server answers, as the mysql probe already did in its own way.
+- Two worktrees of one project no longer land on the same host port, and
+  `wtm doctor` reports the case before docker does. With the default stride of
+  1, a project publishing `db` on 5432 and `db_test` on 5433 had index 1 put
+  `db_test` on 26434 and index 2 put `db` there too, so the second stack failed
+  on a docker bind error. The allocator now steps over an index whose ports a
+  recorded worktree already publishes, including the index a plain create takes
+  from its git position, and says which port and which neighbour made it skip.
+  `doctor` reports such a clash between worktrees of one project, with the
+  `portStride` remedy: it only ever looked between projects, so a clash inside
+  one, the very case that happens with `db` and `db_test` one port apart, went
+  unreported until docker refused the second stack. The stride itself does not
+  move: it is what keeps every existing worktree on the ports its `.env`
+  carries.
+- `wtm remove` takes the stack's anonymous volumes down with it, and `doctor`
+  counts those no container mounts, with the line that drops them. A
+  project that names no volume leaves its database image an anonymous one,
+  which carries no compose label, so neither the removal nor `doctor` ever saw
+  it and every stop/start pair leaked one more. `stop` still keeps volumes,
+  named or not.
+- `wtm doctor` lists the recorded indices no worktree stands behind, a removal
+  made outside `wtm remove` or before it released indices. Each one pushes
+  every new worktree one index further out, and since `adopt` keys on recorded
+  indices, a `claude --worktree` checked out on such a branch read as adopted
+  without anyone adopting it. `wtm remove <branch>` now releases such an index,
+  taking down whatever stack was left at it.
 - A command wtm could not even start no longer claims to have exited 0. The
   exit code is read from the process, and a lookup failure never made one, so
   `docker` missing from `$PATH` was reported as a success code next to the
@@ -58,6 +109,16 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   and in another place, so an OrbStack or Colima user was pointed at an
   application they do not run. The line names the limit rather than the
   product.
+- A port docker refuses to bind is followed by the container that publishes it,
+  read from `docker ps`: docker's own message names the port and nobody else.
+  And a command whose output streamed to the terminal no longer has that whole
+  output repeated in its error: the last line, the diagnosis, is kept.
+- A SQLite project no longer hears that its database "was restored from the
+  dump" on every start: its file is copied once and kept, and the note was
+  false each time it printed.
+- `wtm project edit --env` no longer ignores a renamed variable whose value is
+  empty: two env maps of the same size differing only by such a key read as
+  equal.
 
 ## [0.9.1] - 2026-08-28
 
@@ -330,7 +391,7 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   application service once a new worktree's stack answers. The dump carries what
   the migrations create and never seed data, so a fresh worktree came up migrated
   and empty and every developer seeded it by hand, usually by reaching for the
-  project's own reset script: on gallia that script drops the schema and migrates
+  project's own reset script: on a real project that script drops the schema and migrates
   again, which throws away the restored dump and pays for the migrations wtm
   exists to skip. The database is waited for with the probe `backup refresh`
   already used, extracted as `execx.WaitFor`. A failure is a warning naming the

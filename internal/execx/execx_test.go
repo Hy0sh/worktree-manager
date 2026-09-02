@@ -127,3 +127,25 @@ func TestMissingBinaryOnlyAnswersForALookupFailure(t *testing.T) {
 		t.Fatalf("MissingBinary = %q for a command that ran and failed", got)
 	}
 }
+
+// A live command already streamed its output to the terminal. Repeating the
+// whole block in the error prints a docker failure twice; the last line is the
+// diagnosis, and the one worth keeping.
+func TestErrorOfALiveCommandKeepsTheLastLineOnly(t *testing.T) {
+	e := &Error{Cmd: "docker compose up", ExitCode: 1, Live: true,
+		Stderr: " Network x Creating\n Network x Created\nError response from daemon: Bind for 0.0.0.0:26434 failed: port is already allocated\n"}
+	got := e.Error()
+	if !strings.Contains(got, "port is already allocated") {
+		t.Fatalf("the diagnosis must stay, got %q", got)
+	}
+	if strings.Contains(got, "Network x Creating") {
+		t.Fatalf("the streamed lines were already on screen, got %q", got)
+	}
+}
+
+func TestErrorOfASilentCommandKeepsEverything(t *testing.T) {
+	e := &Error{Cmd: "git fetch", ExitCode: 128, Stderr: "fatal: a\nfatal: b\n"}
+	if got := e.Error(); !strings.Contains(got, "fatal: a") || !strings.Contains(got, "fatal: b") {
+		t.Fatalf("nothing was shown before, keep it all, got %q", got)
+	}
+}

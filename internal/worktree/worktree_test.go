@@ -88,11 +88,9 @@ func TestStopUsesResolvedIndex(t *testing.T) {
 
 func TestStopWithoutAnyRecordedStackIsANoOp(t *testing.T) {
 	f := newFixture(t)
-	// The branch exists as a worktree but never started a stack and docker
-	// has no trace of it — and its git position is squatted by another
-	// branch's debris, so the fallback must not fire either. The label is
-	// built with the real naming function because the fixture's repo name is
-	// a temp directory, not a fixed string.
+	// The branch never started a stack and docker has no trace of it, and its
+	// git position is squatted by another branch's debris, so the fallback must
+	// not fire either. The fixture's repo name is a temp dir, hence ProjectName.
 	f.dockerLabels = []string{stack.ProjectName(filepath.Base(f.root), 1, "someone-else")}
 	// feat/x is listed at position 1 by the fixture's porcelain output.
 	if err := Stop(context.Background(), f.opts("feat/x")); err != nil {
@@ -370,5 +368,111 @@ func TestRemoveWithForceOverridesTheLock(t *testing.T) {
 	line := lastCall(f, "worktree remove")
 	if strings.Count(line, "--force") != 2 {
 		t.Fatalf("overriding a lock takes `remove -f -f`, got %q", line)
+	}
+}
+
+// An anonymous volume carries no compose label, so nothing filtering on the
+// project label ever sees it. `down --volumes` is what takes those along, and
+// remove is the one place they must go.
+func TestRemoveTakesTheVolumesDownWithTheStack(t *testing.T) {
+	f := newFixture(t)
+	f.dockerLabels = []string{"com.docker.compose.project=" + filepath.Base(f.root) + "-wt-1-feat-x"}
+	if err := Create(context.Background(), f.opts("feat/x")); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := Remove(context.Background(), f.opts("feat/x")); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	down := lastCall(f, " down")
+	if !strings.Contains(down, "--volumes") {
+		t.Fatalf("remove must take the volumes with the stack, got %q", down)
+	}
+}
+
+func TestStopKeepsTheVolumes(t *testing.T) {
+	f := newFixture(t)
+	f.dockerLabels = []string{"com.docker.compose.project=" + filepath.Base(f.root) + "-wt-1-feat-x"}
+	if err := Create(context.Background(), f.opts("feat/x")); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := Stop(context.Background(), f.opts("feat/x")); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if down := lastCall(f, " down"); strings.Contains(down, "--volumes") {
+		t.Fatalf("a stopped worktree keeps its database, got %q", down)
+	}
+}
+
+// The worktree is gone but its index is not, so every new worktree lands one
+// index further out. remove is the verb that forgets a worktree; it can forget
+// one that already left.
+func TestRemoveReleasesAnIndexWhoseWorktreeIsGone(t *testing.T) {
+	f := newFixture(t)
+	if err := config.WithLock(f.cfgPath, func(c *config.Config) error {
+		p := c.Projects["myapp"]
+		p.WorktreeIndices = map[string]int{"feat/gone": 5}
+		c.Projects["myapp"] = p
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	var out strings.Builder
+	o := f.opts("feat/gone")
+	o.Out = &out
+	if err := Remove(context.Background(), o); err != nil {
+		t.Fatalf("Remove: %v", err)
+	}
+	if got := lastCall(f, " down"); !strings.Contains(got, "-wt-5-feat-gone") {
+		t.Fatalf("a stack left at that index must still be taken down, got %q", got)
+	}
+	cfg, err := config.Load(f.cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, ok := cfg.Projects["myapp"].WorktreeIndices["feat/gone"]; ok {
+		t.Fatal("the index must be released")
+	}
+	if !strings.Contains(out.String(), "index 5 released") {
+		t.Fatalf("say what happened:\n%s", out.String())
+	}
+}
+
+// A failed Down means containers may still be running under the old project
+// name, so releasing the index would let the next worktree at n collide with
+// them: the index must stay reserved, same as Stop and the normal Remove tail.
+func TestRemoveKeepsAStaleIndexWhenItsStackCannotBeTakenDown(t *testing.T) {
+	f := newFixture(t)
+	if err := config.WithLock(f.cfgPath, func(c *config.Config) error {
+		p := c.Projects["myapp"]
+		p.WorktreeIndices = map[string]int{"feat/gone": 5}
+		c.Projects["myapp"] = p
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	inner := f.fake.Handler
+	f.fake.Handler = func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(c.String(), " down") {
+			return execx.Result{ExitCode: 1}, errors.New("daemon busy")
+		}
+		return inner(c)
+	}
+	err := Remove(context.Background(), f.opts("feat/gone"))
+	if err == nil || !strings.Contains(err.Error(), "index 5") {
+		t.Fatalf("expected an error naming index 5, got %v", err)
+	}
+	cfg, err := config.Load(f.cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := cfg.Projects["myapp"].WorktreeIndices["feat/gone"]; got != 5 {
+		t.Fatalf("the index must be kept, got %d", got)
+	}
+}
+
+func TestRemoveStillFailsOnABranchNobodyKnows(t *testing.T) {
+	f := newFixture(t)
+	if err := Remove(context.Background(), f.opts("feat/unknown")); err == nil {
+		t.Fatal("no worktree and no index: nothing to remove, must say so")
 	}
 }

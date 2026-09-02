@@ -20,10 +20,8 @@ const snapshotOverride = ".wtm-snapshot.yaml"
 const portsOverride = ".wtm-ports.yaml"
 
 // ensureSnapshotAssets is idempotent and runs on every start, so a worktree
-// created before these files existed picks them up too. Every engine's script
-// relies on docker-entrypoint-initdb.d only running on an empty data directory:
-// a fresh worktree restores, an existing one is left alone, and nothing races
-// the application's own migrate.
+// older than these files picks them up too. Every engine's script rides on
+// docker-entrypoint-initdb.d, which only runs on an empty data directory.
 func ensureSnapshotAssets(o Options, dest string) error {
 	if !o.Project.Dump {
 		return nil
@@ -71,8 +69,8 @@ func writeRestoreScript(backupsDir, project string, eng dbengine.Engine) error {
 	if err := config.ValidateIdentifier("project name", project); err != nil {
 		return err
 	}
-	dir := filepath.Join(backupsDir, project)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	dir, err := backup.ProjectDir(backupsDir, project)
+	if err != nil {
 		return err
 	}
 	return os.WriteFile(filepath.Join(dir, backup.RestoreScriptName), []byte(eng.RestoreScript(project)), 0o755)

@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -21,15 +20,7 @@ func baseFixture(t *testing.T) (*app, *execx.Fake) {
 	t.Helper()
 	dir := t.TempDir()
 	cfg := &config.Config{Projects: map[string]config.Project{"myapp": {Dir: dir}}}
-	cfgPath := filepath.Join(t.TempDir(), "config.json")
-	data, err := json.Marshal(cfg)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := os.WriteFile(cfgPath, data, 0o644); err != nil {
-		t.Fatal(err)
-	}
-	fake := &execx.Fake{Handler: func(c execx.Cmd) (execx.Result, error) {
+	a, fake, _ := newTestApp(t, cfg, "", func(c execx.Cmd) (execx.Result, error) {
 		// --show-toplevel is tested first: CurrentWorktree asks for it in the
 		// same rev-parse that carries --git-common-dir.
 		if strings.Contains(c.String(), "--show-toplevel") {
@@ -63,9 +54,8 @@ func baseFixture(t *testing.T) (*app, *execx.Fake) {
 			}, "\n") + "\n"}, nil
 		}
 		return execx.Result{}, nil
-	}}
-	return &app{cfg: cfg, cfgPath: cfgPath, backups: t.TempDir(),
-		runner: fake, out: &bytes.Buffer{}, in: strings.NewReader("")}, fake
+	})
+	return a, fake
 }
 
 func TestCompleteCreateFollowsThePositions(t *testing.T) {

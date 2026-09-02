@@ -220,10 +220,8 @@ func TestTheWaitKeepsSayingWhatItWaitsOn(t *testing.T) {
 }
 
 // The elapsed time the wait reports used to be a count of attempts times the
-// interval, which ignored what each probe itself costs. A `docker compose exec`
-// on a machine busy booting nine services took about a second, so a wait that
-// announced 2m0s had really been holding for 4m18s, and the ten minutes granted
-// to an application service were over twenty in wall clock.
+// interval, which ignored what each probe itself costs: a wait announcing 2m0s
+// had really been holding for 4m18s, and ten minutes granted ran past twenty.
 func TestTheWaitAccountsForWhatTheProbeItselfCosts(t *testing.T) {
 	var out bytes.Buffer
 	o := Options{Out: &out}
@@ -404,11 +402,8 @@ func TestCreatePlaysTheExecCommandDespiteNoPostCreate(t *testing.T) {
 }
 
 // A ready_interval longer than its ready_timeout is accepted by the flags, and
-// the database wait used to convert the two into a count of attempts: the
-// division floored to zero, so `execx.WaitFor` ran no probe at all, returned an
-// error wrapping a nil, and the seed was played against a database nobody had
-// waited for. The app wait never had the bug, which is the whole reason the two
-// now share one clock.
+// the database wait used to divide the two into a count of attempts: it floored
+// to zero, so the seed played against a database nobody had waited for.
 func TestTheDatabaseWaitProbesEvenWhenTheIntervalOutlastsTheTimeout(t *testing.T) {
 	f := newFixture(t)
 	probes := 0

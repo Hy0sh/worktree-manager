@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Hy0sh/worktree-manager/internal/execx"
 	"github.com/Hy0sh/worktree-manager/internal/mark"
 )
 
@@ -16,10 +15,9 @@ var artifactBlock = mark.Block{
 	End:   "# --- end wtm ---",
 }
 
-// excluded lists what wtm drops in a checkout: its artifacts in a worktree,
-// and the .worktrees directory in the main one, which `git add -A` there adds
-// as an embedded repository. None of it is in any project's .gitignore, so
-// without this a commit takes wtm's plumbing along with the work.
+// excluded lists what wtm drops in a checkout: its artifacts in a worktree, and
+// .worktrees in the main one, which `git add -A` adds as an embedded repository.
+// No project's .gitignore knows them, so a commit would take them along.
 var excluded = []string{".worktrees/", gitContainerLink, snapshotLink, snapshotOverride, portsOverride}
 
 // excludeArtifacts writes to info/exclude rather than .gitignore, which is
@@ -51,10 +49,7 @@ func excludeArtifacts(ctx context.Context, o Options) error {
 // worktrees. --git-common-dir answers relative to the working directory on some
 // versions, hence the join.
 func commonGitDir(ctx context.Context, o Options) (string, error) {
-	res, err := o.Runner.Run(ctx, execx.Cmd{
-		Name: "git",
-		Args: []string{"-C", o.Project.Dir, "rev-parse", "--git-common-dir"},
-	})
+	res, err := o.git(ctx, "rev-parse", "--git-common-dir")
 	if err != nil {
 		return "", fmt.Errorf("resolving the common git-dir of %s: %w", o.Project.Dir, err)
 	}

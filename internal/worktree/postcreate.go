@@ -29,9 +29,8 @@ const (
 )
 
 // wait is how long a service gets, how often it is asked, and how much elapsed
-// time separates two reminders. All three are durations: a probe is a `docker
-// compose exec` costing real time, so a bound counted in attempts is not the
-// bound the user asked for.
+// time separates two reminders. All three are durations: a probe costs real
+// time, so a bound counted in attempts is not the bound the user asked for.
 type wait struct {
 	timeout  time.Duration
 	interval time.Duration
@@ -58,11 +57,8 @@ func readyWait(p config.Project, defaultTimeout time.Duration) wait {
 }
 
 // afterCreate plays what a fresh worktree still owes inside its stack: the
-// project's post_create, then the command of `create --exec`. Both are shell
-// lines needing the application to answer, so the wait serves the two. Every
-// failure here is a warning and not an error: the worktree exists and works,
-// and losing it over a seed that did not run would be the worse outcome. The
-// message says how to replay the command.
+// project's post_create, then the command of `create --exec`. Both need the
+// application, so one wait serves them; a failure is a warning naming a replay.
 func afterCreate(ctx context.Context, o Options) {
 	post := o.Project.PostCreate
 	if post != "" && o.NoPostCreate {
@@ -125,9 +121,8 @@ func afterCreate(ctx context.Context, o Options) {
 }
 
 // execInStack plays a shell line in the application container. post_create and
-// --exec are both a line and not an argv, so both go through `sh -c`, and the
-// string is a single argument: nothing wtm computes is ever concatenated into
-// it.
+// --exec are lines and not argvs, so both go through `sh -c` as one argument:
+// nothing wtm computes is ever concatenated into it.
 func execInStack(ctx context.Context, o Options, wt stack.Worktree, service, command string) error {
 	_, err := o.Runner.Run(ctx, execx.Cmd{
 		Name: "docker",
@@ -168,10 +163,9 @@ func replayLines(o Options, verb string, commands ...string) {
 	}
 }
 
-// waitForApp holds until the application container can answer. A healthcheck
-// is the best signal, and the only one a compose file states on purpose; a
-// service without one still publishes a port wtm remapped itself, and a
-// listening socket is the next best thing.
+// waitForApp holds until the application container can answer. A healthcheck is
+// the only signal a compose file states on purpose; without one, a socket
+// listening behind the port wtm remapped is the next best thing.
 func waitForApp(ctx context.Context, o Options, wt stack.Worktree, service string) error {
 	w := readyWait(o.Project, appReadyTimeout)
 	health, err := appHealth(ctx, o, wt, service)
@@ -228,10 +222,9 @@ func publishedPort(o Options, wt stack.Worktree, service string) string {
 	return ""
 }
 
-// listening asks the container's own network namespace, because the host side
-// of a published port proves nothing: docker accepts a connection there while
-// nothing inside listens yet. /proc/net/tcp answers without any tool the image
-// may not ship.
+// listening asks the container's own network namespace: the host side of a
+// published port proves nothing, docker accepts a connection there while
+// nothing inside listens. /proc/net/tcp needs no tool the image may lack.
 func listening(ctx context.Context, o Options, wt stack.Worktree, service, port string) (bool, error) {
 	n, err := strconv.Atoi(port)
 	if err != nil {
@@ -250,14 +243,8 @@ func listening(ctx context.Context, o Options, wt stack.Worktree, service, port 
 }
 
 // waitUntil polls ready, naming what it waits on the first time the answer is
-// no, then again every w.every of elapsed time: minutes of silence read as a
-// hung wtm. why explains the wait, and belongs to that first line alone.
-//
-// Everything is measured against the wall clock rather than counted in
-// attempts. Each probe costs real time, and ignoring it made both the reported
-// elapsed and the bound itself shorter than what the user lived through: on a
-// machine busy booting nine services, a wait announcing 2m0s had been holding
-// for 4m18s, and the ten minutes an application service gets ran past twenty.
+// no, then every w.every of elapsed wall-clock time: minutes of silence read as
+// a hung wtm. why explains the wait, and belongs to that first line alone.
 func waitUntil(ctx context.Context, o Options, w wait, what, why string, ready func() (bool, error)) error {
 	start := time.Now()
 	var reminded time.Duration
@@ -307,12 +294,9 @@ func waitForDatabase(ctx context.Context, o Options, wt stack.Worktree, service,
 		Args: append([]string{"compose", "-p", o.projectName(wt), "exec", "-T", service}, eng.ReadyArgs(user)...),
 		Dir:  wt.Path,
 	}
-	// One clock for the two services. Turning the bound back into a count of
-	// attempts here floored to zero whenever the interval outlasted the
-	// timeout, which skipped the wait altogether, and it left ready_timeout
-	// meaning a number of probes for the database and elapsed time for the
-	// application. A refused probe is what a database still restoring answers,
-	// so it is a "not yet" and never an error to give up on.
+	// One clock for the two services: a count of attempts floored to zero
+	// whenever the interval outlasted the timeout, skipping the wait. A refused
+	// probe is a database still restoring, a "not yet" and not an error.
 	w := readyWait(o.Project, dbReadyTimeout)
 	return waitUntil(ctx, o, w, "the database of "+o.Branch, "", func() (bool, error) {
 		_, err := o.Runner.Run(ctx, probe)

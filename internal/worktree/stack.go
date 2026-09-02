@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/Hy0sh/worktree-manager/internal/compose"
@@ -15,46 +16,50 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
 
+// A sweep is one kind of resource a stack leaves behind: how docker lists it,
+// how docker drops it, and the noun the report uses. The three travel together
+// because a listing dropped with another kind's verb compiles and lies.
+type sweep struct {
+	noun string
+	list []string
+	rm   []string
+}
+
+var (
+	volumeSweep = sweep{noun: "volume", list: []string{"volume", "ls", "-q"}, rm: []string{"volume", "rm"}}
+	// Only what compose built: a pulled image carries no project label, so the
+	// postgres the main stack also runs can never be caught by this sweep.
+	imageSweep = sweep{noun: "image", list: []string{"images", "-q"}, rm: []string{"rmi"}}
+)
+
 // stackVolumes lists the volumes docker labelled with this stack's compose
 // project. Empty on a stack that never came up, which is how a first start is
 // told from a restart, and on an unreachable docker.
 func stackVolumes(ctx context.Context, o Options, wt stack.Worktree) []string {
-	res, err := o.Runner.Run(ctx, execx.Cmd{
-		Name: "docker",
-		Args: []string{"volume", "ls", "-q", "--filter", "label=com.docker.compose.project=" + o.projectName(wt)},
-	})
-	if err != nil {
-		return nil
-	}
-	return strings.Fields(res.Stdout)
+	return labelled(ctx, o, wt, volumeSweep)
 }
 
 // removeVolumes drops the stack's volumes once the worktree is gone. `docker
 // compose down`, which stop runs, deliberately keeps them: without this
 // every removed worktree leaves its database behind forever.
 func removeVolumes(ctx context.Context, o Options, wt stack.Worktree) {
-	volumes := stackVolumes(ctx, o, wt)
-	if len(volumes) == 0 {
-		return
-	}
-	project := o.projectName(wt)
-	if _, err := o.Runner.Run(ctx, execx.Cmd{
-		Name: "docker",
-		Args: append([]string{"volume", "rm"}, volumes...),
-	}); err != nil {
-		o.logf("warning: %d volume(s) of %s could not be removed: %v", len(volumes), project, err)
-		return
-	}
-	o.logf("%d volume(s) removed (%s)", len(volumes), project)
+	removeSwept(ctx, o, wt, volumeSweep)
 }
 
-// stackImages lists the images compose built for this stack. Compose labels
-// what it builds with the project name; a pulled image carries no such label,
-// so the postgres the main stack also runs can never be caught here.
-func stackImages(ctx context.Context, o Options, wt stack.Worktree) []string {
+// removeImages drops what the stack built once the worktree is gone. `docker
+// compose down` keeps images as it keeps volumes, and a stack builds its own
+// copy of every service image: without this each removal leaves gigabytes.
+func removeImages(ctx context.Context, o Options, wt stack.Worktree) {
+	removeSwept(ctx, o, wt, imageSweep)
+}
+
+// labelled answers nothing at all when docker cannot be reached: a caller
+// cannot tell that from a stack that never came up.
+func labelled(ctx context.Context, o Options, wt stack.Worktree, s sweep) []string {
 	res, err := o.Runner.Run(ctx, execx.Cmd{
 		Name: "docker",
-		Args: []string{"images", "-q", "--filter", "label=com.docker.compose.project=" + o.projectName(wt)},
+		Args: append(slices.Clone(s.list), "--filter",
+			"label=com.docker.compose.project="+o.projectName(wt)),
 	})
 	if err != nil {
 		return nil
@@ -62,24 +67,23 @@ func stackImages(ctx context.Context, o Options, wt stack.Worktree) []string {
 	return strings.Fields(res.Stdout)
 }
 
-// removeImages drops what the stack built once the worktree is gone. `docker
-// compose down` keeps images as it keeps volumes, and a worktree stack builds
-// its own copy of every service image under its own project name: without this
-// every removed worktree leaves gigabytes behind that nothing ever reuses.
-func removeImages(ctx context.Context, o Options, wt stack.Worktree) {
-	images := stackImages(ctx, o, wt)
-	if len(images) == 0 {
+// removeSwept drops what the listing of that kind returned. A failure is a
+// warning and not an error: the worktree is gone either way, and what is left
+// behind costs disk space and nothing else.
+func removeSwept(ctx context.Context, o Options, wt stack.Worktree, s sweep) {
+	ids := labelled(ctx, o, wt, s)
+	if len(ids) == 0 {
 		return
 	}
 	project := o.projectName(wt)
 	if _, err := o.Runner.Run(ctx, execx.Cmd{
 		Name: "docker",
-		Args: append([]string{"rmi"}, images...),
+		Args: append(slices.Clone(s.rm), ids...),
 	}); err != nil {
-		o.logf("warning: %d image(s) of %s could not be removed: %v", len(images), project, err)
+		o.logf("warning: %d %s(s) of %s could not be removed: %v", len(ids), s.noun, project, err)
 		return
 	}
-	o.logf("%d image(s) removed (%s)", len(images), project)
+	o.logf("%d %s(s) removed (%s)", len(ids), s.noun, project)
 }
 
 func start(ctx context.Context, o Options, dest string) error {
@@ -89,10 +93,9 @@ func start(ctx context.Context, o Options, dest string) error {
 		o.logf("no compose file in this project: no stack to start, the worktree is ready")
 		return nil
 	}
-	// Advisory only: the measurement can fail for a dozen harmless reasons and
-	// the user knows their machine better than an extrapolation does. Which is
-	// why a person is asked rather than refused, and a script is not asked at
-	// all: an average over the running stacks is not a fact worth failing on.
+	// Advisory only: an average over the running stacks is not a fact worth
+	// failing on, so a person is asked rather than refused, and a script is not
+	// asked at all.
 	if u, err := dockermem.Read(ctx, o.Runner); err == nil {
 		if msg := u.Warning(); msg != "" {
 			o.logf("%s", msg)
@@ -133,10 +136,10 @@ func start(ctx context.Context, o Options, dest string) error {
 		return fmt.Errorf("starting the stack: %w", err)
 	}
 	o.logf("stack started (worktree %d, %s)", wt.Index, o.Branch)
-	// The dump carries what the migrations create, never seed data, so a
-	// brand new database comes up migrated but empty. A project with a
-	// post_create is about to fill it, and saying so would contradict it.
-	if fresh && o.Project.Dump && o.Project.PostCreate == "" {
+	// The dump carries what migrations create, never seed data; post_create
+	// would contradict the note. A file-based engine restores nothing on start.
+	if fresh && o.Project.Dump && o.Project.PostCreate == "" &&
+		!dbengine.IsFileBased(o.Project.BackupConfig().DBEngine) {
 		o.logf("note: the database was restored from the dump and holds no seed data yet,")
 		o.logf("      seed it with `wtm exec %s -- <your seed command>`", o.Branch)
 	}
@@ -164,6 +167,9 @@ func (o Options) projectName(wt stack.Worktree) string {
 }
 
 func (o Options) resolveIndex(ctx context.Context, wt *stack.Worktree, mode index.Mode) error {
+	if mode == index.MayAllocate {
+		o.Resolver.Conflicts = portClash(o)
+	}
 	n, err := o.Resolver.Resolve(ctx, o.Branch, wt.Pos, mode)
 	if err != nil {
 		return err

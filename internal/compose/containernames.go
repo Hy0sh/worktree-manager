@@ -1,15 +1,8 @@
 package compose
 
-import (
-	"os"
-
-	"gopkg.in/yaml.v3"
-)
-
 // PinnedContainerNames lists the services whose compose file fixes their
-// container_name. Ports, volumes and the compose project name are rebased, a
-// container_name is not: docker refuses a second container carrying it, so the
-// main stack and a worktree stack cannot both run.
+// container_name: ports, volumes and the project name are rebased, that is
+// not, and docker refuses a second container carrying it.
 func PinnedContainerNames(dir string) ([]string, error) {
 	files, err := Files(dir)
 	if err != nil {
@@ -20,16 +13,11 @@ func PinnedContainerNames(dir string) ([]string, error) {
 		seen   = map[string]bool{}
 	)
 	for _, path := range files {
-		data, err := os.ReadFile(path)
+		services, err := servicesMapping(path)
 		if err != nil {
 			return nil, err
 		}
-		var doc yaml.Node
-		if err := yaml.Unmarshal(data, &doc); err != nil {
-			return nil, err
-		}
-		services := servicesNode(&doc)
-		if services == nil || services.Kind != yaml.MappingNode {
+		if services == nil {
 			continue
 		}
 		for i := 0; i+1 < len(services.Content); i += 2 {

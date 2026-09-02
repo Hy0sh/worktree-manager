@@ -11,6 +11,14 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// bindIgnoreMemory gives the three commands that can ask about memory one flag,
+// named after what it overrides and with no shorthand: a generic -y is the one
+// passed out of habit, which is how a caller answers a question it never read.
+func bindIgnoreMemory(cmd *cobra.Command, into *bool) {
+	cmd.Flags().BoolVar(into, "ignore-memory", false,
+		"start the stack without asking, however tight the machine's memory is")
+}
+
 // afterFlags are what create and adopt both offer once the worktree stands: the
 // stack may stay down, the seed may be skipped, and a shell line may play on
 // either side. The verbs differ in how the worktree appears, never in what
@@ -28,8 +36,7 @@ func (f *afterFlags) bind(cmd *cobra.Command) {
 	cmd.Flags().BoolVar(&f.noPostCreate, "no-post-create", false, "starts the stack without running the project's post_create")
 	cmd.Flags().StringVar(&f.run, "run", "", "shell line to play on your machine, from the worktree, once it is ready")
 	cmd.Flags().StringVar(&f.exec, "exec", "", "shell line to play in the application container, after the project's post_create")
-	cmd.Flags().BoolVar(&f.ignoreMemory, "ignore-memory", false,
-		"start the stack without asking, however tight the machine's memory is")
+	bindIgnoreMemory(cmd, &f.ignoreMemory)
 }
 
 // args adds the shell-line check to a verb's own positional form.
@@ -143,19 +150,17 @@ func newStartCmd(a *app) *cobra.Command {
 		SilenceUsage:      true,
 		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			name, p, branch, err := a.resolveOne(args)
+			o, err := a.optionsFor(args)
 			if err != nil {
 				return err
 			}
-			o := a.options(name, p, branch)
 			if ignoreMemory {
 				o.Confirm = nil
 			}
 			return worktree.Start(cmd.Context(), o)
 		},
 	}
-	cmd.Flags().BoolVar(&ignoreMemory, "ignore-memory", false,
-		"start the stack without asking, however tight the machine's memory is")
+	bindIgnoreMemory(cmd, &ignoreMemory)
 	return cmd
 }
 
@@ -237,11 +242,11 @@ func newStopCmd(a *app) *cobra.Command {
 				}
 				return a.eachWorktree(cmd.Context(), a.options(name, p, ""), entries, "stopped", worktree.Stop)
 			}
-			name, p, branch, err := a.resolveOne(args)
+			o, err := a.optionsFor(args)
 			if err != nil {
 				return err
 			}
-			return worktree.Stop(cmd.Context(), a.options(name, p, branch))
+			return worktree.Stop(cmd.Context(), o)
 		},
 	}
 	cmd.Flags().BoolVar(&all, "all", false, "every worktree of the project, instead of one branch")
@@ -276,11 +281,10 @@ func newRemoveCmd(a *app) *cobra.Command {
 				o.Force = force
 				return a.eachWorktree(cmd.Context(), o, entries, "removed", worktree.Remove)
 			}
-			name, p, branch, err := a.resolveOne(args)
+			o, err := a.optionsFor(args)
 			if err != nil {
 				return err
 			}
-			o := a.options(name, p, branch)
 			o.Force = force
 			return worktree.Remove(cmd.Context(), o)
 		},
@@ -323,12 +327,9 @@ func (a *app) allWorktrees(ctx context.Context, args []string) (string, config.P
 	return name, p, entries, err
 }
 
-// eachWorktree plays action on every listed worktree, one after the other. A
-// failure never stops the walk: a cleanup that gave up on the first locked
-// worktree would leave every other stack running. The failures are held back
-// and reported together at the end, because each worktree pours its own docker
-// output over the terminal and a warning printed in the middle is a warning
-// nobody reads.
+// eachWorktree plays action on every listed worktree: a failure never stops the
+// walk, which would leave every stack after the locked one running, and the
+// failures are held back because docker floods the terminal in between.
 func (a *app) eachWorktree(ctx context.Context, o worktree.Options, entries []worktree.Entry,
 	verb string, action func(context.Context, worktree.Options) error) error {
 	var failed []string

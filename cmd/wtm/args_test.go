@@ -9,8 +9,7 @@ import (
 
 // cobra answers a missing argument by counting what it received ("accepts
 // between 1 and 3 arg(s), received 0"), which names neither what is missing nor
-// how to call the command. Every command taking a required positional must say
-// both.
+// how to call the command. Every required positional must say both.
 func TestAMissingArgumentNamesTheCallThatWouldHaveWorked(t *testing.T) {
 	var walk func(c *cobra.Command)
 	walk = func(c *cobra.Command) {

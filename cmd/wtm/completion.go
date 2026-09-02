@@ -25,22 +25,28 @@ func (a *app) completeProjects(_ *cobra.Command, args []string, _ string) ([]str
 // a branch that actually has a worktree. Guessing branch names by hand is
 // exactly the friction worth removing here.
 func (a *app) completeTargets(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
+	return a.completePosition(args, a.worktreeBranches)
+}
+
+// completePosition answers the `[project] <branch>` shape: the projects and the
+// branches of the current one, then the branches of the named one. Which
+// branches is the whole difference between the commands that take that shape.
+func (a *app) completePosition(args []string, branches func(string) []string) ([]string, cobra.ShellCompDirective) {
 	if !a.ensureLoaded() {
 		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
 	switch {
 	case len(args) == 0:
-		return append(a.cfg.Names(), a.worktreeBranches("")...), cobra.ShellCompDirectiveNoFileComp
+		return append(a.cfg.Names(), branches("")...), cobra.ShellCompDirectiveNoFileComp
 	case len(args) == 1 && a.cfg.Has(args[0]):
-		return a.worktreeBranches(args[0]), cobra.ShellCompDirectiveNoFileComp
+		return branches(args[0]), cobra.ShellCompDirectiveNoFileComp
 	}
 	return nil, cobra.ShellCompDirectiveNoFileComp
 }
 
 // completeCreate answers each position of `create` in turn: the projects, then
-// nothing for the branch being created since it is a new name, then the bases
-// and the flags. --from-here leaves the list once a base is there, mirroring
-// the refusal at execution: completion must not offer what the command rejects.
+// nothing for the branch being created, then the bases and the flags. Once a
+// base is there --from-here leaves it: never offer what the command rejects.
 func (a *app) completeCreate(cmd *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
 	if !a.ensureLoaded() {
 		return nil, cobra.ShellCompDirectiveNoFileComp
@@ -119,16 +125,7 @@ func (a *app) baseBranches(name string) []string {
 // whose worktree wtm does not manage yet. Suggesting the ones it already
 // manages would offer nothing but a refusal.
 func (a *app) completeAdoptable(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
-	if !a.ensureLoaded() {
-		return nil, cobra.ShellCompDirectiveNoFileComp
-	}
-	switch {
-	case len(args) == 0:
-		return append(a.cfg.Names(), a.adoptableBranches("")...), cobra.ShellCompDirectiveNoFileComp
-	case len(args) == 1 && a.cfg.Has(args[0]):
-		return a.adoptableBranches(args[0]), cobra.ShellCompDirectiveNoFileComp
-	}
-	return nil, cobra.ShellCompDirectiveNoFileComp
+	return a.completePosition(args, a.adoptableBranches)
 }
 
 // adoptableBranches lists the branches of the worktrees git carries and wtm

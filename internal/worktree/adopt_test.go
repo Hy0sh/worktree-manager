@@ -193,9 +193,8 @@ func TestRemoveOfAnAdoptedWorktreeIgnoresUncommittedChanges(t *testing.T) {
 }
 
 // Removing takes wtm's own files back out of a checkout it never owned. Not to
-// unblock anything, git worktree remove already tolerates them since they are
-// in info/exclude, but a dead port block pointing at ports nothing listens on
-// is not a state to leave someone in.
+// unblock anything, info/exclude already covers them, but a port block naming
+// ports nothing listens on is not a state to leave someone in.
 func TestRemoveTakesWtmFilesOutOfAnAdoptedWorktree(t *testing.T) {
 	f, path := foreignFixture(t)
 	if err := Adopt(context.Background(), f.opts("")); err != nil {
@@ -239,10 +238,9 @@ func TestRemoveLeavesCopiedFilesInAnAdoptedWorktree(t *testing.T) {
 	}
 }
 
-// `claude -w` names its branches for itself, and that name becomes the handle
-// of every later wtm command. Adopting is the only moment a rename is free:
-// the compose project name carries the branch, so doing it afterwards would
-// orphan the stack it names.
+// `claude -w` names its branches for itself, and that name becomes the handle of
+// every later wtm command. Adopting is the only moment a rename is free: the
+// compose project name carries the branch, so a later one orphans the stack.
 func TestAdoptRenamesTheBranch(t *testing.T) {
 	f, path := foreignFixture(t)
 	o := f.opts("")
