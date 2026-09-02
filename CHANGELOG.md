@@ -45,6 +45,16 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   commits on the base would silently be left out.
 
 ### Fixed
+- A worktree no longer comes up on an empty database on a native docker. The
+  dump and the directory holding it were written 0700 and 0600, and the
+  `docker-entrypoint-initdb.d` script that restores them runs as the database
+  image's own user, never as root: on Linux it could not read the mount, took
+  the "no dump" branch and started an empty database without a word. Only that
+  directory is relaxed to 0755, the dump to 0644; the backups root stays 0700,
+  so no other user of the machine gains a way in. The script now tells a
+  missing dump from an unreadable one and fails loudly on the second, rather
+  than leaving a worktree that looks fine and holds nothing. A Docker Desktop
+  or OrbStack machine never saw this: their file sharing remaps ownership.
 
 - `wtm backup refresh` cleans up after itself, and never takes the developer's
   data with it. It only ever started what was missing and then left it running:

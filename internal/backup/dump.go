@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 
 	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/dbengine"
@@ -27,15 +26,15 @@ func (m *Manager) dump(ctx context.Context, name string, p config.Project, cfg c
 }
 
 // publish writes through a .tmp neighbour and renames only on success, so a
-// failed refresh never leaves a partial dump behind. A dump carries everything
-// the migrations create, so it stays readable by its owner alone.
+// failed refresh never leaves a partial dump behind. The mode matches the
+// directory's: the database container reads this file as its own user.
 func (m *Manager) publish(name string, write func(io.Writer) error) error {
 	final := m.DumpPath(name)
-	if err := os.MkdirAll(filepath.Dir(final), 0o700); err != nil {
+	if _, err := ProjectDir(m.Root, name); err != nil {
 		return err
 	}
 	tmpPath := final + ".tmp"
-	tmp, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	tmp, err := os.OpenFile(tmpPath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o644)
 	if err != nil {
 		return fmt.Errorf("creating the temporary dump: %w", err)
 	}

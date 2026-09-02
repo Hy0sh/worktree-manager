@@ -69,8 +69,8 @@ func writeRestoreScript(backupsDir, project string, eng dbengine.Engine) error {
 	if err := config.ValidateIdentifier("project name", project); err != nil {
 		return err
 	}
-	dir := filepath.Join(backupsDir, project)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	dir, err := backup.ProjectDir(backupsDir, project)
+	if err != nil {
 		return err
 	}
 	return os.WriteFile(filepath.Join(dir, backup.RestoreScriptName), []byte(eng.RestoreScript(project)), 0o755)

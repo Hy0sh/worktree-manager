@@ -3,6 +3,8 @@ package backup
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -93,5 +95,58 @@ func TestRefreshGivesUpWhenPostgresNeverReady(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "database") {
 		t.Fatalf("error should mention database readiness, got %q", err.Error())
+	}
+}
+
+func modeOf(t *testing.T, path string) os.FileMode {
+	t.Helper()
+	fi, err := os.Stat(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return fi.Mode().Perm()
+}
+
+// The database container mounts this directory and runs the restore as its own
+// user, never as root: 0700 leaves the dump unreadable on a native docker and
+// the worktree comes up silently empty.
+func TestProjectDirIsReadableByTheDatabaseContainer(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "backups")
+	dir, err := ProjectDir(root, "myapp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := modeOf(t, dir); got != 0o755 {
+		t.Fatalf("project directory mode = %o, want 755", got)
+	}
+	if got := modeOf(t, root); got != 0o700 {
+		t.Fatalf("the backups root stays private, mode = %o, want 700", got)
+	}
+}
+
+// MkdirAll leaves an existing directory's mode alone, and every install before
+// this created it 0700.
+func TestProjectDirRelaxesADirectoryLeftPrivate(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "backups")
+	if err := os.MkdirAll(filepath.Join(root, "myapp"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	dir, err := ProjectDir(root, "myapp")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := modeOf(t, dir); got != 0o755 {
+		t.Fatalf("an existing directory must be relaxed too, mode = %o", got)
+	}
+}
+
+func TestRefreshWritesADumpTheContainerCanRead(t *testing.T) {
+	f := &execx.Fake{Handler: okHandler}
+	m := newManager(t, f)
+	if err := m.Refresh(context.Background(), "myapp", newProject(t)); err != nil {
+		t.Fatalf("Refresh: %v", err)
+	}
+	if got := modeOf(t, m.DumpPath("myapp")); got != 0o644 {
+		t.Fatalf("dump mode = %o, want 644", got)
 	}
 }

@@ -153,3 +153,29 @@ func TestPostgresReadyProbesOverTCP(t *testing.T) {
 		t.Fatalf("the probe must go over TCP to skip the init-phase server, got %q", args)
 	}
 }
+
+// The entrypoint runs the script as the database's own user. A mount it cannot
+// read used to take the "no dump" branch and exit 0, which brought the worktree
+// up on an empty database without a word.
+func TestRestoreScriptRefusesAnUnreadableSnapshot(t *testing.T) {
+	for _, name := range []string{"postgres", "mysql", "mariadb", "mongodb"} {
+		eng, err := ByName(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		script := eng.RestoreScript("myapp")
+		for _, want := range []string{
+			"[ ! -r /db-snapshot ]",
+			`[ ! -r "$dump" ]`,
+			"is not readable by",
+			"exit 1",
+		} {
+			if !strings.Contains(script, want) {
+				t.Fatalf("%s: the script must carry %q:\n%s", name, want, script)
+			}
+		}
+		if !strings.Contains(script, "starting from an empty database") {
+			t.Fatalf("%s: a project with no dump yet still starts empty, not in error", name)
+		}
+	}
+}

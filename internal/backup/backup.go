@@ -48,12 +48,28 @@ func (m *Manager) logf(format string, args ...any) {
 	}
 }
 
+// ProjectDir is where a project's dump, its meta and the restore script live.
+// It is 0755 under a 0700 root on purpose: the database container mounts this
+// very directory and runs the restore as its own user, never as root.
+func ProjectDir(root, name string) (string, error) {
+	if err := os.MkdirAll(root, 0o700); err != nil {
+		return "", err
+	}
+	dir := filepath.Join(root, name)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	// MkdirAll leaves an existing directory's mode alone, and every install
+	// before this created it 0700.
+	return dir, os.Chmod(dir, 0o755)
+}
+
 // lockRefresh serialises the refreshes of one project: two at once fight over
 // the same throwaway database and temporary file. Failing fast beats queueing,
 // since waiting behind another refresh only redoes its work.
 func (m *Manager) lockRefresh(name string) (func(), error) {
-	dir := filepath.Join(m.Root, name)
-	if err := os.MkdirAll(dir, 0o700); err != nil {
+	dir, err := ProjectDir(m.Root, name)
+	if err != nil {
 		return nil, err
 	}
 	l := flock.New(filepath.Join(dir, refreshLockName))

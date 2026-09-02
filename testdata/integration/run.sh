@@ -39,7 +39,7 @@ api1_cid=$(docker ps -q --filter label=com.docker.compose.project=integration-wt
 api1=$(docker port "$api1_cid" 8099 | head -1 | cut -d: -f2)
 for i in $(seq 1 30); do curl -sf "http://localhost:$api1/widgets" | grep -q from-migration && break; sleep 2; done
 if ! curl -sf "http://localhost:$api1/widgets" | grep -q from-migration; then
-  docker compose -p integration-wt-1-it-one logs --tail=50 api
+  docker compose -p integration-wt-1-it-one logs --tail=50 db api
   fail "the worktree did not come up on the restored dump"
 fi
 
