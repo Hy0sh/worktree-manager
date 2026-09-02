@@ -6,6 +6,8 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-09-02
+
 ### Added
 
 - `wtm clean` drops what `wtm doctor` reports as left behind: the recorded
@@ -793,7 +795,8 @@ First tagged release. The whole worktree lifecycle behind one binary:
   identical so worktrees created with it keep working.
 - A project without a compose file is not an error, there is simply no stack.
 
-[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.10.0...v0.11.0
 [0.10.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.9.1...v0.10.0
 [0.9.1]: https://github.com/Hy0sh/worktree-manager/compare/v0.9.0...v0.9.1
 [0.9.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.8.0...v0.9.0
