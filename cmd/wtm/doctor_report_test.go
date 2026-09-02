@@ -46,7 +46,8 @@ func TestOrphanVolumesKeepsWhatALiveWorktreeOwns(t *testing.T) {
 		"other-project-wt-1-feat-x_data", // another repository's, not ours to report
 		"my-app_postgres_data",    // the main stack, not a worktree
 	}
-	orphans := orphanVolumes(all, "my-app", []string{"my-app-wt-1-feat-x"})
+	rw := repoWorktrees{Repo: "my-app", Live: []string{"my-app-wt-1-feat-x"}}
+	orphans := rw.orphanVolumes(all)
 	want := []string{
 		"my-app-wt-2-fix-migration_postgres_data",
 		"my-app-wt-2-fix-migration_files_data",
@@ -64,7 +65,7 @@ func TestOrphanVolumesKeepsWhatALiveWorktreeOwns(t *testing.T) {
 // With no live worktree recorded, everything under the prefix is orphan: that
 // is exactly the state a project left after its worktrees were removed.
 func TestOrphanVolumesReportsAllWhenNothingIsLive(t *testing.T) {
-	orphans := orphanVolumes([]string{"webshop-wt-1-feat-x_pgdata", "webshop_pgdata"}, "webshop", nil)
+	orphans := repoWorktrees{Repo: "webshop"}.orphanVolumes([]string{"webshop-wt-1-feat-x_pgdata", "webshop_pgdata"})
 	if len(orphans) != 1 || orphans[0] != "webshop-wt-1-feat-x_pgdata" {
 		t.Fatalf("orphans = %v", orphans)
 	}
@@ -79,7 +80,8 @@ func TestOrphanImagesKeepsWhatALiveWorktreeOwns(t *testing.T) {
 		"my-app-frontend",        // the main stack, not a worktree
 		"postgres",
 	}
-	orphans := orphanImages(all, "my-app", []string{"my-app-wt-1-feat-x"})
+	rw := repoWorktrees{Repo: "my-app", Live: []string{"my-app-wt-1-feat-x"}}
+	orphans := rw.orphanImages(all)
 	want := []string{
 		"my-app-wt-2-fix-migration-worker",
 		"my-app-wt-2-fix-migration-frontend",
@@ -100,7 +102,7 @@ func TestOrphanImagesKeepsWhatALiveWorktreeOwns(t *testing.T) {
 func TestOrphanVolumesMatchTheNameComposeActuallyBuilds(t *testing.T) {
 	all := []string{"myapp-wt-1-feat-x_db_data", "myapp-wt-2-old_db_data", "unrelated_data"}
 	live := []string{stack.ProjectName("MyApp", 1, "feat/x")}
-	got := orphanVolumes(all, "MyApp", live)
+	got := repoWorktrees{Repo: "MyApp", Live: live}.orphanVolumes(all)
 	if len(got) != 1 || got[0] != "myapp-wt-2-old_db_data" {
 		t.Fatalf("orphans = %v, want only the removed worktree's volume", got)
 	}

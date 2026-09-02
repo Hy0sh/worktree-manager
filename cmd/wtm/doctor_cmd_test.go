@@ -102,7 +102,8 @@ func TestDoctorCountsDanglingAnonymousVolumes(t *testing.T) {
 		t.Fatalf("doctor: %v", err)
 	}
 	got := out.String()
-	for _, want := range []string{"3 anonymous volume(s)", "docker volume rm aaa111 bbb222 ccc333"} {
+	for _, want := range []string{"3 anonymous volume(s)",
+		"docker volume rm $(docker volume ls -q --filter dangling=true --filter label=com.docker.volume.anonymous)"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("doctor should say %q:\n%s", want, got)
 		}

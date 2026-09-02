@@ -178,7 +178,9 @@ func (a *app) reportAnonymousVolumes(ctx context.Context) {
 	}
 	fmt.Fprintln(a.out)
 	fmt.Fprintf(a.out, "%d anonymous volume(s) no container mounts, left by images that name their own data directory:\n", len(ids))
-	fmt.Fprintf(a.out, "  drop them with `docker volume rm %s`\n", strings.Join(ids, " "))
+	// The same filters that found them, rather than a line of 64-character ids.
+	fmt.Fprintln(a.out, "  drop them with `docker volume rm $(docker volume ls -q "+
+		"--filter dangling=true --filter label=com.docker.volume.anonymous)`")
 }
 
 // reportOrphanImages lists what worktrees that no longer exist had compose
@@ -277,15 +279,14 @@ func newDoctorCmd(a *app) *cobra.Command {
 				if err := w.Flush(); err != nil {
 					return err
 				}
+				a.reportPortClashes()
+				a.reportStaleIndices(cmd.Context())
+				a.reportOrphanVolumes(cmd.Context())
+				a.reportOrphanImages(cmd.Context())
 			}
 			// Anonymous volumes are machine-wide, not tied to a registered
-			// project, so this must still run with zero of them; the others
-			// below are harmless no-ops in that case.
-			a.reportPortClashes()
-			a.reportStaleIndices(cmd.Context())
-			a.reportOrphanVolumes(cmd.Context())
+			// project: the only report an empty registry still has an answer for.
 			a.reportAnonymousVolumes(cmd.Context())
-			a.reportOrphanImages(cmd.Context())
 			return nil
 		},
 	}

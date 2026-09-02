@@ -56,35 +56,23 @@ func portClashes(holders []portHolder) []string {
 	return out
 }
 
-// orphanVolumes returns the volumes of repoName's worktree stacks that none of
-// the live compose project names accounts for. The index allocator steps over
-// any index docker still holds volumes for, so a new worktree lands further out.
-func orphanVolumes(all []string, repoName string, live []string) []string {
-	return unclaimed(all, repoName, "_", live)
-}
-
-// orphanVolumes and orphanImages answer nothing while a worktree of the project
-// has no recorded index: it cannot be turned into the compose project name that
-// would claim its volumes, and a wrong `docker rmi` costs a live worktree.
+// Both answer nothing while a worktree of the project has no recorded index: it
+// cannot be turned into the compose project name that would claim its volumes,
+// and a wrong `docker rmi` costs a live worktree.
 func (rw repoWorktrees) orphanVolumes(all []string) []string {
 	if len(rw.Unindexed) > 0 {
 		return nil
 	}
-	return orphanVolumes(all, rw.Repo, rw.Live)
+	return unclaimed(all, rw.Repo, "_", rw.Live)
 }
 
+// An untagged leftover of a rebuild carries no "<project>-<service>" name at
+// all, and stays for `docker image prune`.
 func (rw repoWorktrees) orphanImages(all []string) []string {
 	if len(rw.Unindexed) > 0 {
 		return nil
 	}
-	return orphanImages(all, rw.Repo, rw.Live)
-}
-
-// orphanImages returns the images compose built for repoName's worktree stacks
-// that no live worktree accounts for. An untagged leftover of a rebuild carries
-// no "<project>-<service>" name at all, and stays for `docker image prune`.
-func orphanImages(all []string, repoName string, live []string) []string {
-	return unclaimed(all, repoName, "-", live)
+	return unclaimed(all, rw.Repo, "-", rw.Live)
 }
 
 // unclaimed keeps the names built on a worktree project of repoName that none of
