@@ -13,6 +13,7 @@ import (
 
 	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
+	"github.com/Hy0sh/worktree-manager/internal/gitx"
 	"github.com/Hy0sh/worktree-manager/internal/index"
 	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
@@ -42,6 +43,14 @@ type Options struct {
 	// one, so it is worth a question to a person and never worth failing the
 	// create of a script or an agent.
 	Confirm func(question string) bool
+	// RenameTo is the name an adopted branch takes. Adoption is the only
+	// moment a rename is free: the compose project name carries the branch, so
+	// renaming once a stack exists orphans the stack it names.
+	RenameTo string
+	// ConfirmAdopt asks before writing into a worktree wtm did not create. It
+	// is deliberately not Confirm: --ignore-memory answers the memory advisory
+	// alone, and must not also wave through a write into somebody's checkout.
+	ConfirmAdopt func(question string) bool
 }
 
 // errStackNotStarted says a person declined to bring the stack up. The worktree
@@ -81,7 +90,13 @@ func Create(ctx context.Context, o Options) error {
 	if err := addWorktree(ctx, o, dest); err != nil {
 		return err
 	}
-	if err := provision(ctx, o, dest, overwriteCopies); err != nil {
+	return provisionAndStart(ctx, o, dest, overwriteCopies)
+}
+
+// provisionAndStart is everything a create does past the checkout itself, which
+// is exactly what Adopt owes a worktree it did not check out.
+func provisionAndStart(ctx context.Context, o Options, dest string, mode provisionMode) error {
+	if err := provision(ctx, o, dest, mode); err != nil {
 		return err
 	}
 	if err := ensureSnapshotAssets(o, dest); err != nil {
@@ -90,7 +105,7 @@ func Create(ctx context.Context, o Options) error {
 	o.logf("worktree ready: %s", dest)
 
 	if o.NoStart {
-		o.logf("stack not started (--no-start), run `wtm create %s` without the flag to start it", o.Branch)
+		o.logf("stack not started (--no-start), bring it up with `wtm start %s`", o.Branch)
 		runAfter(ctx, o)
 		return nil
 	}
@@ -117,6 +132,132 @@ func Create(ctx context.Context, o Options) error {
 	// has to be on screen before it does.
 	runAfter(ctx, o)
 	return nil
+}
+
+// Adopt gives a worktree wtm did not create everything it gives one it did: a
+// stable index, provisioned .env files and compose overrides, a restored
+// snapshot and a stack. The worktree stays where it is, because the whole point
+// is a directory somebody else opened, a `claude -w` one at the head of the
+// list, possibly with an agent working in it right now.
+func Adopt(ctx context.Context, o Options) error {
+	wt, err := adoptTarget(ctx, &o)
+	if err != nil {
+		return err
+	}
+	switch {
+	case wt.UnderRoot:
+		return fmt.Errorf("%s is a worktree wtm created: start its stack with `wtm start %s`",
+			wt.Path, wt.Branch)
+	case wt.Detached:
+		return fmt.Errorf("%s is on a detached HEAD at %s, and wtm keys a worktree by its branch: "+
+			"check one out there (`git -C %s switch -c <branch>`), then rerun",
+			wt.Path, wt.ShortHead(), wt.Path)
+	case o.Resolver.Recorded()[wt.Branch] > 0:
+		return fmt.Errorf("%s is already adopted: start its stack with `wtm start %s`",
+			wt.Path, wt.Branch)
+	}
+	if o.RenameTo != "" && refExists(ctx, o, "refs/heads/"+o.RenameTo) {
+		return fmt.Errorf("branch %s already exists: pick another name for %s",
+			o.RenameTo, wt.Branch)
+	}
+	question := fmt.Sprintf(
+		"adopt %s? wtm writes its .env, its compose overrides and its own files there", wt.Path)
+	if o.RenameTo != "" {
+		question = fmt.Sprintf("adopt %s as %s? wtm renames the branch, then writes "+
+			"its .env, its compose overrides and its own files there", wt.Path, o.RenameTo)
+	}
+	if o.ConfirmAdopt != nil && !o.ConfirmAdopt(question) {
+		return errors.New("cancelled: nothing was written (pass -y to answer for a script)")
+	}
+	if o.RenameTo != "" {
+		if _, err := o.Runner.Run(ctx, execx.Cmd{
+			Name: "git",
+			Args: []string{"-C", o.Project.Dir, "branch", "-m", wt.Branch, o.RenameTo},
+		}); err != nil {
+			return fmt.Errorf("renaming %s to %s: %w", wt.Branch, o.RenameTo, err)
+		}
+		// git moves the worktree's HEAD along with the branch, so everything
+		// below, the index included, belongs to the new name from here.
+		o.logf("branch %s renamed to %s", wt.Branch, o.RenameTo)
+		wt.Branch, o.Branch = o.RenameTo, o.RenameTo
+	}
+	// The index is what every other command reads to see this worktree at all,
+	// and start allocates it. Until it does, the listing still hides the
+	// worktree, so FindByBranch would fail on the very thing being adopted.
+	if o.Stack.Managed == nil {
+		o.Stack.Managed = map[string]bool{}
+	}
+	o.Stack.Managed[wt.Branch] = true
+	// Allocated here and not left to start: --no-start never reaches it, and an
+	// adoption that records no index is one no later command can see.
+	if err := o.resolveIndex(ctx, &wt, index.MayAllocate); err != nil {
+		return err
+	}
+	return provisionAndStart(ctx, o, wt.Path, keepWorktreeCopies)
+}
+
+// adoptTarget resolves what to adopt and fills o.Branch with it: the named
+// branch, or the worktree the command was typed from. It looks through All and
+// not Worktrees, which hides exactly the worktrees worth adopting.
+func adoptTarget(ctx context.Context, o *Options) (stack.Worktree, error) {
+	all, err := o.Stack.All(ctx)
+	if err != nil {
+		return stack.Worktree{}, err
+	}
+	if o.Branch != "" {
+		for _, wt := range all {
+			if wt.Branch == o.Branch {
+				return wt, nil
+			}
+		}
+		return stack.Worktree{}, fmt.Errorf("no worktree for branch %q in %s: "+
+			"create one with `wtm create %s`", o.Branch, o.Project.Dir, o.Branch)
+	}
+	cur, err := gitx.CurrentWorktree(ctx, o.Runner)
+	if err != nil {
+		return stack.Worktree{}, err
+	}
+	if !cur.Linked {
+		return stack.Worktree{}, fmt.Errorf("%s is the repository itself and not a worktree: "+
+			"name a branch, or run this from the worktree to adopt", cur.Path)
+	}
+	for _, wt := range all {
+		if sameDir(wt.Path, cur.Path) {
+			o.Branch = wt.Branch
+			return wt, nil
+		}
+	}
+	return stack.Worktree{}, fmt.Errorf("%s is a worktree of another repository than %s",
+		cur.Path, o.Project.Dir)
+}
+
+// removeArtifacts takes wtm's own files back out of a checkout it never owned.
+// Only what it can prove is its own: the two generated compose files, the two
+// symlinks, and the delimited port block. A copied .env or compose override is
+// indistinguishable from a file the worktree already had, and a file-based
+// database is data, so both stay. None of this unblocks anything, git already
+// tolerates them all through info/exclude; it is about not leaving a dead port
+// block behind in a worktree that outlives its stack.
+func removeArtifacts(o Options, dest string) {
+	for _, name := range []string{portsOverride, snapshotOverride, snapshotLink, gitContainerLink} {
+		if err := os.Remove(filepath.Join(dest, name)); err != nil && !os.IsNotExist(err) {
+			o.logf("warning: %s could not be removed from %s: %v", name, dest, err)
+		}
+	}
+	if err := stack.StripEnvOverrides(dest); err != nil {
+		o.logf("warning: the port block could not be taken out of %s/.env: %v", dest, err)
+	}
+}
+
+// sameDir compares two paths git and the shell can spell differently: macOS
+// hands out symlinked temporary directories, and only the resolved forms match.
+func sameDir(a, b string) bool {
+	if filepath.Clean(a) == filepath.Clean(b) {
+		return true
+	}
+	ra, errA := filepath.EvalSymlinks(a)
+	rb, errB := filepath.EvalSymlinks(b)
+	return errA == nil && errB == nil && ra == rb
 }
 
 // Start brings an existing worktree's stack back up. Without it, restarting a
@@ -169,7 +310,10 @@ func Remove(ctx context.Context, o Options) error {
 	// exactly as it was, stack included. Only tracked changes are work worth
 	// protecting; git refuses to remove a worktree holding any untracked file,
 	// which this tool always put there, so the removal below forces past those.
-	if !o.Force {
+	// An adopted worktree is spared the whole question: its checkout stays, so
+	// there is nothing to protect it from, and refusing over the uncommitted
+	// work a worktree in use always holds would make the command unusable.
+	if !o.Force && wt.UnderRoot {
 		if wt.Locked {
 			return fmt.Errorf("worktree %s is locked%s: unlock it (`git -C %s worktree unlock %s`), "+
 				"or rerun with --force (the stack is still running)",
@@ -199,21 +343,28 @@ func Remove(ctx context.Context, o Options) error {
 			}
 		}
 	}
-	// The first --force covers the untracked files wtm itself put there; a lock
-	// takes a second one, which is git's own rule.
-	args := []string{"-C", o.Project.Dir, "worktree", "remove", "--force"}
-	if wt.Locked {
-		args = append(args, "--force")
+	if wt.UnderRoot {
+		// The first --force covers the untracked files wtm itself put there; a
+		// lock takes a second one, which is git's own rule.
+		args := []string{"-C", o.Project.Dir, "worktree", "remove", "--force"}
+		if wt.Locked {
+			args = append(args, "--force")
+		}
+		if _, err := o.Runner.Run(ctx, execx.Cmd{
+			Name: "git",
+			Args: append(args, wt.Path),
+			Live: true,
+		}); err != nil {
+			return fmt.Errorf("removing the worktree (the stack is already stopped): %w", err)
+		}
+		pruneEmptyParents(wt.Path, stack.WorktreesRoot(o.Project.Dir))
+		o.logf("worktree removed: %s (branch %s kept)", wt.Path, o.Branch)
+	} else {
+		// wtm only takes down what it built. The checkout came from somewhere
+		// else, and something may well still be working in it.
+		removeArtifacts(o, wt.Path)
+		o.logf("stack removed, worktree kept: %s (wtm did not create it)", wt.Path)
 	}
-	if _, err := o.Runner.Run(ctx, execx.Cmd{
-		Name: "git",
-		Args: append(args, wt.Path),
-		Live: true,
-	}); err != nil {
-		return fmt.Errorf("removing the worktree (the stack is already stopped): %w", err)
-	}
-	pruneEmptyParents(wt.Path, stack.WorktreesRoot(o.Project.Dir))
-	o.logf("worktree removed: %s (branch %s kept)", wt.Path, o.Branch)
 	if stackKnown {
 		removeVolumes(ctx, o, wt)
 		removeImages(ctx, o, wt)

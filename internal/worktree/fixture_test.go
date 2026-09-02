@@ -34,6 +34,26 @@ type fixture struct {
 	// .env is the ordinary case, and it is the one where the ports are written.
 	envTracked bool
 	lockReason string // set to have the listing report the worktree as locked
+	// foreign are the worktrees git lists outside .worktrees, branch -> path:
+	// what `wtm adopt` exists for.
+	foreign map[string]string
+	// managed are the branches the registry holds an index for, which is what
+	// makes a foreign worktree visible to the listing.
+	managed map[string]bool
+	// cwd is the branch CurrentWorktree answers from; empty means the command
+	// was typed in the main repository. cwdDetached drops the branch from that
+	// answer without moving the directory.
+	cwd         string
+	cwdDetached bool
+}
+
+// worktreePath is where the fixture puts a branch: a foreign path when one was
+// declared, and the place wtm creates its own otherwise.
+func (f *fixture) worktreePath(branch string) string {
+	if p, ok := f.foreign[branch]; ok {
+		return p
+	}
+	return filepath.Join(f.root, ".worktrees", filepath.FromSlash(branch))
 }
 
 // hasTrackingRef answers `rev-parse refs/remotes/<remote>/<branch>` for the
@@ -119,8 +139,44 @@ func newFixture(t *testing.T) *fixture {
 			if f.lockReason != "" {
 				lock = "locked " + f.lockReason + "\n"
 			}
-			return execx.Result{Stdout: "worktree " + f.root + "\nbranch refs/heads/develop\n\n" +
-				"worktree " + filepath.Join(f.root, ".worktrees", "feat", "x") + "\nbranch refs/heads/feat/x\n" + lock}, nil
+			out := "worktree " + f.root + "\nbranch refs/heads/develop\n\n" +
+				"worktree " + filepath.Join(f.root, ".worktrees", "feat", "x") + "\nbranch refs/heads/feat/x\n" + lock
+			for branch, path := range f.foreign {
+				head := "branch refs/heads/" + branch
+				if f.cwdDetached && branch == f.cwd {
+					head = "detached"
+				}
+				out += "\nworktree " + path + "\nHEAD abc123\n" + head + "\n"
+			}
+			return execx.Result{Stdout: out}, nil
+		case strings.Contains(line, "branch -m"):
+			// git moves the worktree's HEAD with the branch, so the listing
+			// answers under the new name from here on.
+			from, to := c.Args[len(c.Args)-2], c.Args[len(c.Args)-1]
+			if path, ok := f.foreign[from]; ok {
+				delete(f.foreign, from)
+				f.foreign[to] = path
+			}
+			if f.cwd == from {
+				f.cwd = to
+			}
+			return execx.Result{}, nil
+		case strings.Contains(line, "--show-toplevel"):
+			top, gitDir := f.root, filepath.Join(f.root, ".git")
+			if f.cwd != "" {
+				top = f.worktreePath(f.cwd)
+				gitDir = filepath.Join(f.root, ".git", "worktrees", "w")
+			}
+			return execx.Result{Stdout: strings.Join(
+				[]string{top, gitDir, filepath.Join(f.root, ".git")}, "\n") + "\n"}, nil
+		case strings.Contains(line, "symbolic-ref"):
+			if f.cwd == "" {
+				return execx.Result{Stdout: "develop\n"}, nil
+			}
+			if f.cwdDetached {
+				return execx.Result{ExitCode: 1}, errors.New("HEAD is not a symbolic ref")
+			}
+			return execx.Result{Stdout: f.cwd + "\n"}, nil
 		case strings.Contains(line, "ps -a"):
 			return execx.Result{Stdout: strings.Join(f.dockerLabels, "\n") + "\n"}, nil
 		case strings.Contains(line, "volume ls"):
@@ -140,7 +196,8 @@ func (f *fixture) opts(branch string) Options {
 		BackupsDir: f.backups,
 		Runner:     f.fake,
 		Out:        io.Discard,
-		Stack:      &stack.Client{Runner: f.fake, Dir: f.root, Out: io.Discard},
+		Stack: &stack.Client{Runner: f.fake, Dir: f.root, Out: io.Discard,
+			Managed: f.managed},
 		Resolver: &index.Resolver{ConfigPath: f.cfgPath, Runner: f.fake,
 			Name: "myapp", RepoName: filepath.Base(f.root), Out: io.Discard},
 	}
@@ -165,4 +222,13 @@ func lastCall(f *fixture, want string) string {
 		}
 	}
 	return found
+}
+
+func mustRead(t *testing.T, path string) string {
+	t.Helper()
+	b, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return string(b)
 }

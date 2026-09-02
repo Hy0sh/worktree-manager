@@ -14,6 +14,14 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/safefile"
 )
 
+// gitContainerLink and snapshotLink are the two symlinks wtm lays beside a
+// checkout. Named here because three places need them to agree: what is laid
+// down, what git is told to ignore, and what a removal takes back out.
+const (
+	gitContainerLink = ".git-container"
+	snapshotLink     = ".db-snapshot"
+)
+
 // skipDirs are never descended into when looking for *.env files.
 var skipDirs = map[string]bool{".git": true, ".worktrees": true, "node_modules": true, ".claude": true}
 
@@ -69,8 +77,8 @@ func provision(ctx context.Context, o Options, dest string, mode provisionMode) 
 // the worktree references ./.git-container on both sides.
 func linkGitContainer(ctx context.Context, o Options, dest string) error {
 	for _, target := range []struct{ repo, link string }{
-		{dest, filepath.Join(dest, ".git-container")},
-		{o.Project.Dir, filepath.Join(o.Project.Dir, ".git-container")},
+		{dest, filepath.Join(dest, gitContainerLink)},
+		{o.Project.Dir, filepath.Join(o.Project.Dir, gitContainerLink)},
 	} {
 		res, err := o.Runner.Run(ctx, execx.Cmd{
 			Name: "git",
@@ -98,7 +106,7 @@ func linkSnapshotDir(o Options, dest string) error {
 	if err := os.MkdirAll(target, 0o755); err != nil {
 		return err
 	}
-	return forceSymlink(target, filepath.Join(dest, ".db-snapshot"))
+	return forceSymlink(target, filepath.Join(dest, snapshotLink))
 }
 
 // forceSymlink is `ln -sfn` restrained to what it may replace: a symlink, or

@@ -13,6 +13,10 @@ type Client struct {
 	Runner execx.Runner
 	Dir    string // project repository root
 	Out    io.Writer
+	// Managed carries the branches holding a recorded index, which is what
+	// makes a worktree outside .worktrees visible to Worktrees. Nothing in such
+	// a worktree's path tells it apart from a stranger's.
+	Managed map[string]bool
 }
 
 // Up brings a worktree's stack up. The port assignments live in the .env of

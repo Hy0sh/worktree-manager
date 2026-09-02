@@ -123,8 +123,15 @@ wtm create feat/my-branch --run claude       # a command on your machine, once r
 wtm create feat/my-branch --exec 'manage.py load_fixture demo'   # in the container
 wtm create feat/my-branch --ignore-memory    # never ask, however tight the RAM
 
+# adopt a worktree wtm did not create
+cd ~/dev/my-app/.claude/worktrees/curry && wtm adopt
+wtm adopt my-app worktree-curry             # or name it from anywhere
+wtm adopt --as feat/my-feature              # renaming the branch on the way in
+wtm adopt worktree-curry -y                 # do not ask, for a script
+wtm adopt --no-start                        # adopt now, bring the stack up later
+
 # lifecycle
-wtm list                                    # worktrees wtm created for this project
+wtm list                                    # worktrees of this project
 wtm start feat/my-branch                    # bring a stopped stack back up
 wtm stop feat/my-branch
 wtm stop --all                              # every worktree of the project
@@ -165,6 +172,56 @@ container, `run` stays on your machine with the worktree as working
 directory, which is what an editor or a coding agent needs. `wtm list`
 reports whether each stack is up, and falls back to `-` rather than hanging
 when docker is slow or down.
+
+## Adopting a worktree wtm did not create
+
+Plenty of worktrees exist before wtm hears about them: a `claude --worktree`
+one under `.claude/worktrees`, a `git worktree add` anywhere else. `wtm adopt`
+gives one of those what a created worktree gets, without moving it:
+
+```sh
+cd ~/dev/my-app/.claude/worktrees/curry
+wtm adopt
+```
+
+Staying put is the point. Something is usually working in that directory, an
+agent included, and pulling it out from under them to satisfy a naming
+convention would be a poor trade. The worktree gets a stable index, remapped
+ports, the provisioned `.env` files and compose overrides, the restored dump
+and its stack, and `wtm list`, `stop`, `exec`, `run` and `path` address it like
+any other from then on.
+
+Since the directory came from somewhere else, so does its fate: `wtm remove` on
+an adopted worktree takes the stack, the volumes and the images down, takes
+wtm's own files back out of the checkout, and leaves the checkout itself
+exactly where it found it. Whatever created the worktree remains the one that
+removes it.
+
+An `.env` the worktree already carries is never overwritten, only its port
+block is written; and adopting asks before writing anything, since the
+directory is not wtm's own. `-y` answers that question for a script.
+
+`claude --worktree` names its branches for itself, and that name becomes the
+handle of every later `wtm` command. `--as` renames it on the way in:
+
+```sh
+wtm adopt --as feat/my-feature
+```
+
+Adopting is the moment for it. The branch is part of the compose project name,
+so renaming once a stack exists orphans the stack that name addressed. The
+directory keeps its own name, which nothing can fix without moving the
+worktree.
+
+Everything `create` offers once the worktree stands is offered here too, from
+the same declaration so the two verbs cannot drift apart: `--no-start` leaves
+the stack down and still records the adoption, `--no-post-create` skips the
+seed, `--run` and `--exec` play a shell line on your machine and in the
+application container. Only how the worktree appears differs; what happens to
+it next does not.
+
+A worktree on a detached HEAD cannot be adopted: wtm keys a worktree by its
+branch, and there is none to key it by.
 
 Creation deliberately sits behind the `create` verb. It used to be the bare
 form, `wtm <branch>`, until a mistyped `wtm list` created a branch called

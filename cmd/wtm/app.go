@@ -92,7 +92,8 @@ func (a *app) options(name string, p config.Project, branch string) worktree.Opt
 		BackupsDir: a.backups,
 		Runner:     a.runner,
 		Out:        a.out,
-		Stack:      &stack.Client{Runner: a.runner, Dir: p.Dir, Out: a.out},
+		Stack: &stack.Client{Runner: a.runner, Dir: p.Dir, Out: a.out,
+			Managed: managed(p)},
 		Resolver: &index.Resolver{
 			ConfigPath: a.cfgPath,
 			Runner:     a.runner,
@@ -102,6 +103,20 @@ func (a *app) options(name string, p config.Project, branch string) worktree.Opt
 		},
 		Confirm: a.confirmer(),
 	}
+}
+
+// managed is the set of branches the registry holds an index for, which is
+// what makes an adopted worktree visible to the listing. A recorded index is
+// the only mark such a worktree carries: nothing in its path says wtm knows it.
+func managed(p config.Project) map[string]bool {
+	if len(p.WorktreeIndices) == 0 {
+		return nil
+	}
+	out := make(map[string]bool, len(p.WorktreeIndices))
+	for branch := range p.WorktreeIndices {
+		out[branch] = true
+	}
+	return out
 }
 
 // confirmer is nil unless a person is there to answer. wtm exists for parallel

@@ -24,10 +24,13 @@ type Worktree struct {
 	Locked     bool
 	LockReason string
 	// Detached says HEAD points straight at Head instead of at a branch. git
-	// then names no branch, so Branch is derived from the path: wtm always
-	// creates <root>/<branch>.
+	// then names no branch, so Branch is derived from the path, which only
+	// works under WorktreesRoot: wtm always creates <root>/<branch>.
 	Detached bool
 	Head     string
+	// UnderRoot says the worktree sits where wtm creates its own. An adopted
+	// one does not, which is what Remove reads to leave the directory alone.
+	UnderRoot bool
 }
 
 // ShortHead abbreviates Head the way git prints it in its own listings.
@@ -38,16 +41,34 @@ func (w Worktree) ShortHead() string {
 	return w.Head
 }
 
-// WorktreesRoot is where a repository's wtm worktrees live. What git lists
+// WorktreesRoot is where the worktrees wtm creates itself live. What git lists
 // outside it, a `claude -w` worktree under .claude/worktrees or a manual `git
-// worktree add` anywhere else, has none of what every wtm command needs: no
-// stable index, no provisioned .env, no stack.
+// worktree add` anywhere else, has none of what every wtm command needs until
+// `wtm adopt` gives it a stable index, a provisioned .env and a stack.
 func WorktreesRoot(repoDir string) string {
 	return filepath.Join(repoDir, ".worktrees")
 }
 
-// Worktrees lists the worktrees wtm manages, in git's own order.
+// Worktrees lists the worktrees wtm manages, in git's own order: the ones it
+// created, plus the adopted ones its registry carries an index for.
 func (c *Client) Worktrees(ctx context.Context) ([]Worktree, error) {
+	all, err := c.All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]Worktree, 0, len(all))
+	for _, wt := range all {
+		if wt.UnderRoot || c.Managed[wt.Branch] {
+			out = append(out, wt)
+		}
+	}
+	return out, nil
+}
+
+// All lists every linked worktree of the repository, whether wtm knows it or
+// not. `wtm adopt` is what it exists for: a worktree has to be seen once before
+// it can be brought in, and Worktrees hides exactly the ones worth adopting.
+func (c *Client) All(ctx context.Context) ([]Worktree, error) {
 	res, err := c.Runner.Run(ctx, execx.Cmd{
 		Name: "git",
 		Args: []string{"-C", c.Dir, "worktree", "list", "--porcelain"},
@@ -57,7 +78,13 @@ func (c *Client) Worktrees(ctx context.Context) ([]Worktree, error) {
 	}
 	root := WorktreesRoot(c.Dir) + string(os.PathSeparator)
 	var (
-		out    []Worktree
+		out []Worktree
+		// pos counts the worktrees under root alone. It is the fallback
+		// internal/index uses for worktrees older than the recorded indices, so
+		// it must keep meaning "nth under .worktrees": numbering adopted ones
+		// along with them would shift that fallback and hand such a worktree an
+		// index its .env never carried.
+		pos    int
 		first  = true
 		path   string
 		br     string
@@ -70,14 +97,20 @@ func (c *Client) Worktrees(ctx context.Context) ([]Worktree, error) {
 		if path == "" {
 			return
 		}
-		if first {
+		switch {
+		case first:
 			first = false // the first block is the main repository
-		} else if strings.HasPrefix(path, root) {
-			if det {
-				br = filepath.ToSlash(strings.TrimPrefix(path, root))
+		default:
+			wt := Worktree{Path: path, Branch: br, Locked: locked,
+				LockReason: reason, Detached: det, Head: head}
+			if wt.UnderRoot = strings.HasPrefix(path, root); wt.UnderRoot {
+				if det {
+					wt.Branch = filepath.ToSlash(strings.TrimPrefix(path, root))
+				}
+				pos++
+				wt.Pos = pos
 			}
-			out = append(out, Worktree{Pos: len(out) + 1, Path: path, Branch: br,
-				Locked: locked, LockReason: reason, Detached: det, Head: head})
+			out = append(out, wt)
 		}
 		path, br, locked, reason, det, head = "", "", false, "", false, ""
 	}

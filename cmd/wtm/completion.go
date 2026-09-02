@@ -33,23 +33,52 @@ func (a *app) completeTargets(_ *cobra.Command, args []string, _ string) ([]stri
 	return nil, cobra.ShellCompDirectiveNoFileComp
 }
 
-// worktreeBranches lists the branches that currently have a worktree, for the
-// named project or for the one of the current directory.
-func (a *app) worktreeBranches(name string) []string {
-	var p config.Project
-	var err error
-	if name != "" {
-		p, err = a.cfg.Get(name)
-	} else {
-		var root string
-		if root, err = gitx.RepoRoot(context.Background(), a.runner); err == nil {
-			_, p, err = a.cfg.ResolveCurrent(root)
-		}
+// completeAdoptable suggests what `adopt` accepts: a project name, or a branch
+// whose worktree wtm does not manage yet. Suggesting the ones it already
+// manages would offer nothing but a refusal.
+func (a *app) completeAdoptable(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
+	if !a.ensureLoaded() {
+		return nil, cobra.ShellCompDirectiveNoFileComp
 	}
+	switch {
+	case len(args) == 0:
+		return append(a.cfg.Names(), a.adoptableBranches("")...), cobra.ShellCompDirectiveNoFileComp
+	case len(args) == 1 && a.cfg.Has(args[0]):
+		return a.adoptableBranches(args[0]), cobra.ShellCompDirectiveNoFileComp
+	}
+	return nil, cobra.ShellCompDirectiveNoFileComp
+}
+
+// adoptableBranches lists the branches of the worktrees git carries and wtm
+// does not manage, for the named project or for the one of the current
+// directory. A detached worktree has no branch to adopt it by.
+func (a *app) adoptableBranches(name string) []string {
+	p, err := a.completionProject(name)
 	if err != nil {
 		return nil
 	}
 	client := &stack.Client{Runner: a.runner, Dir: p.Dir, Out: io.Discard}
+	worktrees, err := client.All(context.Background())
+	if err != nil {
+		return nil
+	}
+	var branches []string
+	for _, w := range worktrees {
+		if !w.UnderRoot && !w.Detached && p.WorktreeIndices[w.Branch] == 0 {
+			branches = append(branches, w.Branch)
+		}
+	}
+	return branches
+}
+
+// worktreeBranches lists the branches that currently have a worktree, for the
+// named project or for the one of the current directory.
+func (a *app) worktreeBranches(name string) []string {
+	p, err := a.completionProject(name)
+	if err != nil {
+		return nil
+	}
+	client := &stack.Client{Runner: a.runner, Dir: p.Dir, Out: io.Discard, Managed: managed(p)}
 	worktrees, err := client.Worktrees(context.Background())
 	if err != nil {
 		return nil
@@ -59,4 +88,18 @@ func (a *app) worktreeBranches(name string) []string {
 		branches = append(branches, w.Branch)
 	}
 	return branches
+}
+
+// completionProject resolves the project a suggestion is about: the named one,
+// or the one the current directory belongs to.
+func (a *app) completionProject(name string) (config.Project, error) {
+	if name != "" {
+		return a.cfg.Get(name)
+	}
+	root, err := gitx.RepoRoot(context.Background(), a.runner)
+	if err != nil {
+		return config.Project{}, err
+	}
+	_, p, err := a.cfg.ResolveCurrent(root)
+	return p, err
 }
