@@ -105,7 +105,7 @@ func provisionAndStart(ctx context.Context, o Options, dest string, mode provisi
 	o.logf("worktree ready: %s", dest)
 
 	if o.NoStart {
-		o.logf("stack not started (--no-start), run `wtm create %s` without the flag to start it", o.Branch)
+		o.logf("stack not started (--no-start), bring it up with `wtm start %s`", o.Branch)
 		runAfter(ctx, o)
 		return nil
 	}
@@ -188,6 +188,11 @@ func Adopt(ctx context.Context, o Options) error {
 		o.Stack.Managed = map[string]bool{}
 	}
 	o.Stack.Managed[wt.Branch] = true
+	// Allocated here and not left to start: --no-start never reaches it, and an
+	// adoption that records no index is one no later command can see.
+	if err := o.resolveIndex(ctx, &wt, index.MayAllocate); err != nil {
+		return err
+	}
 	return provisionAndStart(ctx, o, wt.Path, keepWorktreeCopies)
 }
 

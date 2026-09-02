@@ -128,6 +128,7 @@ cd ~/dev/my-app/.claude/worktrees/curry && wtm adopt
 wtm adopt my-app worktree-curry             # or name it from anywhere
 wtm adopt --as feat/my-feature              # renaming the branch on the way in
 wtm adopt worktree-curry -y                 # do not ask, for a script
+wtm adopt --no-start                        # adopt now, bring the stack up later
 
 # lifecycle
 wtm list                                    # worktrees of this project
@@ -211,6 +212,13 @@ Adopting is the moment for it. The branch is part of the compose project name,
 so renaming once a stack exists orphans the stack that name addressed. The
 directory keeps its own name, which nothing can fix without moving the
 worktree.
+
+Everything `create` offers once the worktree stands is offered here too, from
+the same declaration so the two verbs cannot drift apart: `--no-start` leaves
+the stack down and still records the adoption, `--no-post-create` skips the
+seed, `--run` and `--exec` play a shell line on your machine and in the
+application container. Only how the worktree appears differs; what happens to
+it next does not.
 
 A worktree on a detached HEAD cannot be adopted: wtm keys a worktree by its
 branch, and there is none to key it by.

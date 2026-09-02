@@ -19,6 +19,10 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   `claude --worktree` names for itself. Adopting is the moment for it: the
   branch is part of the compose project name, so a rename once a stack exists
   orphans the stack that name addressed.
+  `--no-start`, `--no-post-create`, `--run` and `--exec` behave exactly as they
+  do on a create, declared once for the two verbs: only how the worktree
+  appears differs, never what happens to it next. An adoption records its index
+  even with `--no-start`, or no later command could see the worktree.
   The worktree never moves: an agent is usually working in it, and a rename to
   satisfy a naming convention is not worth pulling the directory out from under
   it. For the same reason `wtm remove` on an adopted worktree stops at the

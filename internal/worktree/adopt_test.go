@@ -2,6 +2,7 @@ package worktree
 
 import (
 	"context"
+	"github.com/Hy0sh/worktree-manager/internal/stack"
 	"os"
 	"path/filepath"
 	"strings"
@@ -17,6 +18,9 @@ func foreignFixture(t *testing.T) (*fixture, string) {
 	t.Helper()
 	f := newFixture(t)
 	path := filepath.Join(f.root, ".claude", "worktrees", "curry")
+	if err := os.MkdirAll(path, 0o755); err != nil {
+		t.Fatal(err)
+	}
 	f.foreign = map[string]string{"worktree-curry": path}
 	f.cwd = "worktree-curry"
 	return f, path
@@ -292,5 +296,74 @@ func TestAdoptQuestionNamesTheRename(t *testing.T) {
 	}
 	if !strings.Contains(asked, "feat/mine") {
 		t.Fatalf("the question must name what the branch becomes, got %q", asked)
+	}
+}
+
+// Everything create offers once the worktree stands, adopt offers too: the two
+// verbs differ in how the worktree appears, never in what happens next.
+func TestAdoptPlaysPostCreateLikeCreate(t *testing.T) {
+	f, _ := foreignFixture(t)
+	o := f.opts("")
+	o.Project.Dump = true
+	o.Project.PostCreate = "manage.py seed_data"
+	o.Project.ReadyTimeout, o.Project.ReadyInterval = "1s", "1ms"
+	o.Project.Backup = &config.Backup{AppService: "backend"}
+	if err := Adopt(context.Background(), o); err != nil {
+		t.Fatalf("Adopt: %v", err)
+	}
+	project := stack.ProjectName(filepath.Base(f.root), 1, "worktree-curry")
+	want := "docker compose -p " + project + " exec -T backend sh -c 'manage.py seed_data'"
+	if last := f.fake.Lines()[len(f.fake.Lines())-1]; last != want {
+		t.Fatalf("last call =\n  %q\nwant\n  %q", last, want)
+	}
+}
+
+func TestAdoptSkipsPostCreateOnDemand(t *testing.T) {
+	f, _ := foreignFixture(t)
+	o := f.opts("")
+	o.Project.Dump = true
+	o.Project.PostCreate = "manage.py seed_data"
+	o.NoPostCreate = true
+	if err := Adopt(context.Background(), o); err != nil {
+		t.Fatalf("Adopt: %v", err)
+	}
+	if got := lastCall(f, "seed_data"); got != "" {
+		t.Fatalf("--no-post-create must skip the seed, ran %q", got)
+	}
+}
+
+// start is what allocates the index, and --no-start never reaches it. Without
+// one recorded, no later command can see the worktree at all: the adoption
+// would not have happened.
+func TestAdoptWithoutStartingStillRecordsTheIndex(t *testing.T) {
+	f, _ := foreignFixture(t)
+	o := f.opts("")
+	o.NoStart = true
+	if err := Adopt(context.Background(), o); err != nil {
+		t.Fatalf("Adopt: %v", err)
+	}
+	for _, l := range f.fake.Lines() {
+		if strings.Contains(l, "compose") && strings.Contains(l, "up -d") {
+			t.Fatalf("--no-start must leave the stack down, ran %q", l)
+		}
+	}
+	cfg, err := config.Load(f.cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cfg.Projects["myapp"].WorktreeIndices["worktree-curry"] == 0 {
+		t.Fatal("the adoption must be recorded even with the stack down")
+	}
+}
+
+func TestAdoptPlaysTheAfterCommands(t *testing.T) {
+	f, _ := foreignFixture(t)
+	o := f.opts("")
+	o.RunAfter = "echo host"
+	if err := Adopt(context.Background(), o); err != nil {
+		t.Fatalf("Adopt: %v", err)
+	}
+	if got := lastCall(f, "echo host"); got == "" {
+		t.Fatalf("--run must play on the host, ran %v", f.fake.Lines())
 	}
 }

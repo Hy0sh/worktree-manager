@@ -132,3 +132,32 @@ func TestRemoveAllQuestionCountsAdoptedApart(t *testing.T) {
 		t.Fatalf("nothing about adoption when there is none, got %q", plain)
 	}
 }
+
+// The same refusal create gives: an --exec discovered stackless at the very end
+// is a warning nobody wanted.
+func TestAdoptRefusesExecWithoutAStack(t *testing.T) {
+	a, _, _, _ := adoptFixture(t, "")
+	cmd := newAdoptCmd(a)
+	cmd.SetArgs([]string{"myapp", "worktree-curry", "-y", "--no-start", "--exec", "seed"})
+	cmd.SetOut(a.out.(*bytes.Buffer))
+	err := cmd.Execute()
+	if err == nil || !strings.Contains(err.Error(), "--exec needs the stack --no-start leaves down") {
+		t.Fatalf("expected create's own refusal, got %v", err)
+	}
+}
+
+// The flags create and adopt share are declared once, so the two verbs cannot
+// drift apart.
+func TestAdoptOffersTheSameAfterFlagsAsCreate(t *testing.T) {
+	a, _, _, _ := adoptFixture(t, "")
+	adopt, create := newAdoptCmd(a), newCreateCmd(a)
+	for _, name := range []string{"no-start", "no-post-create", "run", "exec", "ignore-memory"} {
+		af, cf := adopt.Flags().Lookup(name), create.Flags().Lookup(name)
+		if af == nil {
+			t.Fatalf("adopt is missing --%s", name)
+		}
+		if af.Usage != cf.Usage {
+			t.Fatalf("--%s reads differently on the two verbs:\n  adopt:  %s\n  create: %s", name, af.Usage, cf.Usage)
+		}
+	}
+}
