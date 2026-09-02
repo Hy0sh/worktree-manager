@@ -74,7 +74,7 @@ func TestDoctorReportsOrphanImagesAndBuildCache(t *testing.T) {
 	got := out.String()
 	for _, want := range []string{
 		"2 image(s) built for removed worktrees",
-		"docker rmi my-app-wt-7-refactor-form-worker my-app-wt-7-refactor-form-frontend",
+		"docker rmi my-app-wt-7-refactor-form-frontend my-app-wt-7-refactor-form-worker",
 		"57.8GB of build cache",
 	} {
 		if !strings.Contains(got, want) {

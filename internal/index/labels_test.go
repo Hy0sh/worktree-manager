@@ -10,31 +10,31 @@ import (
 )
 
 func TestResolveBackfillsFromAContainerLabel(t *testing.T) {
-	r, path, _ := newResolver(t, nil, []string{"my-app-wt-3-review-gal-1020", "other-project"})
-	got, err := r.Resolve(context.Background(), "review-gal-1020", 1, MustExist)
+	r, path, _ := newResolver(t, nil, []string{"my-app-wt-3-review-abc-1020", "other-project"})
+	got, err := r.Resolve(context.Background(), "review-abc-1020", 1, MustExist)
 	if err != nil || got != 3 {
 		t.Fatalf("got %d, %v", got, err)
 	}
-	if recorded(t, path, "review-gal-1020") != 3 {
+	if recorded(t, path, "review-abc-1020") != 3 {
 		t.Fatal("backfill must persist what docker reported")
 	}
 }
 
 func TestResolveBackfillMatchesTheSanitizedBranch(t *testing.T) {
-	r, _, _ := newResolver(t, nil, []string{"my-app-wt-2-feat-gal-667"})
-	got, err := r.Resolve(context.Background(), "feat/gal-667", 9, MustExist)
+	r, _, _ := newResolver(t, nil, []string{"my-app-wt-2-feat-abc-667"})
+	got, err := r.Resolve(context.Background(), "feat/abc-667", 9, MustExist)
 	if err != nil || got != 2 {
 		t.Fatalf("a slashed branch must match its sanitized label, got %d, %v", got, err)
 	}
 }
 
 func TestResolveBackfillCollisionIsAnActionableError(t *testing.T) {
-	r, _, _ := newResolver(t, map[string]int{"review-gal-1020": 3}, []string{"my-app-wt-3-fix-allow"})
+	r, _, _ := newResolver(t, map[string]int{"review-abc-1020": 3}, []string{"my-app-wt-3-fix-allow"})
 	_, err := r.Resolve(context.Background(), "fix-allow", 2, MayAllocate)
 	if err == nil {
 		t.Fatal("two branches on the same index is a broken state, not something to paper over")
 	}
-	for _, want := range []string{"docker compose -p my-app-wt-3-fix-allow down -v", "review-gal-1020", "wtm start"} {
+	for _, want := range []string{"docker compose -p my-app-wt-3-fix-allow down -v", "review-abc-1020", "wtm start"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Fatalf("error %q must mention %q", err, want)
 		}
@@ -64,11 +64,11 @@ func TestResolveBackfillsFromAVolumeLabelWhenContainersAreGone(t *testing.T) {
 		case strings.Contains(c.String(), "volume ls"):
 			// com.docker.compose.project deliberately is not the first key,
 			// so the order-agnostic k=v parse is what makes this pass.
-			return execx.Result{Stdout: "com.docker.compose.version=5.1.0,com.docker.compose.project=my-app-wt-3-review-gal-1020\n"}, nil
+			return execx.Result{Stdout: "com.docker.compose.version=5.1.0,com.docker.compose.project=my-app-wt-3-review-abc-1020\n"}, nil
 		}
 		return execx.Result{}, nil
 	})
-	got, err := r.Resolve(context.Background(), "review-gal-1020", 1, MustExist)
+	got, err := r.Resolve(context.Background(), "review-abc-1020", 1, MustExist)
 	if err != nil || got != 3 {
 		t.Fatalf("got %d, %v", got, err)
 	}

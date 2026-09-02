@@ -381,7 +381,7 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   application service once a new worktree's stack answers. The dump carries what
   the migrations create and never seed data, so a fresh worktree came up migrated
   and empty and every developer seeded it by hand, usually by reaching for the
-  project's own reset script: on myapp that script drops the schema and migrates
+  project's own reset script: on a real project that script drops the schema and migrates
   again, which throws away the restored dump and pays for the migrations wtm
   exists to skip. The database is waited for with the probe `backup refresh`
   already used, extracted as `execx.WaitFor`. A failure is a warning naming the
