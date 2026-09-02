@@ -25,9 +25,9 @@ type Project struct {
 	// answers. The dump holds no seed data, so this is where it comes from, e.g.
 	// "python manage.py seed_data && python manage.py create_dev_users".
 	PostCreate string `json:"post_create,omitempty"`
-	// ReadyTimeout and ReadyInterval bound the wait a new worktree grants each
-	// service before post_create runs, as durations ("2m", "10s"). Empty means
-	// the built-in bounds, which differ for a database and for an application.
+	// ReadyTimeout is how long a new worktree waits for a service before
+	// post_create runs, ReadyInterval how often it asks, both as durations
+	// ("2m", "10s"). Empty takes the built-in ones: a database is not an app.
 	ReadyTimeout  string  `json:"ready_timeout,omitempty"`
 	ReadyInterval string  `json:"ready_interval,omitempty"`
 	Backup        *Backup `json:"backup,omitempty"`

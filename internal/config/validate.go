@@ -12,8 +12,8 @@ import (
 var identifier = regexp.MustCompile(`^[a-z0-9][a-z0-9_-]*$`)
 
 // ValidateIdentifier rejects a name that could not be a compose identifier: a
-// `$(...)` in a project name lands in the restore script the database runs, a
-// newline in a service name injects keys into the generated compose file.
+// quote or a `$(...)` in a project name lands in the restore script the
+// database runs, a newline in a service name injects keys into a compose file.
 func ValidateIdentifier(kind, name string) error {
 	if name == "" {
 		return fmt.Errorf("%s is empty", kind)

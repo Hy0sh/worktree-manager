@@ -12,7 +12,6 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 )
 
-// dump streams the engine's dump command straight into the published file.
 func (m *Manager) dump(ctx context.Context, name string, p config.Project, cfg config.Backup, eng dbengine.Engine, db string) error {
 	return m.publish(name, func(w io.Writer) error {
 		if _, err := m.Runner.Run(ctx, execx.Cmd{

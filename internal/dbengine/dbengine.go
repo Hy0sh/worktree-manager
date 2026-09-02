@@ -1,6 +1,6 @@
 // Package dbengine describes how each supported engine is probed, dumped and
-// restored. Every argv it returns runs inside the database container through
-// `docker compose exec -T`, credentials expanding there and never in wtm.
+// restored. Every argv runs inside the database container through `docker
+// compose exec -T`, wrapped in `sh -c` where a credential must expand there.
 package dbengine
 
 import (
