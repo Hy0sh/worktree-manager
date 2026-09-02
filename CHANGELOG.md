@@ -102,6 +102,9 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   read from `docker ps`: docker's own message names the port and nobody else.
   And a command whose output streamed to the terminal no longer has that whole
   output repeated in its error: the last line, the diagnosis, is kept.
+- `wtm project edit --env` no longer ignores a renamed variable whose value is
+  empty: two env maps of the same size differing only by such a key read as
+  equal.
 
 ## [0.9.1] - 2026-08-28
 
