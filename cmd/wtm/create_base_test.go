@@ -20,7 +20,13 @@ func baseFixture(t *testing.T) (*app, *execx.Fake) {
 	t.Helper()
 	dir := t.TempDir()
 	cfg := &config.Config{Projects: map[string]config.Project{"myapp": {Dir: dir}}}
-	a, fake, _ := newTestApp(t, cfg, "", func(c execx.Cmd) (execx.Result, error) {
+	a, fake, _ := newTestApp(t, cfg, "", baseHandler(dir))
+	return a, fake
+}
+
+// baseHandler answers the git a create walks through, for a repository at dir.
+func baseHandler(dir string) func(execx.Cmd) (execx.Result, error) {
+	return func(c execx.Cmd) (execx.Result, error) {
 		// --show-toplevel is tested first: CurrentWorktree asks for it in the
 		// same rev-parse that carries --git-common-dir.
 		if strings.Contains(c.String(), "--show-toplevel") {
@@ -54,8 +60,7 @@ func baseFixture(t *testing.T) (*app, *execx.Fake) {
 			}, "\n") + "\n"}, nil
 		}
 		return execx.Result{}, nil
-	})
-	return a, fake
+	}
 }
 
 func TestCompleteCreateFollowsThePositions(t *testing.T) {
