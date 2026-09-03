@@ -445,6 +445,12 @@ and sweeps whatever carries its label. Docker is then scanned again before
 anything is dropped by name, so a volume the release already took is never
 asked for twice, and a cleanup that went through is never reported as failed.
 
+A create does not wait for that verb: before allocating its own index, it
+releases the ones its project records with no worktree behind them. That is
+where the leftover costs something, since an index the allocator skips lands
+the new worktree further out, on ports its neighbours never used. A release
+that fails prints a warning and the create carries on.
+
 The build cache is only ever reported. Buildkit attributes none of it to a
 project, so only you can decide it is expendable.
 

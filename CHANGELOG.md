@@ -6,6 +6,16 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Changed
+
+- `wtm create` releases the indices of worktrees that left outside wtm before
+  allocating its own. A worktree removed by another tool keeps its recorded
+  index, the allocator skips it, and every one of them pushes the new worktree
+  an index further out, onto ports its neighbours never used. `wtm clean`
+  already covered that, but it has to be remembered; a create is the moment the
+  leftover costs something. Only indices no worktree stands behind are touched,
+  and a failure warns without failing the create.
+
 ## [0.11.0] - 2026-09-02
 
 ### Added

@@ -131,6 +131,7 @@ func newCreateCmd(a *app) *cobra.Command {
 						st.Describe(), name)
 				}
 			}
+			a.releaseVanished(cmd.Context(), name)
 			return worktree.Create(cmd.Context(), o)
 		},
 	}
@@ -138,6 +139,20 @@ func newCreateCmd(a *app) *cobra.Command {
 		"cut from the branch of the current directory instead of the project's base")
 	flags.bind(cmd)
 	return cmd
+}
+
+// releaseVanished frees the indices of worktrees that left outside wtm, which
+// is `wtm clean`'s job everywhere else. A create is where they cost something:
+// the allocator skips a recorded index, so every one of them pushes the new
+// worktree further out, onto ports its neighbours never used. A failure is not
+// the create's, and only worth a line.
+func (a *app) releaseVanished(ctx context.Context, name string) {
+	for _, s := range a.staleIndices(a.liveProjects(ctx, []string{name})) {
+		if err := worktree.Remove(ctx, a.options(name, a.cfg.Projects[name], s.Branch)); err != nil {
+			fmt.Fprintf(a.out, "warning: index %d, left by %s, could not be released: %v\n",
+				s.Index, s.Branch, err)
+		}
+	}
 }
 
 func newStartCmd(a *app) *cobra.Command {

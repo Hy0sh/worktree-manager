@@ -242,3 +242,54 @@ func TestATypoedProjectNameIsNotTakenForABranch(t *testing.T) {
 		}
 	}
 }
+
+// A worktree removed outside wtm leaves its index recorded, and the allocator
+// then pushes the next one an index further out. The create that follows is
+// where the machine has both the git truth and a reason to care.
+func TestCreateReleasesTheIndexOfAVanishedWorktree(t *testing.T) {
+	dir := t.TempDir()
+	// An index is only resolved for a project that has a stack to name.
+	if err := os.WriteFile(filepath.Join(dir, "docker-compose.yml"), []byte("services: {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{Projects: map[string]config.Project{"myapp": {Dir: dir,
+		WorktreeIndices: map[string]int{"worktree-gone": 1}}}}
+	base := baseHandler(dir)
+	added := false
+	a, _, out := newTestApp(t, cfg, "", func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(c.String(), "worktree list") {
+			list := "worktree " + dir + "\nbranch refs/heads/develop\n\n"
+			if added {
+				list += "worktree " + filepath.Join(dir, ".worktrees", "feat", "new") +
+					"\nbranch refs/heads/feat/new\n\n"
+			}
+			return execx.Result{Stdout: list}, nil
+		}
+		if strings.Contains(c.String(), "worktree add") {
+			added = true
+		}
+		return base(c)
+	})
+
+	cmd := newCreateCmd(a)
+	cmd.SetArgs([]string{"myapp", "feat/new"})
+	cmd.SetOut(out)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+
+	if !strings.Contains(out.String(), "index 1 released") {
+		t.Fatalf("the vanished worktree must give its index back:\n%s", out.String())
+	}
+	c, err := config.Load(a.cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	indices := c.Projects["myapp"].WorktreeIndices
+	if _, still := indices["worktree-gone"]; still {
+		t.Fatalf("the vanished worktree must be forgotten, got %v", indices)
+	}
+	if indices["feat/new"] != 1 {
+		t.Fatalf("the freed index must be the one handed out, got %v", indices)
+	}
+}
