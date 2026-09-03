@@ -54,7 +54,7 @@ which carries one per platform (darwin and linux, arm64 and amd64) plus a
 `SHA256SUMS` to check them against:
 
 ```sh
-tar -xzf wtm_v0.11.0_darwin_arm64.tar.gz wtm
+tar -xzf wtm_v0.12.0_darwin_arm64.tar.gz wtm
 mv wtm ~/.local/bin/
 ```
 
