@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 
@@ -77,8 +78,16 @@ func (a *app) staleIndices(rws []repoWorktrees) []staleIndex {
 	return out
 }
 
-// The two below answer nothing at all when docker cannot be reached, which a
-// caller cannot tell from a machine that holds no leftovers. That suits both
+// orphanStack is one compose project of a worktree that no longer exists, and
+// the registered project whose repository stands in as compose's working
+// directory: `-p` alone finds the containers by label.
+type orphanStack struct {
+	Project string
+	Stack   string
+}
+
+// The three below answer nothing at all when docker cannot be reached, which a
+// caller cannot tell from a machine that holds no leftovers. That suits all
 // of them: the report has nothing to print, and the cleanup nothing to drop.
 func (a *app) orphanVolumeNames(ctx context.Context, rws []repoWorktrees) []string {
 	res, err := a.runner.Run(ctx, execx.Cmd{Name: "docker", Args: []string{"volume", "ls", "-q"}})
@@ -89,6 +98,27 @@ func (a *app) orphanVolumeNames(ctx context.Context, rws []repoWorktrees) []stri
 	var out []string
 	for _, rw := range rws {
 		out = append(out, rw.orphanVolumes(all)...)
+	}
+	return out
+}
+
+// orphanStackNames lists the containers of worktrees that no longer exist. A
+// container's only trace of its stack is a compose label, so neither the volume
+// nor the image sweep can see one: they read names.
+func (a *app) orphanStackNames(ctx context.Context, rws []repoWorktrees) []orphanStack {
+	res, err := a.runner.Run(ctx, execx.Cmd{
+		Name: "docker",
+		Args: []string{"ps", "-a", "--format", `{{.Label "com.docker.compose.project"}}`},
+	})
+	if err != nil {
+		return nil
+	}
+	all := strings.Fields(res.Stdout)
+	var out []orphanStack
+	for _, rw := range rws {
+		for _, name := range rw.orphanStacks(all) {
+			out = append(out, orphanStack{Project: rw.Name, Stack: name})
+		}
 	}
 	return out
 }
@@ -117,6 +147,15 @@ func (rw repoWorktrees) orphanVolumes(all []string) []string {
 		return nil
 	}
 	return unclaimed(all, rw.Repo, "_", rw.Live)
+}
+
+// orphanStacks holds back on an unindexed worktree for the same reason as the
+// two above, and the stake is higher: taking a live worktree's stack down.
+func (rw repoWorktrees) orphanStacks(all []string) []string {
+	if len(rw.Unindexed) > 0 {
+		return nil
+	}
+	return unclaimedProjects(all, rw.Repo, rw.Live)
 }
 
 // An untagged leftover of a rebuild carries no "<project>-<service>" name at
@@ -148,6 +187,25 @@ func unclaimed(all []string, repoName, sep string, live []string) []string {
 		if !claimed {
 			out = append(out, name)
 		}
+	}
+	sort.Strings(out)
+	return out
+}
+
+// unclaimedProjects keeps the compose projects of repoName's worktrees that no
+// live worktree owns. A container's label is the project name itself, where a
+// volume or an image name only starts with it: hence an equality and not the
+// prefix test unclaimed does.
+func unclaimedProjects(all []string, repoName string, live []string) []string {
+	prefix := stack.WorktreePrefix(repoName)
+	seen := map[string]bool{}
+	var out []string
+	for _, name := range all {
+		if !strings.HasPrefix(name, prefix) || seen[name] || slices.Contains(live, name) {
+			continue
+		}
+		seen[name] = true
+		out = append(out, name)
 	}
 	sort.Strings(out)
 	return out

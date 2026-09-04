@@ -3,6 +3,8 @@ package stack
 import (
 	"bytes"
 	"context"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -270,5 +272,52 @@ func TestAllHoldsWhatWorktreesHides(t *testing.T) {
 	}
 	if all[0].Pos != 0 || all[1].Pos != 1 {
 		t.Fatalf("only worktrees under root hold a position, got %+v", all)
+	}
+}
+
+// A worktree whose administrative directory was pruned keeps its checkout and
+// its .git pointer file, and drops out of `git worktree list`. Every command
+// keys off that listing, so nothing could see the directory: `wtm create`
+// refused the branch, `wtm remove` said no such worktree, doctor said nothing.
+func TestAbandonedSeesOnlyWhatGitNoLongerLists(t *testing.T) {
+	root := t.TempDir()
+	live := filepath.Join(root, ".worktrees", "feat", "live")
+	gone := filepath.Join(root, ".worktrees", "feat", "gone")
+	// A parent a slashed branch name created, holding no worktree of its own.
+	bare := filepath.Join(root, ".worktrees", "chore")
+	for _, dir := range []string{live, gone, bare} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, dir := range []string{live, gone} {
+		if err := os.WriteFile(filepath.Join(dir, ".git"), []byte("gitdir: /x\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+	}
+	f := &execx.Fake{Handler: func(execx.Cmd) (execx.Result, error) {
+		return execx.Result{Stdout: "worktree " + root + "\nbranch refs/heads/develop\n\n" +
+			"worktree " + live + "\nbranch refs/heads/feat/live\n"}, nil
+	}}
+
+	got, err := (&Client{Runner: f, Dir: root}).Abandoned(context.Background())
+	if err != nil {
+		t.Fatalf("Abandoned: %v", err)
+	}
+	if len(got) != 1 || got[0] != gone {
+		t.Fatalf("abandoned = %v, want only %s", got, gone)
+	}
+}
+
+// A repository with no .worktrees directory at all must not read as a scan
+// failure: that is every project whose worktrees are all adopted.
+func TestAbandonedAnswersNothingWithoutAWorktreesRoot(t *testing.T) {
+	f := &execx.Fake{Handler: func(execx.Cmd) (execx.Result, error) {
+		t.Error("git must not be asked when there is nothing to scan")
+		return execx.Result{}, nil
+	}}
+	got, err := (&Client{Runner: f, Dir: t.TempDir()}).Abandoned(context.Background())
+	if err != nil || got != nil {
+		t.Fatalf("Abandoned = %v, %v; want nothing at all", got, err)
 	}
 }

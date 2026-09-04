@@ -1,6 +1,7 @@
 package main
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -151,5 +152,39 @@ func TestIntraProjectClashesIgnoreOneBranchTwice(t *testing.T) {
 	}
 	if got := intraProjectClashes(holders); len(got) != 0 {
 		t.Fatalf("expected nothing, got %v", got)
+	}
+}
+
+// A container's only trace of its stack is a compose label, and doctor read
+// none: it scanned volume and image names. So `wtm clean` dropped the volumes
+// of a removed worktree, said it was done, and left its containers running.
+func TestOrphanStacksMatchTheProjectLabelExactly(t *testing.T) {
+	live := stack.ProjectName("my-app", 1, "feat/x")
+	all := []string{
+		live, live, // one label per container of the live stack
+		"my-app-wt-2-old",
+		"my-app",             // the main stack, which has no worktree prefix
+		"my-app-wt-11-other", // must not be claimed by the index-1 stack
+		"",                   // a container compose never started
+	}
+	got := repoWorktrees{Repo: "my-app", Live: []string{live}}.orphanStacks(all)
+	want := []string{"my-app-wt-11-other", "my-app-wt-2-old"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("orphan stacks = %v, want %v", got, want)
+	}
+}
+
+// Same stake as the volume and image sweeps, one notch higher: the command
+// doctor prints for a stack takes its containers down.
+func TestNoStackIsCalledOrphanWhileAWorktreeHasNoIndex(t *testing.T) {
+	all := []string{"my-app-wt-1-feat-x", "my-app-wt-9-gone"}
+	rw := repoWorktrees{Repo: "my-app", Unindexed: []string{"feat/x"}}
+	if got := rw.orphanStacks(all); got != nil {
+		t.Fatalf("orphan stacks = %v, want none: one worktree cannot be accounted for", got)
+	}
+	rw.Unindexed = nil
+	rw.Live = []string{stack.ProjectName("my-app", 1, "feat/x")}
+	if got := rw.orphanStacks(all); len(got) != 1 || got[0] != "my-app-wt-9-gone" {
+		t.Fatalf("orphan stacks = %v, want the one nobody owns", got)
 	}
 }

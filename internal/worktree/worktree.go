@@ -9,6 +9,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/Hy0sh/worktree-manager/internal/config"
@@ -305,7 +306,7 @@ func Remove(ctx context.Context, o Options) error {
 		if n := o.Resolver.Recorded()[o.Branch]; n > 0 {
 			return releaseStale(ctx, o, n)
 		}
-		return err
+		return removeAbandoned(ctx, o, err)
 	}
 	// Checked before anything is taken down: a refusal must leave the worktree
 	// as it was, stack included. An adopted worktree is spared, its checkout
@@ -369,6 +370,41 @@ func Remove(ctx context.Context, o Options) error {
 	if err := o.Resolver.Release(o.Branch); err != nil {
 		o.logf("warning: the index of %s could not be released: %v", o.Branch, err)
 	}
+	return nil
+}
+
+// removeAbandoned deletes a directory git has forgotten: one whose
+// administrative directory was pruned, which hides it from `git worktree list`
+// while `wtm create` still refuses the branch because the destination exists.
+// Between the two, the branch could not be recreated at all.
+//
+// Stack.Abandoned is what says the directory is really orphan, and not a live
+// worktree this branch simply no longer names: a renamed branch leaves git
+// listing the same path under the new name, and deleting it would cost a
+// checkout somebody is working in. listErr, git's own answer, stands whenever
+// the directory is not one of those.
+func removeAbandoned(ctx context.Context, o Options, listErr error) error {
+	dest, err := o.dest()
+	if err != nil {
+		return listErr
+	}
+	abandoned, err := o.Stack.Abandoned(ctx)
+	if err != nil || !slices.Contains(abandoned, dest) {
+		return listErr
+	}
+	// git's metadata is what `git status` reads, so no check can say whether
+	// the directory holds uncommitted work. Hence a flag, where a live worktree
+	// gets the check.
+	if !o.Force {
+		return fmt.Errorf("%s is a directory git no longer lists as a worktree: its administrative "+
+			"directory is gone, so nothing can say whether it holds uncommitted work.\n"+
+			"rerun with --force to delete it", dest)
+	}
+	if err := os.RemoveAll(dest); err != nil {
+		return fmt.Errorf("deleting %s: %w", dest, err)
+	}
+	pruneEmptyParents(dest, stack.WorktreesRoot(o.Project.Dir))
+	o.logf("directory removed: %s (git had already forgotten it)", dest)
 	return nil
 }
 

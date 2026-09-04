@@ -421,12 +421,26 @@ size of the build cache, then per project its port stride, offset and database
 engine. Below that come the problems nothing else mentions: the ports two
 projects would both publish, the ports two worktrees of one project would both
 publish (with the `portStride` remedy), the recorded indices no worktree stands
-behind — each pushing new worktrees one index further out — and what removed
-worktrees left behind, their volumes (which squat the indices their ports came
-from) and the images their stacks built. Last come the anonymous volumes no
-container mounts, left by images that name their own data directory: those
-belong to no project, so they are counted even with an empty registry. Each of
-those lines carries the command that drops them.
+behind — each pushing new worktrees one index further out — the worktrees whose
+index the registry does not carry, and what removed worktrees left behind:
+their stacks, still holding containers, their volumes (which squat the indices
+their ports came from) and the images their stacks built. Last come the
+anonymous volumes no container mounts, left by images that name their own data
+directory: those belong to no project, so they are counted even with an empty
+registry. Each of those lines carries the command that drops them.
+
+A worktree with no recorded index is named for a reason: its stack cannot be
+told from one a removed worktree left, so the three leftover reports hold back
+for its whole project rather than risk a `docker rmi` on a live worktree.
+`wtm start <branch>` records the index and lifts the hold. A project with no
+compose file starts no stack at all, so its worktrees are not counted.
+
+After those comes what git no longer lists: the worktree directories still on
+disk, left by a pruned administrative directory. Nothing else can see them,
+since every other command reads `git worktree list`, and they make `wtm create`
+refuse their branch. `wtm clean` deliberately leaves them, because their git
+metadata is gone and nothing can say any more whether they hold uncommitted
+work: `wtm remove <project> <branch> --force` deletes one.
 
 ```sh
 wtm clean            # every registered project, as doctor reads them
@@ -434,16 +448,19 @@ wtm clean my-app     # that project alone
 wtm clean -y         # do not ask, for a script
 ```
 
-`wtm clean` plays those commands for you, on the three findings that are
-leftovers rather than advice: the recorded indices, and the volumes and images
-of worktrees that no longer exist. It prints what it found and asks once. Port
-clashes stay out, being a configuration matter; so do the anonymous volumes and
-the build cache, which belong to no project.
+`wtm clean` plays those commands for you, on the four findings that are
+leftovers rather than advice: the recorded indices, and the stacks, volumes and
+images of worktrees that no longer exist. It prints what it found and asks
+once. Port clashes stay out, being a configuration matter; so do the anonymous
+volumes and the build cache, which belong to no project, and the directories
+git has forgotten, which no check can declare expendable.
 
 Indices go first, because releasing one takes down the stack left at that index
 and sweeps whatever carries its label. Docker is then scanned again before
 anything is dropped by name, so a volume the release already took is never
 asked for twice, and a cleanup that went through is never reported as failed.
+The stacks come next, and the volumes and images after them: a volume some
+container still mounts refuses to go.
 
 A create does not wait for that verb: before allocating its own index, it
 releases the ones its project records with no worktree behind them. That is

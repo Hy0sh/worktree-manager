@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -82,6 +83,10 @@ type repoWorktrees struct {
 	// outside wtm. Each pushes new worktrees one index further out, and makes a
 	// foreign worktree on that branch read as managed.
 	Stale []string
+	// Abandoned are the directories still on disk that git no longer lists,
+	// left by a pruned administrative directory. They hold no stack, and no
+	// other report can see them: everything else keys off git's listing.
+	Abandoned []string
 }
 
 func (a *app) liveProjects(ctx context.Context, names []string) []repoWorktrees {
@@ -107,6 +112,12 @@ func (a *app) liveProjects(ctx context.Context, names []string) []repoWorktrees 
 			}
 			unindexed = append(unindexed, wt.Branch)
 		}
+		// A project with no compose file starts no stack, so none of its
+		// worktrees ever gets an index and nothing docker holds can be theirs:
+		// counting them would hold back every report below, forever.
+		if _, err := compose.Base(p.Dir); err != nil {
+			unindexed = nil
+		}
 		var stale []string
 		for branch := range p.WorktreeIndices {
 			if !present[branch] {
@@ -114,7 +125,11 @@ func (a *app) liveProjects(ctx context.Context, names []string) []repoWorktrees 
 			}
 		}
 		sort.Strings(stale)
-		out = append(out, repoWorktrees{Repo: repo, Name: name, Live: live, Unindexed: unindexed, Stale: stale})
+		// A git that cannot answer already dropped the project above, so a
+		// failure here is the filesystem's: nothing to report either way.
+		abandoned, _ := client.Abandoned(ctx)
+		out = append(out, repoWorktrees{Repo: repo, Name: name, Live: live,
+			Unindexed: unindexed, Stale: stale, Abandoned: abandoned})
 	}
 	return out
 }
@@ -134,6 +149,74 @@ func (a *app) reportStaleIndices(stale []staleIndex) {
 		fmt.Fprintf(a.out, "  %s\n", l)
 	}
 	fmt.Fprintf(a.out, "  release them with `%s`\n", strings.Join(cmds, "`, `"))
+}
+
+// reportUnindexed names the worktrees the registry holds no index for, and
+// says what their presence costs. Every leftover report below holds back for
+// their whole project, which used to happen without a word: doctor answered
+// "nothing" where it meant "cannot tell".
+func (a *app) reportUnindexed(rws []repoWorktrees) {
+	var lines []string
+	for _, rw := range rws {
+		for _, branch := range rw.Unindexed {
+			lines = append(lines, fmt.Sprintf("%s: %s", rw.Name, branch))
+		}
+	}
+	if len(lines) == 0 {
+		return
+	}
+	fmt.Fprintln(a.out)
+	fmt.Fprintln(a.out, "worktrees with no recorded index, which holds back every leftover report of their project")
+	fmt.Fprintln(a.out, "(a stack of theirs cannot be told from one a removed worktree left):")
+	for _, l := range lines {
+		fmt.Fprintf(a.out, "  %s\n", l)
+	}
+	fmt.Fprintln(a.out, "  `wtm start <branch>` records the index, `wtm remove <branch>` takes the worktree out")
+}
+
+// reportOrphanStacks lists the containers of worktrees that no longer exist.
+// The index allocator sees them and refuses their index; until this report,
+// nothing told the developer, so `wtm clean` said "done" and left them running.
+func (a *app) reportOrphanStacks(orphans []orphanStack) {
+	if len(orphans) == 0 {
+		return
+	}
+	fmt.Fprintln(a.out)
+	fmt.Fprintf(a.out, "%d stack(s) of removed worktrees, still holding their containers "+
+		"and the indices their ports came from:\n", len(orphans))
+	cmds := make([]string, 0, len(orphans))
+	for _, o := range orphans {
+		fmt.Fprintf(a.out, "  %s\n", o.Stack)
+		cmds = append(cmds, fmt.Sprintf("docker compose -p %s down --volumes", o.Stack))
+	}
+	fmt.Fprintf(a.out, "  take them down with `%s`\n", strings.Join(cmds, "`, `"))
+}
+
+// reportAbandonedWorktrees lists the directories git has forgotten. `wtm clean`
+// leaves them deliberately: their administrative directory is gone, so nothing
+// can read whether they hold uncommitted work, and deleting somebody's checkout
+// is not a sweep's call. They also make `wtm create` refuse the branch.
+func (a *app) reportAbandonedWorktrees(rws []repoWorktrees) {
+	var lines, cmds []string
+	for _, rw := range rws {
+		root := stack.WorktreesRoot(a.cfg.Projects[rw.Name].Dir) + string(os.PathSeparator)
+		for _, path := range rw.Abandoned {
+			lines = append(lines, fmt.Sprintf("%s: %s", rw.Name, path))
+			branch := filepath.ToSlash(strings.TrimPrefix(path, root))
+			cmds = append(cmds, fmt.Sprintf("wtm remove %s %s --force", rw.Name, branch))
+		}
+	}
+	if len(lines) == 0 {
+		return
+	}
+	fmt.Fprintln(a.out)
+	fmt.Fprintf(a.out, "%d directory(ies) still on disk that git no longer lists as worktrees "+
+		"(`wtm create` refuses their branch):\n", len(lines))
+	for _, l := range lines {
+		fmt.Fprintf(a.out, "  %s\n", l)
+	}
+	fmt.Fprintf(a.out, "  delete them with `%s`, which `wtm clean` will not do "+
+		"(no one can tell any more whether they hold uncommitted work)\n", strings.Join(cmds, "`, `"))
 }
 
 // reportOrphanVolumes lists the volumes of worktrees that no longer exist.
@@ -258,17 +341,24 @@ func newDoctorCmd(a *app) *cobra.Command {
 				a.reportPortClashes()
 				rws := a.liveProjects(cmd.Context(), a.cfg.Names())
 				stale := a.staleIndices(rws)
+				stacks := a.orphanStackNames(cmd.Context(), rws)
 				volumes := a.orphanVolumeNames(cmd.Context(), rws)
 				images := a.orphanImageNames(cmd.Context(), rws)
 				a.reportStaleIndices(stale)
+				// Before the three reports it holds back, so a reader meeting
+				// an empty one knows why it is empty.
+				a.reportUnindexed(rws)
+				a.reportOrphanStacks(stacks)
 				a.reportOrphanVolumes(volumes)
 				a.reportOrphanImages(images)
 				// Each block above ends on its own command line, one per
 				// finding: seven of them on a busy machine, and nothing would
 				// otherwise say a single verb covers the lot.
-				if len(stale)+len(volumes)+len(images) > 0 {
+				if len(stale)+len(stacks)+len(volumes)+len(images) > 0 {
 					fmt.Fprintln(a.out, "\n`wtm clean` runs all of that in one go.")
 				}
+				// Last, and outside that sentence: clean does not touch these.
+				a.reportAbandonedWorktrees(rws)
 			}
 			// Anonymous volumes are machine-wide, not tied to a registered
 			// project: the only report an empty registry still has an answer for.

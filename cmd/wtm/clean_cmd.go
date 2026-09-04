@@ -8,6 +8,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Hy0sh/worktree-manager/internal/execx"
+	"github.com/Hy0sh/worktree-manager/internal/stack"
 	"github.com/Hy0sh/worktree-manager/internal/worktree"
 )
 
@@ -34,16 +35,17 @@ func newCleanCmd(a *app) *cobra.Command {
 			ctx := cmd.Context()
 			rws := a.liveProjects(ctx, names)
 			stale := a.staleIndices(rws)
+			stacks := a.orphanStackNames(ctx, rws)
 			volumes := a.orphanVolumeNames(ctx, rws)
 			images := a.orphanImageNames(ctx, rws)
-			if len(stale)+len(volumes)+len(images) == 0 {
+			if len(stale)+len(stacks)+len(volumes)+len(images) == 0 {
 				fmt.Fprintln(a.out, "nothing to clean")
 				return nil
 			}
-			a.printLeftovers(stale, volumes, images)
+			a.printLeftovers(stale, stacks, volumes, images)
 			// A closed input answers no, which is right for a person and wrong
 			// for a script, so the way out is part of the message.
-			if !assumeYes && !confirm(a.in, a.out, cleanQuestion(stale, volumes, images)) {
+			if !assumeYes && !confirm(a.in, a.out, cleanQuestion(stale, stacks, volumes, images)) {
 				return fmt.Errorf("cancelled: nothing was removed (pass --yes to answer for a script)")
 			}
 
@@ -58,6 +60,8 @@ func newCleanCmd(a *app) *cobra.Command {
 			// images labelled with it, so part of what was scanned above is gone
 			// already. Dropping that first list would fail on names docker no
 			// longer holds and report a cleanup that in fact went through.
+			failed = append(failed, a.downOrphanStacks(ctx, a.orphanStackNames(ctx, rws))...)
+			// After the stacks: a volume a container still mounts refuses to go.
 			failed = append(failed, a.drop(ctx, "volume", []string{"volume", "rm"}, a.orphanVolumeNames(ctx, rws))...)
 			failed = append(failed, a.drop(ctx, "image", []string{"rmi"}, a.orphanImageNames(ctx, rws))...)
 			if len(failed) > 0 {
@@ -70,11 +74,17 @@ func newCleanCmd(a *app) *cobra.Command {
 	return cmd
 }
 
-func (a *app) printLeftovers(stale []staleIndex, volumes, images []string) {
+func (a *app) printLeftovers(stale []staleIndex, stacks []orphanStack, volumes, images []string) {
 	if len(stale) > 0 {
 		fmt.Fprintln(a.out, "recorded indices with no worktree behind them:")
 		for _, s := range stale {
 			fmt.Fprintf(a.out, "  %s: index %d, %s\n", s.Project, s.Index, s.Branch)
+		}
+	}
+	if len(stacks) > 0 {
+		fmt.Fprintln(a.out, "stacks of removed worktrees, containers included:")
+		for _, s := range stacks {
+			fmt.Fprintf(a.out, "  %s\n", s.Stack)
 		}
 	}
 	for _, kind := range []struct {
@@ -93,10 +103,13 @@ func (a *app) printLeftovers(stale []staleIndex, volumes, images []string) {
 
 // cleanQuestion counts only the kinds actually found: naming three of them when
 // one is empty reads as a wider sweep than the one about to run.
-func cleanQuestion(stale []staleIndex, volumes, images []string) string {
+func cleanQuestion(stale []staleIndex, stacks []orphanStack, volumes, images []string) string {
 	var parts []string
 	if len(stale) > 0 {
 		parts = append(parts, fmt.Sprintf("%d index(es)", len(stale)))
+	}
+	if len(stacks) > 0 {
+		parts = append(parts, fmt.Sprintf("%d stack(s)", len(stacks)))
 	}
 	if len(volumes) > 0 {
 		parts = append(parts, fmt.Sprintf("%d volume(s)", len(volumes)))
@@ -105,6 +118,51 @@ func cleanQuestion(stale []staleIndex, volumes, images []string) string {
 		parts = append(parts, fmt.Sprintf("%d image(s)", len(images)))
 	}
 	return fmt.Sprintf("clean %s? (no worktree stands behind them)", strings.Join(parts, ", "))
+}
+
+// downOrphanStacks takes down the stacks of worktrees that no longer exist,
+// which is the one leftover a `docker rm` alone cannot settle: the network and
+// the anonymous volumes go with the project. `-p` finds the containers by
+// label, so the registered project's repository only has to be a directory
+// compose can run from, as it does for a stale index.
+func (a *app) downOrphanStacks(ctx context.Context, orphans []orphanStack) []string {
+	var failed []string
+	for _, o := range orphans {
+		dir := a.cfg.Projects[o.Project].Dir
+		client := &stack.Client{Runner: a.runner, Dir: dir, Out: a.out}
+		if err := client.Down(ctx, o.Stack, dir, true); err != nil {
+			failed = append(failed, fmt.Sprintf("  stack %s: %v", o.Stack, err))
+			continue
+		}
+		// compose down settles only what it labelled as a service of the
+		// project. A container carrying the project label alone, a `compose
+		// run` leftover or one started by hand on the stack's network, makes it
+		// answer "No resource found to remove" and stay: measured on a stack
+		// whose volume then refused to go, mounted by that very container.
+		if err := a.removeLabelledContainers(ctx, o.Stack); err != nil {
+			failed = append(failed, fmt.Sprintf("  containers of %s: %v", o.Stack, err))
+			continue
+		}
+		fmt.Fprintf(a.out, "stack %s taken down\n", o.Stack)
+	}
+	return failed
+}
+
+// removeLabelledContainers drops whatever still carries the stack's compose
+// project label, which is the only mark such a container has left.
+func (a *app) removeLabelledContainers(ctx context.Context, project string) error {
+	res, err := a.runner.Run(ctx, execx.Cmd{Name: "docker", Args: []string{"ps", "-aq",
+		"--filter", "label=com.docker.compose.project=" + project}})
+	if err != nil {
+		return err
+	}
+	ids := strings.Fields(res.Stdout)
+	if len(ids) == 0 {
+		return nil
+	}
+	_, err = a.runner.Run(ctx, execx.Cmd{Name: "docker",
+		Args: append([]string{"rm", "--force", "--volumes"}, ids...)})
+	return err
 }
 
 // drop removes one kind of leftover in a single docker call, as a worktree

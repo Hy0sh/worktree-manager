@@ -3,8 +3,10 @@ package stack
 import (
 	"context"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/Hy0sh/worktree-manager/internal/execx"
@@ -154,4 +156,43 @@ func (c *Client) FindByBranch(ctx context.Context, branch string) (Worktree, err
 		list = "known worktrees: " + strings.Join(known, ", ")
 	}
 	return Worktree{}, fmt.Errorf("no worktree for branch %q (%s)", branch, list)
+}
+
+// Abandoned lists the directories under WorktreesRoot that still carry a
+// worktree's .git pointer file while `git worktree list` no longer names them:
+// what a pruned or hand-deleted administrative directory leaves on disk. Every
+// other command keys off git's listing, so nothing else can see them.
+func (c *Client) Abandoned(ctx context.Context) ([]string, error) {
+	root := WorktreesRoot(c.Dir)
+	if _, err := os.Stat(root); err != nil {
+		return nil, nil
+	}
+	all, err := c.All(ctx)
+	if err != nil {
+		return nil, err
+	}
+	known := make(map[string]bool, len(all))
+	for _, wt := range all {
+		known[filepath.Clean(wt.Path)] = true
+	}
+	var out []string
+	err = filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
+		if err != nil || !d.IsDir() {
+			return nil
+		}
+		if _, err := os.Lstat(filepath.Join(path, ".git")); err != nil {
+			// A slashed branch name nests, so a directory without .git is a
+			// parent to walk into and not an answer.
+			return nil
+		}
+		if !known[filepath.Clean(path)] {
+			out = append(out, path)
+		}
+		return fs.SkipDir
+	})
+	if err != nil {
+		return nil, fmt.Errorf("scanning %s: %w", root, err)
+	}
+	sort.Strings(out)
+	return out, nil
 }
