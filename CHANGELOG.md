@@ -6,6 +6,16 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Fixed
+
+- `wtm clean` accounts for the two findings it declines: the directories git no
+  longer lists, and the anonymous volumes. Reporting one of them in `wtm doctor`
+  and answering "nothing to clean" one command later read as a disagreement
+  between the two verbs, where in fact clean leaves them alone on purpose. It
+  still does, since nothing can say whether such a directory holds uncommitted
+  work and `-y` would delete it unattended, but it now says so and repeats the
+  command that settles each one.
+
 ## [0.13.0] - 2026-09-04
 
 ### Added

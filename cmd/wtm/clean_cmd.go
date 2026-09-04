@@ -40,6 +40,7 @@ func newCleanCmd(a *app) *cobra.Command {
 			images := a.orphanImageNames(ctx, rws)
 			if len(stale)+len(stacks)+len(volumes)+len(images) == 0 {
 				fmt.Fprintln(a.out, "nothing to clean")
+				a.reportLeftAlone(ctx, rws)
 				return nil
 			}
 			a.printLeftovers(stale, stacks, volumes, images)
@@ -67,11 +68,38 @@ func newCleanCmd(a *app) *cobra.Command {
 			if len(failed) > 0 {
 				return fmt.Errorf("the cleanup did not finish:\n%s", strings.Join(failed, "\n"))
 			}
+			a.reportLeftAlone(ctx, rws)
 			return nil
 		},
 	}
 	cmd.Flags().BoolVarP(&assumeYes, "yes", "y", false, "do not ask for confirmation")
 	return cmd
+}
+
+// reportLeftAlone accounts for what `wtm doctor` reports and this verb does not
+// drop. Without it a machine holding nothing else read doctor naming a finding
+// and clean answering "nothing to clean" one command later, which says the two
+// disagree where in fact one of them declines on purpose.
+func (a *app) reportLeftAlone(ctx context.Context, rws []repoWorktrees) {
+	var lines []string
+	for _, rw := range rws {
+		for _, path := range rw.Abandoned {
+			lines = append(lines, fmt.Sprintf("%s\n    no one can tell any more whether it holds "+
+				"uncommitted work: `wtm remove %s %s --force`",
+				path, rw.Name, abandonedBranch(a.cfg.Projects[rw.Name].Dir, path)))
+		}
+	}
+	if ids := a.anonymousVolumeIDs(ctx); len(ids) > 0 {
+		lines = append(lines, fmt.Sprintf("%d anonymous volume(s) no container mounts\n"+
+			"    they belong to no project: `%s`", len(ids), anonymousVolumeCommand))
+	}
+	if len(lines) == 0 {
+		return
+	}
+	fmt.Fprintln(a.out, "left alone on purpose, as `wtm doctor` explains at more length:")
+	for _, l := range lines {
+		fmt.Fprintf(a.out, "  %s\n", l)
+	}
 }
 
 func (a *app) printLeftovers(stale []staleIndex, stacks []orphanStack, volumes, images []string) {

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -199,11 +198,10 @@ func (a *app) reportOrphanStacks(orphans []orphanStack) {
 func (a *app) reportAbandonedWorktrees(rws []repoWorktrees) {
 	var lines, cmds []string
 	for _, rw := range rws {
-		root := stack.WorktreesRoot(a.cfg.Projects[rw.Name].Dir) + string(os.PathSeparator)
 		for _, path := range rw.Abandoned {
 			lines = append(lines, fmt.Sprintf("%s: %s", rw.Name, path))
-			branch := filepath.ToSlash(strings.TrimPrefix(path, root))
-			cmds = append(cmds, fmt.Sprintf("wtm remove %s %s --force", rw.Name, branch))
+			cmds = append(cmds, fmt.Sprintf("wtm remove %s %s --force",
+				rw.Name, abandonedBranch(a.cfg.Projects[rw.Name].Dir, path)))
 		}
 	}
 	if len(lines) == 0 {
@@ -238,20 +236,13 @@ func (a *app) reportOrphanVolumes(orphans []string) {
 // image created on its own, labelled anonymous, that no container mounts.
 // Machine-wide by nature, hence a count and a command rather than an attribution.
 func (a *app) reportAnonymousVolumes(ctx context.Context) {
-	res, err := a.runner.Run(ctx, execx.Cmd{Name: "docker", Args: []string{"volume", "ls", "-q",
-		"--filter", "dangling=true", "--filter", "label=com.docker.volume.anonymous"}})
-	if err != nil {
-		return
-	}
-	ids := strings.Fields(res.Stdout)
+	ids := a.anonymousVolumeIDs(ctx)
 	if len(ids) == 0 {
 		return
 	}
 	fmt.Fprintln(a.out)
 	fmt.Fprintf(a.out, "%d anonymous volume(s) no container mounts, left by images that name their own data directory:\n", len(ids))
-	// The same filters that found them, rather than a line of 64-character ids.
-	fmt.Fprintln(a.out, "  drop them with `docker volume rm $(docker volume ls -q "+
-		"--filter dangling=true --filter label=com.docker.volume.anonymous)`")
+	fmt.Fprintf(a.out, "  drop them with `%s`\n", anonymousVolumeCommand)
 }
 
 // reportOrphanImages lists what worktrees that no longer exist had compose
