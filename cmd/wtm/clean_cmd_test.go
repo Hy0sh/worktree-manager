@@ -1,8 +1,10 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -116,8 +118,11 @@ func TestCleanRemovesNothingWhenTheAnswerIsNo(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "cancelled") {
 		t.Fatalf("a refused confirmation must cancel, got %v", err)
 	}
+	// The inventories run before the question, `docker ps -a` among them, and
+	// its format string carries the word "compose": only the verbs are proof.
 	for _, line := range fake.Lines() {
-		if strings.Contains(line, "volume rm") || strings.Contains(line, "rmi") || strings.Contains(line, "compose") {
+		if strings.Contains(line, "volume rm") || strings.Contains(line, "rmi") ||
+			strings.Contains(line, "compose -p") {
 			t.Fatalf("nothing must be touched after a no: %s", line)
 		}
 	}
@@ -189,5 +194,74 @@ func TestCleanOnOneProjectLeavesTheOtherAlone(t *testing.T) {
 	}
 	if strings.Contains(lines, "happy-shop") {
 		t.Fatalf("a project nobody named must not be touched:\n%s", lines)
+	}
+}
+
+// A `docker volume rm` on a volume some container still mounts is refused, so
+// the containers have to go first. Until clean took the stacks down, it dropped
+// what it could, printed a count, and left the stack running.
+func TestCleanTakesOrphanStacksDownBeforeDroppingTheirVolumes(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "my-app")
+	cfg := &config.Config{Projects: map[string]config.Project{"myapp": {Dir: dir}}}
+
+	down, removed := false, false
+	a, fake, out := newTestApp(t, cfg, "y\n", func(c execx.Cmd) (execx.Result, error) {
+		switch line := c.String(); {
+		case strings.Contains(line, "compose -p my-app-wt-4-old down"):
+			down = true
+			return execx.Result{}, nil
+		case strings.Contains(line, "ps -aq"):
+			// The container compose left behind, which only the label sweep
+			// reaches: its id, where the inventory below answers labels.
+			if down {
+				return execx.Result{Stdout: "c0ffee\n"}, nil
+			}
+			return execx.Result{}, nil
+		case strings.Contains(line, "ps -a"):
+			if down {
+				return execx.Result{}, nil
+			}
+			return execx.Result{Stdout: "my-app-wt-4-old\n"}, nil
+		case strings.Contains(line, "volume ls"):
+			return execx.Result{Stdout: "my-app-wt-4-old_db-data\n"}, nil
+		case strings.Contains(line, "volume rm"):
+			if !down || !removed {
+				return execx.Result{ExitCode: 1}, errors.New("volume is in use")
+			}
+			return execx.Result{}, nil
+		case strings.Contains(line, "rm --force"):
+			removed = true
+			return execx.Result{}, nil
+		}
+		return execx.Result{}, nil
+	})
+
+	cmd := newCleanCmd(a)
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("clean: %v", err)
+	}
+
+	var order []string
+	for _, line := range fake.Lines() {
+		switch {
+		case strings.Contains(line, "compose -p my-app-wt-4-old down"):
+			order = append(order, "down")
+		case strings.Contains(line, "rm --force"):
+			order = append(order, "containers")
+		case strings.Contains(line, "volume rm"):
+			order = append(order, "volume")
+		}
+	}
+	if !slices.Equal(order, []string{"down", "containers", "volume"}) {
+		t.Fatalf("order = %v, want the stack down, its stragglers dropped, then the volume:\n%s",
+			order, strings.Join(fake.Lines(), "\n"))
+	}
+	// The anonymous volumes carry no compose label, so the name sweep cannot
+	// reach them: they only go down with the project.
+	if !strings.Contains(strings.Join(fake.Lines(), "\n"), "down --volumes") {
+		t.Fatalf("the stack must go down with its volumes:\n%s", strings.Join(fake.Lines(), "\n"))
+	}
+	if !strings.Contains(out.String(), "stack my-app-wt-4-old taken down") {
+		t.Fatalf("clean should say what it took down:\n%s", out.String())
 	}
 }

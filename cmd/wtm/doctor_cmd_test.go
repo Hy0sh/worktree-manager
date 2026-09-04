@@ -178,3 +178,37 @@ func TestDoctorStaysSilentAboutCleanWithNothingToClean(t *testing.T) {
 		t.Fatalf("nothing was left behind, so nothing to advertise:\n%s", out.String())
 	}
 }
+
+// doctor scanned volume and image names and never a container label, so the
+// one leftover that still holds RAM and ports went unmentioned, while the
+// index allocator refused its index without saying who held it.
+func TestDoctorReportsTheStacksOfRemovedWorktrees(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "my-app")
+	cfg := &config.Config{Projects: map[string]config.Project{"myapp": {Dir: dir}}}
+	a, _, out := newTestApp(t, cfg, "", func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(c.String(), "ps -a") {
+			return execx.Result{Stdout: "my-app-wt-4-old\nmy-app-wt-4-old\nmy-app\n"}, nil
+		}
+		return execx.Result{}, nil
+	})
+
+	cmd := newDoctorCmd(a)
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("doctor: %v", err)
+	}
+
+	for _, want := range []string{
+		"1 stack(s) of removed worktrees",
+		"docker compose -p my-app-wt-4-old down --volumes",
+		"`wtm clean` runs all of that in one go.",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("doctor should say %q:\n%s", want, out.String())
+		}
+	}
+	// The main stack carries the repository name and no worktree prefix: its
+	// containers are the developer's own.
+	if strings.Contains(out.String(), "docker compose -p my-app down") {
+		t.Fatalf("the main stack is not a worktree's:\n%s", out.String())
+	}
+}

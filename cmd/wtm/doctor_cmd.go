@@ -136,6 +136,24 @@ func (a *app) reportStaleIndices(stale []staleIndex) {
 	fmt.Fprintf(a.out, "  release them with `%s`\n", strings.Join(cmds, "`, `"))
 }
 
+// reportOrphanStacks lists the containers of worktrees that no longer exist.
+// The index allocator sees them and refuses their index; until this report,
+// nothing told the developer, so `wtm clean` said "done" and left them running.
+func (a *app) reportOrphanStacks(orphans []orphanStack) {
+	if len(orphans) == 0 {
+		return
+	}
+	fmt.Fprintln(a.out)
+	fmt.Fprintf(a.out, "%d stack(s) of removed worktrees, still holding their containers "+
+		"and the indices their ports came from:\n", len(orphans))
+	cmds := make([]string, 0, len(orphans))
+	for _, o := range orphans {
+		fmt.Fprintf(a.out, "  %s\n", o.Stack)
+		cmds = append(cmds, fmt.Sprintf("docker compose -p %s down --volumes", o.Stack))
+	}
+	fmt.Fprintf(a.out, "  take them down with `%s`\n", strings.Join(cmds, "`, `"))
+}
+
 // reportOrphanVolumes lists the volumes of worktrees that no longer exist.
 // They squat the indices their stacks were created at, which pushes every new
 // worktree further out, and nothing else ever mentions them.
@@ -258,15 +276,17 @@ func newDoctorCmd(a *app) *cobra.Command {
 				a.reportPortClashes()
 				rws := a.liveProjects(cmd.Context(), a.cfg.Names())
 				stale := a.staleIndices(rws)
+				stacks := a.orphanStackNames(cmd.Context(), rws)
 				volumes := a.orphanVolumeNames(cmd.Context(), rws)
 				images := a.orphanImageNames(cmd.Context(), rws)
 				a.reportStaleIndices(stale)
+				a.reportOrphanStacks(stacks)
 				a.reportOrphanVolumes(volumes)
 				a.reportOrphanImages(images)
 				// Each block above ends on its own command line, one per
 				// finding: seven of them on a busy machine, and nothing would
 				// otherwise say a single verb covers the lot.
-				if len(stale)+len(volumes)+len(images) > 0 {
+				if len(stale)+len(stacks)+len(volumes)+len(images) > 0 {
 					fmt.Fprintln(a.out, "\n`wtm clean` runs all of that in one go.")
 				}
 			}
