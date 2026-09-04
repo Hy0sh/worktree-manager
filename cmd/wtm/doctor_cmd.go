@@ -107,6 +107,12 @@ func (a *app) liveProjects(ctx context.Context, names []string) []repoWorktrees 
 			}
 			unindexed = append(unindexed, wt.Branch)
 		}
+		// A project with no compose file starts no stack, so none of its
+		// worktrees ever gets an index and nothing docker holds can be theirs:
+		// counting them would hold back every report below, forever.
+		if _, err := compose.Base(p.Dir); err != nil {
+			unindexed = nil
+		}
 		var stale []string
 		for branch := range p.WorktreeIndices {
 			if !present[branch] {
@@ -114,7 +120,8 @@ func (a *app) liveProjects(ctx context.Context, names []string) []repoWorktrees 
 			}
 		}
 		sort.Strings(stale)
-		out = append(out, repoWorktrees{Repo: repo, Name: name, Live: live, Unindexed: unindexed, Stale: stale})
+		out = append(out, repoWorktrees{Repo: repo, Name: name, Live: live,
+			Unindexed: unindexed, Stale: stale})
 	}
 	return out
 }
@@ -134,6 +141,29 @@ func (a *app) reportStaleIndices(stale []staleIndex) {
 		fmt.Fprintf(a.out, "  %s\n", l)
 	}
 	fmt.Fprintf(a.out, "  release them with `%s`\n", strings.Join(cmds, "`, `"))
+}
+
+// reportUnindexed names the worktrees the registry holds no index for, and
+// says what their presence costs. Every leftover report below holds back for
+// their whole project, which used to happen without a word: doctor answered
+// "nothing" where it meant "cannot tell".
+func (a *app) reportUnindexed(rws []repoWorktrees) {
+	var lines []string
+	for _, rw := range rws {
+		for _, branch := range rw.Unindexed {
+			lines = append(lines, fmt.Sprintf("%s: %s", rw.Name, branch))
+		}
+	}
+	if len(lines) == 0 {
+		return
+	}
+	fmt.Fprintln(a.out)
+	fmt.Fprintln(a.out, "worktrees with no recorded index, which holds back every leftover report of their project")
+	fmt.Fprintln(a.out, "(a stack of theirs cannot be told from one a removed worktree left):")
+	for _, l := range lines {
+		fmt.Fprintf(a.out, "  %s\n", l)
+	}
+	fmt.Fprintln(a.out, "  `wtm start <branch>` records the index, `wtm remove <branch>` takes the worktree out")
 }
 
 // reportOrphanStacks lists the containers of worktrees that no longer exist.
@@ -280,6 +310,9 @@ func newDoctorCmd(a *app) *cobra.Command {
 				volumes := a.orphanVolumeNames(cmd.Context(), rws)
 				images := a.orphanImageNames(cmd.Context(), rws)
 				a.reportStaleIndices(stale)
+				// Before the three reports it holds back, so a reader meeting
+				// an empty one knows why it is empty.
+				a.reportUnindexed(rws)
 				a.reportOrphanStacks(stacks)
 				a.reportOrphanVolumes(volumes)
 				a.reportOrphanImages(images)

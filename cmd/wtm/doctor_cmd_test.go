@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -210,5 +211,68 @@ func TestDoctorReportsTheStacksOfRemovedWorktrees(t *testing.T) {
 	// containers are the developer's own.
 	if strings.Contains(out.String(), "docker compose -p my-app down") {
 		t.Fatalf("the main stack is not a worktree's:\n%s", out.String())
+	}
+}
+
+// One worktree with no recorded index switches off the volume, image and stack
+// reports for its whole project, and used to do it without a word: doctor
+// answered "nothing left behind" where it meant "cannot tell".
+func TestDoctorSaysWhyTheLeftoverReportsAreHeldBack(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "my-app")
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte("services: {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{Projects: map[string]config.Project{"myapp": {Dir: dir}}}
+	a, _, out := newTestApp(t, cfg, "", func(c execx.Cmd) (execx.Result, error) {
+		switch line := c.String(); {
+		case strings.Contains(line, "worktree list"):
+			return execx.Result{Stdout: "worktree " + dir + "\nbranch refs/heads/develop\n\n" +
+				"worktree " + filepath.Join(dir, ".worktrees", "feat", "x") +
+				"\nbranch refs/heads/feat/x\n"}, nil
+		case strings.Contains(line, "volume ls"):
+			return execx.Result{Stdout: "my-app-wt-9-gone_db-data\n"}, nil
+		}
+		return execx.Result{}, nil
+	})
+
+	cmd := newDoctorCmd(a)
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("doctor: %v", err)
+	}
+
+	for _, want := range []string{"no recorded index", "myapp: feat/x"} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("doctor should say %q:\n%s", want, out.String())
+		}
+	}
+	if strings.Contains(out.String(), "my-app-wt-9-gone_db-data") {
+		t.Fatalf("the held-back report must stay held back:\n%s", out.String())
+	}
+}
+
+// A project with no compose file starts no stack, so none of its worktrees
+// ever gets an index. Counting them as unindexed would print the warning above
+// forever, on every one of them.
+func TestDoctorSaysNothingAboutIndicesAProjectWithoutAStackNeverHas(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "my-app")
+	cfg := &config.Config{Projects: map[string]config.Project{"myapp": {Dir: dir}}}
+	a, _, out := newTestApp(t, cfg, "", func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(c.String(), "worktree list") {
+			return execx.Result{Stdout: "worktree " + dir + "\nbranch refs/heads/develop\n\n" +
+				"worktree " + filepath.Join(dir, ".worktrees", "feat", "x") +
+				"\nbranch refs/heads/feat/x\n"}, nil
+		}
+		return execx.Result{}, nil
+	})
+
+	cmd := newDoctorCmd(a)
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("doctor: %v", err)
+	}
+	if strings.Contains(out.String(), "no recorded index") {
+		t.Fatalf("a project without a compose file has no index to record:\n%s", out.String())
 	}
 }
