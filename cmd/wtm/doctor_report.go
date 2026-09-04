@@ -3,6 +3,8 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"slices"
 	"sort"
 	"strings"
@@ -76,6 +78,32 @@ func (a *app) staleIndices(rws []repoWorktrees) []staleIndex {
 		}
 	}
 	return out
+}
+
+// anonymousVolumeFilters find the volumes an image created on its own, which no
+// container mounts. Kept as the filters rather than a list of 64-character ids,
+// since that is also the command a reader can copy.
+var anonymousVolumeFilters = []string{"--filter", "dangling=true",
+	"--filter", "label=com.docker.volume.anonymous"}
+
+// anonymousVolumeCommand is what drops them, and what both commands print.
+const anonymousVolumeCommand = "docker volume rm $(docker volume ls -q " +
+	"--filter dangling=true --filter label=com.docker.volume.anonymous)"
+
+func (a *app) anonymousVolumeIDs(ctx context.Context) []string {
+	res, err := a.runner.Run(ctx, execx.Cmd{Name: "docker",
+		Args: append([]string{"volume", "ls", "-q"}, anonymousVolumeFilters...)})
+	if err != nil {
+		return nil
+	}
+	return strings.Fields(res.Stdout)
+}
+
+// abandonedBranch reads the branch out of a directory git has forgotten. The
+// path is all that is left of it, and wtm always creates <root>/<branch>.
+func abandonedBranch(projectDir, path string) string {
+	root := stack.WorktreesRoot(projectDir) + string(os.PathSeparator)
+	return filepath.ToSlash(strings.TrimPrefix(path, root))
 }
 
 // orphanStack is one compose project of a worktree that no longer exists, and

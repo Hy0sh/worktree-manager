@@ -453,7 +453,10 @@ leftovers rather than advice: the recorded indices, and the stacks, volumes and
 images of worktrees that no longer exist. It prints what it found and asks
 once. Port clashes stay out, being a configuration matter; so do the anonymous
 volumes and the build cache, which belong to no project, and the directories
-git has forgotten, which no check can declare expendable.
+git has forgotten, which no check can declare expendable. The last two are
+named at the end of the run anyway, with the command that settles each: a
+finding reported by `doctor` and unmentioned by `clean` reads as the two
+disagreeing.
 
 Indices go first, because releasing one takes down the stack left at that index
 and sweeps whatever carries its label. Docker is then scanned again before

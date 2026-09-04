@@ -265,3 +265,44 @@ func TestCleanTakesOrphanStacksDownBeforeDroppingTheirVolumes(t *testing.T) {
 		t.Fatalf("clean should say what it took down:\n%s", out.String())
 	}
 }
+
+// `wtm doctor` naming a finding and `wtm clean` answering "nothing to clean"
+// one command later read as a disagreement, where in fact clean declines those
+// two on purpose. It owes the reader that account.
+func TestCleanAccountsForWhatItLeavesAlone(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "my-app")
+	gone := filepath.Join(dir, ".worktrees", "feat", "gone")
+	if err := os.MkdirAll(gone, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gone, ".git"), []byte("gitdir: /pruned\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{Projects: map[string]config.Project{"myapp": {Dir: dir}}}
+	a, _, out := newTestApp(t, cfg, "", func(c execx.Cmd) (execx.Result, error) {
+		switch line := c.String(); {
+		case strings.Contains(line, "worktree list"):
+			return execx.Result{Stdout: "worktree " + dir + "\nbranch refs/heads/develop\n"}, nil
+		case strings.Contains(line, "dangling=true"):
+			return execx.Result{Stdout: "aaaa\nbbbb\n"}, nil
+		}
+		return execx.Result{}, nil
+	})
+
+	cmd := newCleanCmd(a)
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("clean: %v", err)
+	}
+
+	for _, want := range []string{
+		"nothing to clean",
+		"left alone on purpose",
+		gone,
+		"wtm remove myapp feat/gone --force",
+		"2 anonymous volume(s)",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("clean should say %q:\n%s", want, out.String())
+		}
+	}
+}
