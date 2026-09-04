@@ -276,3 +276,44 @@ func TestDoctorSaysNothingAboutIndicesAProjectWithoutAStackNeverHas(t *testing.T
 		t.Fatalf("a project without a compose file has no index to record:\n%s", out.String())
 	}
 }
+
+// The directory a pruned administrative directory leaves behind is invisible to
+// `git worktree list`, so it was invisible to every report: 50 MB on disk, and
+// a branch `wtm create` refused for a worktree nothing could show.
+func TestDoctorReportsWorktreeDirectoriesGitNoLongerLists(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "my-app")
+	gone := filepath.Join(dir, ".worktrees", "feat", "gone")
+	if err := os.MkdirAll(gone, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(gone, ".git"), []byte("gitdir: /pruned\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{Projects: map[string]config.Project{"myapp": {Dir: dir}}}
+	a, _, out := newTestApp(t, cfg, "", func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(c.String(), "worktree list") {
+			return execx.Result{Stdout: "worktree " + dir + "\nbranch refs/heads/develop\n"}, nil
+		}
+		return execx.Result{}, nil
+	})
+
+	cmd := newDoctorCmd(a)
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("doctor: %v", err)
+	}
+
+	for _, want := range []string{
+		"1 directory(ies) still on disk that git no longer lists as worktrees",
+		gone,
+		"wtm remove myapp feat/gone --force",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Fatalf("doctor should say %q:\n%s", want, out.String())
+		}
+	}
+	// `wtm clean` deliberately leaves them, so the sentence promising it covers
+	// everything above must not appear for this finding alone.
+	if strings.Contains(out.String(), "`wtm clean` runs all of that") {
+		t.Fatalf("clean does not delete abandoned directories:\n%s", out.String())
+	}
+}

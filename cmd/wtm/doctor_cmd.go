@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"os"
 	"path/filepath"
 	"sort"
 	"strings"
@@ -82,6 +83,10 @@ type repoWorktrees struct {
 	// outside wtm. Each pushes new worktrees one index further out, and makes a
 	// foreign worktree on that branch read as managed.
 	Stale []string
+	// Abandoned are the directories still on disk that git no longer lists,
+	// left by a pruned administrative directory. They hold no stack, and no
+	// other report can see them: everything else keys off git's listing.
+	Abandoned []string
 }
 
 func (a *app) liveProjects(ctx context.Context, names []string) []repoWorktrees {
@@ -120,8 +125,11 @@ func (a *app) liveProjects(ctx context.Context, names []string) []repoWorktrees 
 			}
 		}
 		sort.Strings(stale)
+		// A git that cannot answer already dropped the project above, so a
+		// failure here is the filesystem's: nothing to report either way.
+		abandoned, _ := client.Abandoned(ctx)
 		out = append(out, repoWorktrees{Repo: repo, Name: name, Live: live,
-			Unindexed: unindexed, Stale: stale})
+			Unindexed: unindexed, Stale: stale, Abandoned: abandoned})
 	}
 	return out
 }
@@ -182,6 +190,33 @@ func (a *app) reportOrphanStacks(orphans []orphanStack) {
 		cmds = append(cmds, fmt.Sprintf("docker compose -p %s down --volumes", o.Stack))
 	}
 	fmt.Fprintf(a.out, "  take them down with `%s`\n", strings.Join(cmds, "`, `"))
+}
+
+// reportAbandonedWorktrees lists the directories git has forgotten. `wtm clean`
+// leaves them deliberately: their administrative directory is gone, so nothing
+// can read whether they hold uncommitted work, and deleting somebody's checkout
+// is not a sweep's call. They also make `wtm create` refuse the branch.
+func (a *app) reportAbandonedWorktrees(rws []repoWorktrees) {
+	var lines, cmds []string
+	for _, rw := range rws {
+		root := stack.WorktreesRoot(a.cfg.Projects[rw.Name].Dir) + string(os.PathSeparator)
+		for _, path := range rw.Abandoned {
+			lines = append(lines, fmt.Sprintf("%s: %s", rw.Name, path))
+			branch := filepath.ToSlash(strings.TrimPrefix(path, root))
+			cmds = append(cmds, fmt.Sprintf("wtm remove %s %s --force", rw.Name, branch))
+		}
+	}
+	if len(lines) == 0 {
+		return
+	}
+	fmt.Fprintln(a.out)
+	fmt.Fprintf(a.out, "%d directory(ies) still on disk that git no longer lists as worktrees "+
+		"(`wtm create` refuses their branch):\n", len(lines))
+	for _, l := range lines {
+		fmt.Fprintf(a.out, "  %s\n", l)
+	}
+	fmt.Fprintf(a.out, "  delete them with `%s`, which `wtm clean` will not do "+
+		"(no one can tell any more whether they hold uncommitted work)\n", strings.Join(cmds, "`, `"))
 }
 
 // reportOrphanVolumes lists the volumes of worktrees that no longer exist.
@@ -322,6 +357,8 @@ func newDoctorCmd(a *app) *cobra.Command {
 				if len(stale)+len(stacks)+len(volumes)+len(images) > 0 {
 					fmt.Fprintln(a.out, "\n`wtm clean` runs all of that in one go.")
 				}
+				// Last, and outside that sentence: clean does not touch these.
+				a.reportAbandonedWorktrees(rws)
 			}
 			// Anonymous volumes are machine-wide, not tied to a registered
 			// project: the only report an empty registry still has an answer for.

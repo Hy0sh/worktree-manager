@@ -476,3 +476,44 @@ func TestRemoveStillFailsOnABranchNobodyKnows(t *testing.T) {
 		t.Fatal("no worktree and no index: nothing to remove, must say so")
 	}
 }
+
+// Between `create`, which refused the branch because the destination existed,
+// and `remove`, which answered no such worktree, a branch whose administrative
+// directory had been pruned could not be recreated at all without an rm -rf.
+func TestRemoveGetsOutOfTheAbandonedDirectoryDeadlock(t *testing.T) {
+	f := newFixture(t)
+	dest := filepath.Join(f.root, ".worktrees", "feat", "gone")
+	mustWrite(t, filepath.Join(dest, ".git"), "gitdir: /pruned\n")
+
+	o := f.opts("feat/gone")
+	err := Remove(context.Background(), o)
+	if err == nil || !strings.Contains(err.Error(), "--force") {
+		t.Fatalf("Remove without --force = %v, want a refusal naming --force", err)
+	}
+	if _, statErr := os.Stat(dest); statErr != nil {
+		t.Fatalf("a refusal must leave the directory: %v", statErr)
+	}
+
+	o.Force = true
+	if err := Remove(context.Background(), o); err != nil {
+		t.Fatalf("Remove --force: %v", err)
+	}
+	if _, statErr := os.Stat(dest); !os.IsNotExist(statErr) {
+		t.Fatalf("the directory should be gone, got %v", statErr)
+	}
+	// The parent a slashed branch name created goes too, as it does after a
+	// removal git itself handled.
+	if _, statErr := os.Stat(filepath.Dir(dest)); !os.IsNotExist(statErr) {
+		t.Fatalf(".worktrees/feat should be gone, got %v", statErr)
+	}
+}
+
+// A branch nobody ever created must keep git's own answer: it names the
+// worktrees that do exist, which is what tells a typo from a leftover.
+func TestRemoveKeepsGitsAnswerWhenNoDirectoryStandsBehindTheBranch(t *testing.T) {
+	f := newFixture(t)
+	err := Remove(context.Background(), f.opts("feat/never"))
+	if err == nil || !strings.Contains(err.Error(), "no worktree for branch") {
+		t.Fatalf("Remove = %v, want git's own listing error", err)
+	}
+}
