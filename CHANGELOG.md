@@ -6,6 +6,8 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+## [0.13.1] - 2026-09-04
+
 ### Fixed
 
 - `wtm clean` accounts for the two findings it declines: the directories git no
@@ -849,7 +851,8 @@ First tagged release. The whole worktree lifecycle behind one binary:
   identical so worktrees created with it keep working.
 - A project without a compose file is not an error, there is simply no stack.
 
-[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.13.1...HEAD
+[0.13.1]: https://github.com/Hy0sh/worktree-manager/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.12.0...v0.13.0
 [0.12.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.11.0...v0.12.0
 [0.11.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.10.0...v0.11.0
