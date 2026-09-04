@@ -6,6 +6,36 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Added
+
+- `wtm doctor` reports the stacks of worktrees that no longer exist, and
+  `wtm clean` takes them down. A container's only trace of its stack is a
+  compose label, and both commands read names alone: `docker volume ls` and
+  `docker images`. So the one leftover still holding RAM and ports was the one
+  nothing mentioned, while the index allocator, which does read labels, refused
+  its index without saying who held it. `clean` takes the stacks down before
+  dropping volumes by name, since a volume a container still mounts refuses to
+  go.
+- `wtm doctor` names the worktrees the registry holds no index for. One of them
+  switches off the stack, volume and image reports for its whole project, since
+  a stack of theirs cannot be told from one a removed worktree left, and that
+  used to happen without a word: doctor answered "nothing left behind" where it
+  meant "cannot tell". A project with no compose file starts no stack, so its
+  worktrees are not counted.
+- `wtm doctor` reports the worktree directories still on disk that git no
+  longer lists, left by a pruned administrative directory. Every other command
+  reads `git worktree list`, so nothing could see them, and `wtm create` still
+  refused their branch. `wtm clean` leaves them alone: their git metadata is
+  gone, so nothing can say whether they hold uncommitted work.
+
+### Fixed
+
+- `wtm remove` deletes a directory git no longer lists, with `--force`. Between
+  a `create` that refused the branch because the destination existed and a
+  `remove` that answered no such worktree, such a branch could not be recreated
+  at all without an `rm -rf` by hand. Only a directory the scan above found is
+  touched: a live worktree whose branch was renamed keeps git's own answer.
+
 ## [0.12.0] - 2026-09-03
 
 ### Changed
