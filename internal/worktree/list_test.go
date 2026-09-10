@@ -99,3 +99,41 @@ func TestTheListingAsksDockerUnderADeadline(t *testing.T) {
 		}
 	}
 }
+
+// The worktrees left to adopt are the ones the listing hid, which is exactly
+// the set an agent has to name: one to bring a second worktree of its session
+// in, one to bring back a worktree whose adoption was released to save space.
+func TestListReportsTheWorktreesLeftToAdopt(t *testing.T) {
+	f := newFixture(t)
+	f.foreign = map[string]string{"worktree-curry": filepath.Join(f.root, ".claude", "worktrees", "curry")}
+	entries, err := List(context.Background(), f.opts(""))
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(entries) != 2 {
+		t.Fatalf("expected wtm's own worktree and the one left to adopt, got %d: %+v", len(entries), entries)
+	}
+	adoptable := entries[1]
+	if adoptable.Branch != "worktree-curry" || adoptable.Status != StatusAdoptable {
+		t.Fatalf("entry = %+v, want branch worktree-curry with status %q", adoptable, StatusAdoptable)
+	}
+	if adoptable.Index != 0 {
+		t.Fatalf("index = %d, a worktree wtm has not adopted holds none", adoptable.Index)
+	}
+	if entries[0].Branch != "feat/x" || entries[0].Status != "down" {
+		t.Fatalf("entry = %+v, wtm's own worktree keeps its stack status", entries[0])
+	}
+}
+
+func TestListKeepsTheStackStatusOfAnAdoptedWorktree(t *testing.T) {
+	f := newFixture(t)
+	f.foreign = map[string]string{"worktree-curry": filepath.Join(f.root, ".claude", "worktrees", "curry")}
+	f.managed = map[string]bool{"worktree-curry": true}
+	entries, err := List(context.Background(), f.opts(""))
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if entries[1].Status != "down" {
+		t.Fatalf("status = %q, an adopted worktree has a stack and is not offered for adoption", entries[1].Status)
+	}
+}

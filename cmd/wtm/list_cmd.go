@@ -32,18 +32,34 @@ func newListCmd(a *app) *cobra.Command {
 			}
 			w := tabwriter.NewWriter(a.out, 0, 0, 2, ' ', 0)
 			fmt.Fprintln(w, "INDEX\tBRANCH\tSTATUS\tPATH")
+			adoptable := 0
 			for _, e := range entries {
 				idx := "-"
 				if e.Index > 0 {
 					idx = strconv.Itoa(e.Index)
 				}
 				branch := e.Branch
-				if e.Detached {
+				switch {
+				// Outside wtm's own root, nothing names a detached worktree:
+				// git gives no branch and the path is not one.
+				case e.Detached && branch == "":
+					branch = fmt.Sprintf("(detached %s)", e.ShortHead())
+				case e.Detached:
 					branch = fmt.Sprintf("%s (detached %s)", branch, e.ShortHead())
+				}
+				if e.Adoptable() {
+					adoptable++
 				}
 				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", idx, branch, e.Status, e.Path)
 			}
-			return w.Flush()
+			if err := w.Flush(); err != nil {
+				return err
+			}
+			if adoptable > 0 {
+				fmt.Fprintf(a.out, "%d left to adopt: `wtm adopt <branch>` gives one a stack where it stands\n",
+					adoptable)
+			}
+			return nil
 		},
 	}
 }

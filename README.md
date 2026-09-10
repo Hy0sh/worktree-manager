@@ -211,6 +211,10 @@ cd ~/dev/my-app/.claude/worktrees/curry
 wtm adopt
 ```
 
+`wtm list` names them, marked `adoptable`, so nothing has to be remembered:
+that is what to read to bring a second worktree of the same session in, or to
+bring one back whose adoption was released to free a machine.
+
 Staying put is the point. Something is usually working in that directory, an
 agent included, and pulling it out from under them to satisfy a naming
 convention would be a poor trade. The worktree gets a stable index, remapped

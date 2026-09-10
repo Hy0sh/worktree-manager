@@ -6,6 +6,16 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Added
+
+- `wtm list` names the worktrees left to adopt, marked `adoptable`, instead of
+  answering `no worktree for <project>` while a dozen sat there. It listed the
+  ones wtm created plus the adopted ones, so the only way to name a worktree
+  for `wtm adopt` was to remember its branch: an agent bringing in the second
+  worktree of its session, or bringing back one whose adoption was released to
+  free a machine, had nothing to read. `--all` counts them out, having no verb
+  for a worktree that holds no index.
+
 ## [0.13.1] - 2026-09-04
 
 ### Fixed
