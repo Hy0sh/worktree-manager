@@ -13,7 +13,8 @@ import (
 )
 
 // foreignFixture stands in a worktree `claude -w` created, which git lists
-// outside .worktrees and every wtm command hides until it is adopted.
+// outside .worktrees and every wtm command but the listing hides until it is
+// adopted.
 func foreignFixture(t *testing.T) (*fixture, string) {
 	t.Helper()
 	f := newFixture(t)

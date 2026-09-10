@@ -293,3 +293,41 @@ func TestCreateReleasesTheIndexOfAVanishedWorktree(t *testing.T) {
 		t.Fatalf("the freed index must be the one handed out, got %v", indices)
 	}
 }
+
+// --all walks what the listing returns, and the listing now answers about the
+// worktrees left to adopt as well. Those hold no index, so there is no stack to
+// name for them: --all must count them out rather than fail on each.
+func TestAllLeavesTheWorktreesLeftToAdoptAlone(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "docker-compose.yml"), []byte("services: {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{Projects: map[string]config.Project{
+		"myapp": {Dir: dir, WorktreeIndices: map[string]int{"feat/a": 1}},
+	}}
+	app, fake, out := newTestApp(t, cfg, "", func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(c.String(), "worktree list") {
+			return execx.Result{Stdout: "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n" +
+				"worktree " + filepath.Join(dir, ".worktrees", "feat/a") + "\nHEAD aaa\nbranch refs/heads/feat/a\n\n" +
+				"worktree " + filepath.Join(dir, ".claude", "worktrees", "curry") +
+				"\nHEAD ccc\nbranch refs/heads/worktree-curry\n"}, nil
+		}
+		return execx.Result{}, nil
+	})
+
+	cmd := newStopCmd(app)
+	cmd.SetArgs([]string{"myapp", "--all"})
+	cmd.SetOut(out)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("stop --all: %v", err)
+	}
+
+	if !strings.Contains(out.String(), "1 worktree(s) stopped") {
+		t.Fatalf("only the adopted worktree has a stack to stop:\n%s", out.String())
+	}
+	for _, line := range fake.Lines() {
+		if strings.Contains(line, "worktree-curry") {
+			t.Fatalf("wtm addressed a worktree it never adopted: %s", line)
+		}
+	}
+}

@@ -13,7 +13,8 @@ import (
 
 type Entry struct {
 	stack.Worktree
-	// Status is "up", "down", or "-" when docker could not be reached.
+	// Status is "up", "down", "adoptable" for a worktree wtm has not adopted,
+	// or "-" when docker could not be reached.
 	Status string
 }
 
@@ -21,11 +22,23 @@ type Entry struct {
 // read-only question about git and must never hang on an unresponsive daemon.
 const StatusUnknown = "-"
 
+// StatusAdoptable is shown for a worktree git lists and wtm has not adopted.
+// It stands where up and down would: such a worktree has no index, hence no
+// stack of its own to be up or down.
+const StatusAdoptable = "adoptable"
+
 // dockerStatusTimeout keeps the listing responsive whatever docker is doing.
 const dockerStatusTimeout = 5 * time.Second
 
+// Adoptable says the entry is there to be seen and named, not to be addressed:
+// with no index, `adopt` is the only verb that has anything to say to it.
+func (e Entry) Adoptable() bool { return e.Status == StatusAdoptable }
+
+// List answers about every linked worktree, adopted or not: a worktree wtm has
+// not adopted is precisely the one somebody has to name to adopt it, and it
+// used to be the one the listing left out.
 func List(ctx context.Context, o Options) ([]Entry, error) {
-	worktrees, err := o.Stack.Worktrees(ctx)
+	worktrees, err := o.Stack.All(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -41,6 +54,10 @@ func List(ctx context.Context, o Options) ([]Entry, error) {
 	}
 	entries := make([]Entry, 0, len(worktrees))
 	for _, wt := range worktrees {
+		if !wt.UnderRoot && !o.Stack.Managed[wt.Branch] {
+			entries = append(entries, Entry{Worktree: wt, Status: StatusAdoptable})
+			continue
+		}
 		wt.Index = indices[wt.Branch]
 		status := StatusUnknown
 		if running != nil {

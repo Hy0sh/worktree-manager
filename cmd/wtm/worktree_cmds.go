@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/Hy0sh/worktree-manager/internal/config"
@@ -336,6 +337,9 @@ func (a *app) allWorktrees(ctx context.Context, args []string) (string, config.P
 		return "", config.Project{}, nil, err
 	}
 	entries, err := worktree.List(ctx, a.options(name, p, ""))
+	// The listing names the worktrees left to adopt, which --all has no verb
+	// for: no index, hence no stack to stop and no directory of wtm's to remove.
+	entries = slices.DeleteFunc(entries, worktree.Entry.Adoptable)
 	if err == nil && len(entries) == 0 {
 		fmt.Fprintf(a.out, "no worktree for %s: nothing to do\n", name)
 	}
