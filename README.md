@@ -625,6 +625,13 @@ notes and the tag annotation as its title. A tag with no section in the
 changelog fails the workflow rather than getting notes invented from the commit
 log; document it, then replay the run from the Actions tab.
 
+## Credits
+
+The initial idea came from [Clément](https://github.com/clemm-thetribe)'s
+Claude Code skills built around `wtc`: they were what showed that a worktree
+could carry its own isolated compose stack, and wtm grew out of making that
+work without a node dependency.
+
 ## License
 
 MIT, see [LICENSE](LICENSE).
