@@ -6,6 +6,18 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Fixed
+
+- `wtm exec` names the compose files of the worktree it addresses, instead of
+  following the `COMPOSE_FILE` of the session it was called from. `wtm run`
+  exports that variable so a project's own scripts reach the right stack, and
+  what runs inside such a session calls wtm again; compose reads it ahead of
+  the directory a command runs from, so an exec typed there reached the files
+  of the worktree the session had been opened on, down to one removed weeks
+  before. `start` was immune, passing `-f` already, which is what made the
+  failure look like a stale path held somewhere in wtm. The `post_create`,
+  `--exec` and readiness calls of a create had the same hole.
+
 ## [0.14.0] - 2026-09-10
 
 ### Added

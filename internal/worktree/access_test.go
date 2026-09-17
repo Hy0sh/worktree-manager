@@ -35,6 +35,24 @@ func TestExecTargetsTheWorktreeStack(t *testing.T) {
 	}
 }
 
+// `wtm run` exports COMPOSE_FILE so a project's own scripts reach its stack,
+// and what runs in such a session calls wtm again. compose reads that variable
+// ahead of the directory it runs from, so an exec without one of its own
+// addressed the files of the worktree the session was opened on, gone by then.
+func TestExecNamesTheWorktreeComposeFilesItself(t *testing.T) {
+	f := newFixture(t)
+	o := f.opts("feat/x")
+	o.Project.Backup = &config.Backup{AppService: "backend"}
+	if err := Exec(context.Background(), o, "", []string{"sh"}); err != nil {
+		t.Fatalf("Exec: %v", err)
+	}
+	env := f.fake.Calls[len(f.fake.Calls)-1].Env
+	want := "COMPOSE_FILE=" + filepath.Join(f.root, ".worktrees", "feat", "x", "compose.yaml")
+	if !slices.Contains(env, want) {
+		t.Fatalf("env = %v, want %q", env, want)
+	}
+}
+
 func TestExecServiceFlagOverridesTheConfiguredOne(t *testing.T) {
 	f := newFixture(t)
 	o := f.opts("feat/x")

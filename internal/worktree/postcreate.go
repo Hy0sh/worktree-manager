@@ -129,6 +129,7 @@ func execInStack(ctx context.Context, o Options, wt stack.Worktree, service, com
 		Args: []string{"compose", "-p", o.projectName(wt), "exec", "-T", service,
 			"sh", "-c", command},
 		Dir:  wt.Path,
+		Env:  composeEnv(o, wt),
 		Live: true,
 	})
 	return err
@@ -196,6 +197,7 @@ func appHealth(ctx context.Context, o Options, wt stack.Worktree, service string
 		Name: "docker",
 		Args: []string{"compose", "-p", o.projectName(wt), "ps", "--format", "{{.Health}}", service},
 		Dir:  wt.Path,
+		Env:  composeEnv(o, wt),
 	})
 	if err != nil {
 		return "", err
@@ -238,6 +240,7 @@ func listening(ctx context.Context, o Options, wt stack.Worktree, service, port 
 		Args: []string{"compose", "-p", o.projectName(wt), "exec", "-T", service,
 			"sh", "-c", "grep -qE '" + pattern + "' /proc/net/tcp /proc/net/tcp6"},
 		Dir: wt.Path,
+		Env: composeEnv(o, wt),
 	})
 	return err == nil, nil
 }
@@ -293,6 +296,7 @@ func waitForDatabase(ctx context.Context, o Options, wt stack.Worktree, service,
 		Name: "docker",
 		Args: append([]string{"compose", "-p", o.projectName(wt), "exec", "-T", service}, eng.ReadyArgs(user)...),
 		Dir:  wt.Path,
+		Env:  composeEnv(o, wt),
 	}
 	// One clock for the two services: a count of attempts floored to zero
 	// whenever the interval outlasted the timeout, skipping the wait. A refused
