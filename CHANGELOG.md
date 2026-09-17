@@ -6,6 +6,8 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+## [0.14.1] - 2026-09-17
+
 ### Fixed
 
 - `wtm exec` names the compose files of the worktree it addresses, instead of
@@ -875,7 +877,8 @@ First tagged release. The whole worktree lifecycle behind one binary:
   identical so worktrees created with it keep working.
 - A project without a compose file is not an error, there is simply no stack.
 
-[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.14.0...HEAD
+[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.14.1...HEAD
+[0.14.1]: https://github.com/Hy0sh/worktree-manager/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.13.1...v0.14.0
 [0.13.1]: https://github.com/Hy0sh/worktree-manager/compare/v0.13.0...v0.13.1
 [0.13.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.12.0...v0.13.0
