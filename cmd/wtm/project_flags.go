@@ -27,6 +27,7 @@ type projectFlags struct {
 	appService    string
 	deps          string
 	migrate       string
+	startDeps     bool
 	migrations    string
 	postCreate    string
 	readyTimeout  string
@@ -47,6 +48,7 @@ func (f *projectFlags) bind(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.appService, "app-service", "", "compose service that runs the migrations (e.g. backend, api, php-nginx)")
 	cmd.Flags().StringVar(&f.deps, "deps", "", "dependency install command before migration (e.g. 'poetry install --no-root --with dev')")
 	cmd.Flags().StringVar(&f.migrate, "migrate", "", "migration command (e.g. 'python manage.py migrate', 'npx prisma migrate deploy')")
+	cmd.Flags().BoolVar(&f.startDeps, "start-dependencies", false, "brings up what the application service depends_on while the backup refreshes, for a migration command that needs more than the database (object storage, a cache, a search index)")
 	cmd.Flags().StringVar(&f.migrations, "migrations-path", "", "git pathspec of the migration files, used to spot a stale dump (default: "+config.DefaultMigrationsPath+", which matches Django, Prisma and MikroORM)")
 	cmd.Flags().StringVar(&f.postCreate, "post-create", "", "command run in the application container after a new worktree starts (e.g. 'python manage.py seed_data')")
 	cmd.Flags().StringVar(&f.readyTimeout, "ready-timeout", "", "how long a service may take to answer before post_create runs, e.g. 2m (default: 1m for the database, 10m for the application)")
@@ -77,6 +79,9 @@ func (f *projectFlags) update(cmd *cobra.Command) (config.ProjectUpdate, error) 
 	}
 	if changed("git-container") {
 		u.GitContainer = &f.gitContainer
+	}
+	if changed("start-dependencies") {
+		u.StartDependencies = &f.startDeps
 	}
 	for _, pair := range []struct {
 		name  string

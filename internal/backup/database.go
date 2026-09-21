@@ -3,6 +3,7 @@ package backup
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -37,32 +38,66 @@ func (m *Manager) ensureUp(ctx context.Context, name string, p config.Project, c
 		Live: true,
 	}); err != nil {
 		// The failed up may have left a created container behind: same cleanup.
-		m.cleanupStarted(ctx, p, cfg, existing)()
+		m.cleanupStarted(ctx, p, cfg, existing, running)()
 		return noop, fmt.Errorf("starting stack %s: %w", name, err)
 	}
-	return m.cleanupStarted(ctx, p, cfg, existing), nil
+	return m.cleanupStarted(ctx, p, cfg, existing, running), nil
 }
 
 // cleanupStarted undoes only what wtm itself started. A stack a developer had
 // merely downed keeps its data in named volumes, so even when no container was
-// there only the db container, its anonymous volumes and the network are wtm's.
-func (m *Manager) cleanupStarted(ctx context.Context, p config.Project, cfg config.Backup, existing map[string]bool) func() {
+// there only the containers wtm brought up, their anonymous volumes and the
+// network are wtm's.
+func (m *Manager) cleanupStarted(ctx context.Context, p config.Project, cfg config.Backup, existing, wasRunning map[string]bool) func() {
 	return func() {
 		var cmds [][]string
-		switch {
-		case len(existing) == 0:
-			cmds = [][]string{{"compose", "rm", "-f", "-s", "-v", cfg.DBService}, {"compose", "down"}}
-		case existing[cfg.DBService]:
-			cmds = [][]string{{"compose", "stop", cfg.DBService}}
-		default:
-			cmds = [][]string{{"compose", "rm", "-f", "-s", "-v", cfg.DBService}}
+		for _, service := range m.startedServices(ctx, p, cfg, wasRunning) {
+			// A service that already had a container keeps it: the developer
+			// downed that stack, they did not delete it.
+			if existing[service] {
+				cmds = append(cmds, []string{"compose", "stop", service})
+			} else {
+				cmds = append(cmds, []string{"compose", "rm", "-f", "-s", "-v", service})
+			}
+		}
+		if len(existing) == 0 {
+			// Nothing of this stack was there, so the network is wtm's too.
+			cmds = append(cmds, []string{"compose", "down"})
 		}
 		for _, args := range cmds {
 			if _, err := m.Runner.Run(ctx, execx.Cmd{Name: "docker", Args: args, Dir: p.Dir}); err != nil {
-				m.logf("warning: the database started for the refresh could not be taken down: %v", err)
+				m.logf("warning: what the refresh started could not be taken down: %v", err)
 			}
 		}
 	}
+}
+
+// startedServices names what the refresh is answerable for. The database
+// always, since ensureUp brought it up; and with start_dependencies, whatever
+// runs now and did not when the refresh began, which is what `compose run`
+// pulled up behind the application service. The comparison is against what was
+// *running*, not against what had a container: those services usually have a
+// stopped one, and a developer's stopped container is exactly what wtm turns
+// back on. Anything a parallel process started in that window would be swept
+// too, which the refresh lock makes unlikely and a warning survivable.
+func (m *Manager) startedServices(ctx context.Context, p config.Project, cfg config.Backup, wasRunning map[string]bool) []string {
+	started := []string{cfg.DBService}
+	if !cfg.StartDependencies {
+		return started
+	}
+	running, err := m.services(ctx, p, "ps", "--services", "--status", "running")
+	if err != nil {
+		m.logf("warning: the services started for the refresh cannot be listed, only the database is taken down: %v", err)
+		return started
+	}
+	var deps []string
+	for service := range running {
+		if service != cfg.DBService && !wasRunning[service] {
+			deps = append(deps, service)
+		}
+	}
+	sort.Strings(deps) // a map iterates in no order, and the log has to be stable
+	return append(started, deps...)
 }
 
 // services lists what `compose ps` answers for the given selection.

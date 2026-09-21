@@ -6,6 +6,59 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+## [0.15.0] - 2026-09-21
+
+### Added
+
+- `--profile` starts a named subset of a project's compose services, declared
+  once under `profiles` in the registry and completed by the shell. A worktree
+  rarely needs the whole stack: measured on a Django project, dropping the
+  admin UI, a kubectl sidecar and the periodic-task worker took a stack from
+  1510 MiB to 969, which on an 8 GB Docker VM is the difference between five
+  worktrees in parallel and eight. It buys no time, the containers starting in
+  parallel: ~1 second out of 10.
+  Nothing to do with compose's own profiles, which live in the project's
+  compose file and state a choice the team made once; these live in the
+  registry and state one a worktree makes. Deliberately not remembered: no flag
+  means the whole stack, as it always has. An unknown name fails before
+  anything starts, naming what the project offers, since bringing up everything
+  in silence is the one outcome worth refusing.
+  Narrowing is not retroactive. `compose up -d <services>` is additive, so
+  starting again with a wider profile brings up what was missing and leaves the
+  rest running, which is how a service a profile forgot is added; taking one
+  away needs a `wtm stop` first, and a service with a `build:` section is
+  recreated by the `--build` every start passes, so widening restarts the
+  application containers that were already up.
+
+- `start_dependencies` (`--start-dependencies`) brings up what the application
+  service declares in `depends_on` while the backup refreshes. The refresh runs
+  its throwaway container with `--no-deps`, which is right for a migration: it
+  talks to the database and nothing else. A `migrate_command` that also seeds
+  does not — one measured on a real project needed object storage and died on
+  `Object storage is unreachable, cannot seed file-backed data`, taking the
+  whole refresh with it. Off by default, so no project changes behaviour.
+  Whatever the refresh started goes back down with it: the cleanup used to know
+  the database alone, and would have left the linked services holding memory.
+
+### Removed
+
+- The note a fresh stack printed to say its database held no seed data yet.
+  It fired on a dump, an empty `post_create` and a brand-new volume — which is
+  also exactly what a project whose `migrate_command` seeds the dump looks
+  like, and nothing tells the two apart. On such a project the note was not
+  only wrong but harmful: following it replays a seeder that is often not
+  idempotent, over rows that are already there.
+
+### Fixed
+
+- `backup refresh` builds the image of its throwaway container (`compose run
+  --build`) instead of taking whatever the cache held. It writes the dump every
+  worktree then restores, so a Dockerfile or a system dependency that had moved
+  since the last build was migrated around in silence — and a dump that is
+  quietly wrong is worse than a refresh that fails. `deps_command` only ever
+  covered the application's own dependencies, and `start` was already immune,
+  passing `--build` to `compose up`.
+
 ## [0.14.1] - 2026-09-17
 
 ### Fixed
@@ -877,7 +930,8 @@ First tagged release. The whole worktree lifecycle behind one binary:
   identical so worktrees created with it keep working.
 - A project without a compose file is not an error, there is simply no stack.
 
-[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.14.1...HEAD
+[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.15.0...HEAD
+[0.15.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.14.1...v0.15.0
 [0.14.1]: https://github.com/Hy0sh/worktree-manager/compare/v0.14.0...v0.14.1
 [0.14.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.13.1...v0.14.0
 [0.13.1]: https://github.com/Hy0sh/worktree-manager/compare/v0.13.0...v0.13.1

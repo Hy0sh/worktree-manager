@@ -134,6 +134,7 @@ wtm adopt --no-start                        # adopt now, bring the stack up late
 # lifecycle
 wtm list                                    # worktrees of this project
 wtm start feat/my-branch                    # bring a stopped stack back up
+wtm start feat/my-branch --profile light    # only the services that profile names
 wtm stop feat/my-branch
 wtm stop --all                              # every worktree of the project
 wtm remove feat/my-branch                   # stack, volumes and built images go, branch kept
@@ -377,6 +378,43 @@ match, `db/migrate/*` for Rails or `src/main/resources/db/migration/*` for
 Flyway, has to say so: no commit ever touches the default pathspec there, so
 every dump would be reported as up to date forever.
 
+## Starting part of a stack
+
+A worktree rarely needs every service its project declares. `profiles` names
+the subsets worth starting, and `--profile` picks one on `create`, `adopt` or
+`start`:
+
+```json
+"profiles": {
+  "light": ["db", "backend", "frontend"],
+  "async": ["db", "backend", "frontend", "celery_worker", "celery_beat"]
+}
+```
+
+What that saves is memory, not time. Measured on a Django project, dropping
+the admin UI, a kubectl sidecar and the periodic-task worker took the stack
+from 1510 MiB to 969; the containers start in parallel, so the start itself
+only lost a second out of ten. On an 8 GB Docker VM that is five worktrees at
+once instead of eight, which is the whole point when several agents share a
+machine.
+
+These are not compose's profiles. Those live in the project's compose file and
+state a choice its team made once; these live in the registry and state one a
+worktree makes. Nothing is remembered: no flag means the whole stack, which is
+what it has always meant, and a worktree that quietly came up narrowed months
+after someone typed a flag would be a puzzle worth more than the word it saves.
+A name the project does not declare fails before anything starts, since bringing
+up everything in silence is the one outcome worth refusing.
+
+The list is a floor, not an exact set: `compose up -d db backend` also brings
+up whatever `backend` declares in `depends_on`. Leaving a service out only
+keeps it down when nothing started depends on it. Narrowing is not retroactive
+either — starting again with a wider profile adds what was missing and leaves
+the rest running, which is how a service a profile forgot is brought in. Two
+caveats there: removing one needs a `wtm stop` first, and any service with a
+`build:` section is recreated by the `--build` every start passes, so widening
+restarts the application containers even though they were already up.
+
 ## How ports are isolated
 
 Every published port is rebased so a worktree stack never fights the main one:
@@ -498,10 +536,26 @@ reference data among them. It stops there. Seed data is not in it, because
 seeds change far more often than migrations and are quick to replay, whereas
 the migration history is not. A fresh worktree therefore starts with a
 migrated database and still gets seeded, by its `post_create` or by hand
-through `wtm exec`. Without a `post_create`, it says so on its own: a stack
-whose database is brand new prints a reminder, once, with the command to run.
-Measured on a real project, seeding took 33 seconds against the twenty minutes
-the migration history costs.
+through `wtm exec`. Measured on a real project, seeding took 33 seconds against
+the twenty minutes the migration history costs.
+
+A project whose seed is slow can put it in the dump anyway: `migrate_command`
+is a shell line, so `manage.py migrate && manage.py seed_data` seeds the
+throwaway database before it is dumped, and `post_create` then has nothing left
+to play. What that saves is more than the seed itself — with no `post_create`
+and no `--exec`, a create hands back as soon as the stack is up instead of
+waiting for the application to answer. On one Django project of ~200
+migrations, `wtm create` went from 98 seconds to 22, of which the seed was 27.
+The counterpart is that `backup list` still dates the dump on `migrations_path`
+alone, so a commit touching the seeder leaves it reported as up to date.
+
+Such a command often needs more than the database. A migration only ever talks
+to one, which is why the refresh runs its container with `--no-deps`; a seed may
+reach for object storage, a cache or a search index, and fails without them.
+`start_dependencies` (`--start-dependencies`) lifts that, bringing up what the
+application service declares in `depends_on` for the duration, and taking back
+down whatever it started. It is off by default, since it costs containers and
+memory a plain migration has no use for.
 
 Nothing is asked of the project. wtm links `.db-snapshot` to the central
 backup directory, writes a restore script next to the dump, and generates a

@@ -25,12 +25,18 @@ type Client struct {
 
 // Up brings a worktree's stack up. The port assignments live in the .env of
 // the worktree, which docker compose reads from the project directory.
-func (c *Client) Up(ctx context.Context, project, worktreeDir string, files []string) error {
+//
+// services narrows what starts, empty meaning the whole stack. Naming some is
+// additive on a stack already up: compose starts what is missing and leaves
+// the rest running, so a service left out of a profile is added by starting
+// again with a wider one. Taking one away needs a stop first.
+func (c *Client) Up(ctx context.Context, project, worktreeDir string, files, services []string) error {
 	args := []string{"compose", "-p", project, "--project-directory", worktreeDir}
 	for _, f := range files {
 		args = append(args, "-f", f)
 	}
 	args = append(args, "up", "-d", "--build")
+	args = append(args, services...)
 	_, err := c.Runner.Run(ctx, execx.Cmd{
 		Name: "docker",
 		Args: args,

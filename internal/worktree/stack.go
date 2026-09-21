@@ -32,13 +32,6 @@ var (
 	imageSweep = sweep{noun: "image", list: []string{"images", "-q"}, rm: []string{"rmi"}}
 )
 
-// stackVolumes lists the volumes docker labelled with this stack's compose
-// project. Empty on a stack that never came up, which is how a first start is
-// told from a restart, and on an unreachable docker.
-func stackVolumes(ctx context.Context, o Options, wt stack.Worktree) []string {
-	return labelled(ctx, o, wt, volumeSweep)
-}
-
 // removeVolumes drops the stack's volumes once the worktree is gone. `docker
 // compose down`, which stop runs, deliberately keeps them: without this
 // every removed worktree leaves its database behind forever.
@@ -131,17 +124,17 @@ func start(ctx context.Context, o Options, dest string) error {
 	if err != nil {
 		return err
 	}
-	fresh := len(stackVolumes(ctx, o, wt)) == 0
-	if err := o.Stack.Up(ctx, o.projectName(wt), dest, files); err != nil {
+	services, err := o.Project.ServicesFor(o.Profile)
+	if err != nil {
+		return err
+	}
+	if err := o.Stack.Up(ctx, o.projectName(wt), dest, files, services); err != nil {
 		return fmt.Errorf("starting the stack: %w", err)
 	}
-	o.logf("stack started (worktree %d, %s)", wt.Index, o.Branch)
-	// The dump carries what migrations create, never seed data; post_create
-	// would contradict the note. A file-based engine restores nothing on start.
-	if fresh && o.Project.Dump && o.Project.PostCreate == "" &&
-		!dbengine.IsFileBased(o.Project.BackupConfig().DBEngine) {
-		o.logf("note: the database was restored from the dump and holds no seed data yet,")
-		o.logf("      seed it with `wtm exec %s -- <your seed command>`", o.Branch)
+	if o.Profile != "" {
+		o.logf("stack started (worktree %d, %s, profile %s)", wt.Index, o.Branch, o.Profile)
+	} else {
+		o.logf("stack started (worktree %d, %s)", wt.Index, o.Branch)
 	}
 	logEndpoints(o, wt)
 	return nil

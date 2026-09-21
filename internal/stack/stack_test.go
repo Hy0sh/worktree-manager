@@ -21,7 +21,7 @@ func TestUpTargetsTheWorktreeProject(t *testing.T) {
 	f := &execx.Fake{}
 	c, _ := newClient(t, f)
 	files := []string{"/wt/compose.yaml", "/wt/.wtm-snapshot.yaml"}
-	if err := c.Up(context.Background(), "myapp-wt-1-feat-x", "/wt", files); err != nil {
+	if err := c.Up(context.Background(), "myapp-wt-1-feat-x", "/wt", files, nil); err != nil {
 		t.Fatalf("Up: %v", err)
 	}
 	line := f.Lines()[0]
@@ -67,7 +67,7 @@ func TestUpNamesTheContainerHoldingABusyPort(t *testing.T) {
 		return execx.Result{}, nil
 	}}
 	c := &Client{Runner: f, Dir: "/repo"}
-	err := c.Up(context.Background(), "p", "/repo/wt", nil)
+	err := c.Up(context.Background(), "p", "/repo/wt", nil, nil)
 	if err == nil {
 		t.Fatal("expected the failure")
 	}
@@ -84,7 +84,7 @@ func TestUpLeavesOtherFailuresAlone(t *testing.T) {
 		return execx.Result{}, nil
 	}}
 	c := &Client{Runner: f, Dir: "/repo"}
-	err := c.Up(context.Background(), "p", "/repo/wt", nil)
+	err := c.Up(context.Background(), "p", "/repo/wt", nil, nil)
 	if err == nil || strings.Contains(err.Error(), "published by") {
 		t.Fatalf("no port in that failure, got %v", err)
 	}

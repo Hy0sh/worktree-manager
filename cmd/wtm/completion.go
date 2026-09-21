@@ -182,3 +182,22 @@ func (a *app) completionProject(name string) (config.Project, error) {
 	_, p, err := a.cfg.ResolveCurrent(root)
 	return p, err
 }
+
+// completeProfiles suggests what the project declares under `profiles`. The
+// project is the one named in the first position when it is one, and the
+// current directory's otherwise: both `wtm start myapp feat/x --profile <TAB>`
+// and `wtm start feat/x --profile <TAB>` have to answer.
+func (a *app) completeProfiles(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
+	if !a.ensureLoaded() {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	name := ""
+	if len(args) > 0 && a.cfg.Has(args[0]) {
+		name = args[0]
+	}
+	p, err := a.completionProject(name)
+	if err != nil {
+		return nil, cobra.ShellCompDirectiveNoFileComp
+	}
+	return p.ProfileNames(), cobra.ShellCompDirectiveNoFileComp
+}
