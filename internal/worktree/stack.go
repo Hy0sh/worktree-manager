@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/Hy0sh/worktree-manager/internal/compose"
+	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/dbengine"
 	"github.com/Hy0sh/worktree-manager/internal/dockermem"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
@@ -168,6 +169,14 @@ func (o Options) resolveIndex(ctx context.Context, wt *stack.Worktree, mode inde
 		return err
 	}
 	wt.Index = n
+	// Recorded next to the index, and only where one may be allocated: this is
+	// what later tells a worktree that switched branches from one that left.
+	if mode == index.MayAllocate && wt.Path != "" {
+		if err := config.RecordWorktreePath(o.Resolver.ConfigPath, o.Name, o.Branch, wt.Path); err != nil {
+			o.logf("warning: the path of %s could not be recorded, a later branch switch there "+
+				"will read as a worktree that vanished: %v", o.Branch, err)
+		}
+	}
 	return nil
 }
 
@@ -196,4 +205,19 @@ func composeFiles(o Options, dest string) ([]string, error) {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
+}
+
+// runningContainers lists what docker still runs under a stack's compose
+// project. A worktree that really vanished leaves stopped containers at most;
+// one that only switched branches leaves them running, since nobody stopped it.
+func runningContainers(ctx context.Context, o Options, wt stack.Worktree) []string {
+	res, err := o.Runner.Run(ctx, execx.Cmd{
+		Name: "docker",
+		Args: []string{"ps", "-q", "--filter",
+			"label=com.docker.compose.project=" + o.projectName(wt)},
+	})
+	if err != nil {
+		return nil
+	}
+	return strings.Fields(res.Stdout)
 }

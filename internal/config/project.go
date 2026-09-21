@@ -27,6 +27,11 @@ type Project struct {
 	// state a choice the team made once; these state one a worktree makes,
 	// which is why they live in the registry. No profile starts everything.
 	Profiles map[string][]string `json:"profiles,omitempty"`
+	// WorktreePaths is where each of those branches stood when its index was
+	// recorded. Switching branches inside a worktree takes its old name out of
+	// `git worktree list`, which reads as a worktree that vanished; the path is
+	// what tells that apart from one that really did.
+	WorktreePaths map[string]string `json:"worktree_paths,omitempty"`
 	// PostCreate runs in the application container once a new worktree's stack
 	// answers, e.g. "python manage.py seed_data". It is where a seed belongs
 	// when it has to be replayed per worktree; one that can live in the dump
