@@ -6,6 +6,22 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Fixed
+
+- A branch switched inside a worktree no longer costs that worktree its stack.
+  `git switch` takes the old name out of `git worktree list` while the
+  containers keep carrying it, so the branch read as a worktree that vanished —
+  and `wtm create` releases those on every run, with `down --volumes`. Creating
+  an unrelated worktree therefore deleted a colleague's database, silently, as
+  a side effect. Two guards, since either alone leaves a hole. The sweep a
+  create runs on its own refuses to take down a stack that still has running
+  containers, nobody having named that branch; a removal somebody typed, or one
+  `wtm clean` listed and had confirmed, still sweeps a leftover whose stack was
+  left up, which is what it is for. And the worktree's path is now recorded next
+  to its index, so `wtm doctor` tells a switched branch from a worktree that
+  really left instead of reporting both as stale. A drifted worktree is still
+  addressed by its recorded branch; re-keying it to the new one is left for
+  later.
 ## [0.15.0] - 2026-09-21
 
 ### Added

@@ -82,6 +82,10 @@ type repoWorktrees struct {
 	// outside wtm. Each pushes new worktrees one index further out, and makes a
 	// foreign worktree on that branch read as managed.
 	Stale []string
+	// Drifted are branches whose worktree still stands where it was recorded
+	// but now holds another branch. They look exactly like Stale to git, and
+	// releasing one takes down a stack somebody is working in.
+	Drifted []string
 	// Abandoned are the directories still on disk that git no longer lists,
 	// left by a pruned administrative directory. They hold no stack, and no
 	// other report can see them: everything else keys off git's listing.
@@ -117,20 +121,56 @@ func (a *app) liveProjects(ctx context.Context, names []string) []repoWorktrees 
 		if _, err := compose.Base(p.Dir); err != nil {
 			unindexed = nil
 		}
-		var stale []string
+		// A worktree still standing where a branch was recorded did not vanish:
+		// somebody switched branches in it, which takes the old name out of
+		// git's listing while the worktree, and its stack, are very much alive.
+		livePaths := map[string]bool{}
+		for _, wt := range worktrees {
+			livePaths[filepath.Clean(wt.Path)] = true
+		}
+		var stale, drifted []string
 		for branch := range p.WorktreeIndices {
-			if !present[branch] {
-				stale = append(stale, branch)
+			if present[branch] {
+				continue
 			}
+			if at := p.WorktreePaths[branch]; at != "" && livePaths[filepath.Clean(at)] {
+				drifted = append(drifted, branch)
+				continue
+			}
+			stale = append(stale, branch)
 		}
 		sort.Strings(stale)
+		sort.Strings(drifted)
 		// A git that cannot answer already dropped the project above, so a
 		// failure here is the filesystem's: nothing to report either way.
 		abandoned, _ := client.Abandoned(ctx)
 		out = append(out, repoWorktrees{Repo: repo, Name: name, Live: live,
-			Unindexed: unindexed, Stale: stale, Abandoned: abandoned})
+			Unindexed: unindexed, Stale: stale, Drifted: drifted, Abandoned: abandoned})
 	}
 	return out
+}
+
+// reportDrifted names the worktrees whose branch was switched under them. Not
+// a leftover to clean: the index stays, the stack stays, and saying so is the
+// whole point, since every other report would call this one stale.
+func (a *app) reportDrifted(rws []repoWorktrees) {
+	var lines []string
+	for _, rw := range rws {
+		p := a.cfg.Projects[rw.Name]
+		for _, branch := range rw.Drifted {
+			lines = append(lines, fmt.Sprintf("%s: index %d is recorded for %s, whose worktree at %s now holds another branch",
+				rw.Name, p.WorktreeIndices[branch], branch, p.WorktreePaths[branch]))
+		}
+	}
+	if len(lines) == 0 {
+		return
+	}
+	fmt.Fprintln(a.out)
+	fmt.Fprintln(a.out, "worktrees whose branch was switched (their stack still answers to the old name):")
+	for _, l := range lines {
+		fmt.Fprintf(a.out, "  %s\n", l)
+	}
+	fmt.Fprintln(a.out, "  nothing to clean: address that stack by its recorded branch, or move the worktree back to it")
 }
 
 func (a *app) reportStaleIndices(stale []staleIndex) {
@@ -336,6 +376,7 @@ func newDoctorCmd(a *app) *cobra.Command {
 				volumes := a.orphanVolumeNames(cmd.Context(), rws)
 				images := a.orphanImageNames(cmd.Context(), rws)
 				a.reportStaleIndices(stale)
+				a.reportDrifted(rws)
 				// Before the three reports it holds back, so a reader meeting
 				// an empty one knows why it is empty.
 				a.reportUnindexed(rws)

@@ -160,7 +160,12 @@ func newCreateCmd(a *app) *cobra.Command {
 // the create's, and only worth a line.
 func (a *app) releaseVanished(ctx context.Context, name string) {
 	for _, s := range a.staleIndices(a.liveProjects(ctx, []string{name})) {
-		if err := worktree.Remove(ctx, a.options(name, a.cfg.Projects[name], s.Branch)); err != nil {
+		o := a.options(name, a.cfg.Projects[name], s.Branch)
+		// Nobody asked about this branch: a create is releasing what looks like
+		// a leftover, and a worktree whose branch was switched looks exactly
+		// like one while its stack, and its database, are still up.
+		o.Inferred = true
+		if err := worktree.Remove(ctx, o); err != nil {
 			fmt.Fprintf(a.out, "warning: index %d, left by %s, could not be released: %v\n",
 				s.Index, s.Branch, err)
 		}
