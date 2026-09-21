@@ -135,6 +135,12 @@ func askBackup(p *prompter, dir string, project config.Project, u *config.Projec
 	if err != nil {
 		return err
 	}
+	// Off for a plain migration, which talks to the database alone. A command
+	// that also seeds may reach for object storage, a cache or a search index.
+	startDeps, err := p.askYesNo("  start the services the migration command needs besides the database?", current.StartDependencies)
+	if err != nil {
+		return err
+	}
 	env, err := p.askPairs("  environment telling the app which database to target (e.g. DB_NAME="+config.DatabasePlaceholder+")", current.Env)
 	if err != nil {
 		return err
@@ -146,6 +152,7 @@ func askBackup(p *prompter, dir string, project config.Project, u *config.Projec
 		u.DBUser = &dbUser
 	}
 	u.MigrateCommand, u.DepsCommand, u.Env = &migrate, &deps, env
+	u.StartDependencies = &startDeps
 	// Recorded only once it says something the default does not: writing the
 	// default back would report a change on every project registered before
 	// the question existed, and fill its entry with the value it already had.

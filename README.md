@@ -498,10 +498,26 @@ reference data among them. It stops there. Seed data is not in it, because
 seeds change far more often than migrations and are quick to replay, whereas
 the migration history is not. A fresh worktree therefore starts with a
 migrated database and still gets seeded, by its `post_create` or by hand
-through `wtm exec`. Without a `post_create`, it says so on its own: a stack
-whose database is brand new prints a reminder, once, with the command to run.
-Measured on a real project, seeding took 33 seconds against the twenty minutes
-the migration history costs.
+through `wtm exec`. Measured on a real project, seeding took 33 seconds against
+the twenty minutes the migration history costs.
+
+A project whose seed is slow can put it in the dump anyway: `migrate_command`
+is a shell line, so `manage.py migrate && manage.py seed_data` seeds the
+throwaway database before it is dumped, and `post_create` then has nothing left
+to play. What that saves is more than the seed itself — with no `post_create`
+and no `--exec`, a create hands back as soon as the stack is up instead of
+waiting for the application to answer. On one Django project of ~200
+migrations, `wtm create` went from 98 seconds to 22, of which the seed was 27.
+The counterpart is that `backup list` still dates the dump on `migrations_path`
+alone, so a commit touching the seeder leaves it reported as up to date.
+
+Such a command often needs more than the database. A migration only ever talks
+to one, which is why the refresh runs its container with `--no-deps`; a seed may
+reach for object storage, a cache or a search index, and fails without them.
+`start_dependencies` (`--start-dependencies`) lifts that, bringing up what the
+application service declares in `depends_on` for the duration, and taking back
+down whatever it started. It is off by default, since it costs containers and
+memory a plain migration has no use for.
 
 Nothing is asked of the project. wtm links `.db-snapshot` to the central
 backup directory, writes a restore script next to the dump, and generates a

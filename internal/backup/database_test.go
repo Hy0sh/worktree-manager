@@ -193,7 +193,7 @@ func TestRefreshCleansUpAfterAFailedMigration(t *testing.T) {
 		switch {
 		case strings.Contains(c.String(), "ps -a --services"), strings.Contains(c.String(), "ps --services"):
 			return execx.Result{}, nil
-		case strings.Contains(c.String(), "run --rm --no-deps"):
+		case strings.Contains(c.String(), "manage.py migrate"):
 			return execx.Result{ExitCode: 1}, errors.New("migration failed")
 		}
 		return okHandler(c)
@@ -252,5 +252,74 @@ func TestRefreshNeverTakesNamedVolumesDown(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// What `compose run` pulls up behind the application service is wtm's to take
+// back down: the cleanup only ever knew the database, so a refresh that starts
+// the linked services used to leave them holding memory.
+func TestRefreshTakesDownTheServicesItStarted(t *testing.T) {
+	// Measured on a real project: all three already have a container, stopped,
+	// which is why the comparison cannot be "has a container". They are running
+	// by the second listing, the migration container having pulled them up.
+	listings := 0
+	f := &execx.Fake{Handler: func(c execx.Cmd) (execx.Result, error) {
+		switch {
+		case strings.Contains(c.String(), "ps -a --services"):
+			return execx.Result{Stdout: "db\nrustfs\nmailhog\n"}, nil
+		case strings.Contains(c.String(), "ps --services --status running"):
+			listings++
+			if listings == 1 {
+				return execx.Result{}, nil
+			}
+			return execx.Result{Stdout: "db\nrustfs\nmailhog\n"}, nil
+		}
+		return okHandler(c)
+	}}
+	m := newManager(t, f)
+	p := newProject(t)
+	p.Backup.StartDependencies = true
+	if err := m.Refresh(context.Background(), "myapp", p); err != nil {
+		t.Fatalf("Refresh: %v", err)
+	}
+	var down []string
+	for _, l := range f.Lines() {
+		if strings.Contains(l, "compose stop ") || strings.Contains(l, "compose rm ") {
+			down = append(down, l)
+		}
+	}
+	joined := strings.Join(down, "\n")
+	// All three had a container the developer owns, so each goes back to
+	// stopped and none is removed with its anonymous volumes.
+	for _, want := range []string{"compose stop db", "compose stop mailhog", "compose stop rustfs"} {
+		if !strings.Contains(joined, want) {
+			t.Fatalf("missing %q in:\n%s", want, joined)
+		}
+	}
+	if strings.Contains(joined, "compose rm") {
+		t.Fatalf("nothing the developer owns may be removed:\n%s", joined)
+	}
+}
+
+// Without the setting nothing beyond the database is listed, let alone touched:
+// the services running are the developer's own.
+func TestRefreshLeavesTheStackAloneWithoutStartDependencies(t *testing.T) {
+	f := &execx.Fake{Handler: func(c execx.Cmd) (execx.Result, error) {
+		switch {
+		case strings.Contains(c.String(), "ps -a --services"):
+			return execx.Result{Stdout: "db\n"}, nil
+		case strings.Contains(c.String(), "ps --services --status running"):
+			return execx.Result{Stdout: "rustfs\nmailhog\n"}, nil
+		}
+		return okHandler(c)
+	}}
+	m := newManager(t, f)
+	if err := m.Refresh(context.Background(), "myapp", newProject(t)); err != nil {
+		t.Fatalf("Refresh: %v", err)
+	}
+	for _, l := range f.Lines() {
+		if strings.Contains(l, "rustfs") || strings.Contains(l, "mailhog") {
+			t.Fatalf("a service wtm did not start may not be touched: %q", l)
+		}
 	}
 }

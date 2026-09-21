@@ -35,7 +35,16 @@ func (m *Manager) migrate(ctx context.Context, p config.Project, cfg config.Back
 	if cfg.DepsCommand != "" {
 		shell = cfg.DepsCommand + " && " + shell
 	}
-	args = append(args, "run", "--rm", "--no-deps", "-T")
+	// --build because this container writes the dump every worktree then
+	// restores: a Dockerfile or a system dependency that moved since the image
+	// was last built would otherwise be migrated around in silence.
+	args = append(args, "run", "--rm", "--build")
+	// A migration talks to the database alone, which ensureUp has already
+	// started, so the linked services stay down unless the project asks.
+	if !cfg.StartDependencies {
+		args = append(args, "--no-deps")
+	}
+	args = append(args, "-T")
 	// `-e KEY` alone makes docker read the value from its own environment.
 	// Keeping the values out of the argument list keeps credentials (these are
 	// often a DATABASE_URL) out of the error messages that quote the command.

@@ -6,6 +6,37 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Added
+
+- `start_dependencies` (`--start-dependencies`) brings up what the application
+  service declares in `depends_on` while the backup refreshes. The refresh runs
+  its throwaway container with `--no-deps`, which is right for a migration: it
+  talks to the database and nothing else. A `migrate_command` that also seeds
+  does not — one measured on a real project needed object storage and died on
+  `Object storage is unreachable, cannot seed file-backed data`, taking the
+  whole refresh with it. Off by default, so no project changes behaviour.
+  Whatever the refresh started goes back down with it: the cleanup used to know
+  the database alone, and would have left the linked services holding memory.
+
+### Removed
+
+- The note a fresh stack printed to say its database held no seed data yet.
+  It fired on a dump, an empty `post_create` and a brand-new volume — which is
+  also exactly what a project whose `migrate_command` seeds the dump looks
+  like, and nothing tells the two apart. On such a project the note was not
+  only wrong but harmful: following it replays a seeder that is often not
+  idempotent, over rows that are already there.
+
+### Fixed
+
+- `backup refresh` builds the image of its throwaway container (`compose run
+  --build`) instead of taking whatever the cache held. It writes the dump every
+  worktree then restores, so a Dockerfile or a system dependency that had moved
+  since the last build was migrated around in silence — and a dump that is
+  quietly wrong is worse than a refresh that fails. `deps_command` only ever
+  covered the application's own dependencies, and `start` was already immune,
+  passing `--build` to `compose up`.
+
 ## [0.14.1] - 2026-09-17
 
 ### Fixed

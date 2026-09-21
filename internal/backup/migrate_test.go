@@ -66,7 +66,7 @@ func TestRefreshMigratesInADisposableContainer(t *testing.T) {
 			migrate, migrateCall = l, c
 		}
 	}
-	for _, want := range []string{"run --rm --no-deps", "-e DB_NAME", "backend sh -c"} {
+	for _, want := range []string{"run --rm --build --no-deps", "-e DB_NAME", "backend sh -c"} {
 		if !strings.Contains(migrate, want) {
 			t.Fatalf("migrate call %q should contain %q", migrate, want)
 		}
@@ -136,5 +136,22 @@ func TestRefreshRunsTheDepsCommandFirst(t *testing.T) {
 	}
 	if !strings.Contains(migrate, "poetry install --no-root --with dev && python manage.py migrate") {
 		t.Fatalf("deps command should run before migrate, got %q", migrate)
+	}
+}
+
+// A migration talks to the database alone, but a command that also seeds may
+// reach for object storage or a cache, which `--no-deps` keeps down.
+func TestRefreshCanStartTheLinkedServices(t *testing.T) {
+	f := &execx.Fake{Handler: okHandler}
+	m := newManager(t, f)
+	p := newProject(t)
+	p.Backup.StartDependencies = true
+	if err := m.Refresh(context.Background(), "myapp", p); err != nil {
+		t.Fatalf("Refresh: %v", err)
+	}
+	for _, l := range f.Lines() {
+		if strings.Contains(l, "manage.py migrate") && strings.Contains(l, "--no-deps") {
+			t.Fatalf("start_dependencies should drop --no-deps, got %q", l)
+		}
 	}
 }

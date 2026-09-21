@@ -18,14 +18,15 @@ type ProjectUpdate struct {
 	ReadyTimeout  *string
 	ReadyInterval *string
 
-	DBService      *string
-	DBUser         *string
-	DBEngine       *string
-	DBPath         *string
-	AppService     *string
-	DepsCommand    *string
-	MigrateCommand *string
-	MigrationsPath *string
+	DBService         *string
+	DBUser            *string
+	DBEngine          *string
+	DBPath            *string
+	AppService        *string
+	DepsCommand       *string
+	MigrateCommand    *string
+	StartDependencies *bool
+	MigrationsPath    *string
 	// Env replaces the whole set when given: a map merged field by field
 	// would leave no way to drop a variable.
 	Env map[string]string
@@ -88,6 +89,7 @@ func (u ProjectUpdate) Apply(p Project) (Project, []FieldChange) {
 	str("app_service", &b.AppService, u.AppService)
 	str("deps_command", &b.DepsCommand, u.DepsCommand)
 	str("migrate_command", &b.MigrateCommand, u.MigrateCommand)
+	boolean("start_dependencies", &b.StartDependencies, u.StartDependencies)
 	str("migrations_path", &b.MigrationsPath, u.MigrationsPath)
 	if u.Env != nil && !maps.Equal(b.Env, u.Env) {
 		changes = append(changes, FieldChange{"env", fmt.Sprint(b.Env), fmt.Sprint(u.Env)})
@@ -100,5 +102,6 @@ func (u ProjectUpdate) Apply(p Project) (Project, []FieldChange) {
 func (u ProjectUpdate) touchesBackup() bool {
 	return u.DBService != nil || u.DBUser != nil || u.DBEngine != nil ||
 		u.DBPath != nil || u.AppService != nil || u.DepsCommand != nil ||
-		u.MigrateCommand != nil || u.MigrationsPath != nil || u.Env != nil
+		u.MigrateCommand != nil || u.StartDependencies != nil ||
+		u.MigrationsPath != nil || u.Env != nil
 }
