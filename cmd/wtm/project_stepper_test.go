@@ -32,25 +32,51 @@ func repoWithComposeBody(t *testing.T, body string) string {
 	return dir
 }
 
+// stepperAnswers names each question the stepper asks, so a fixture states only
+// what it answers and a new question renumbers nothing. An empty field is a
+// plain enter, which keeps the offered default; a field holding a newline
+// answers a question the stepper asks twice, rejecting then correcting.
+type stepperAnswers struct {
+	dir, base, dump                     string
+	dbService, dbEngine, dbUser, dbPath string
+	appService, migrate                 string
+	migrationsPath, deps                string
+	startDependencies                   string
+	env                                 []string // pairs, the blank terminator is added
+	postCreate, gitContainer            string
+}
+
+func (a stepperAnswers) reader() *strings.Reader {
+	lines := []string{a.dir, a.base, a.dump}
+	if a.dump != "n" {
+		lines = append(lines, a.dbService, a.dbEngine)
+		// A file-based engine is asked for the file instead of the user.
+		if a.dbPath != "" {
+			lines = append(lines, a.dbPath)
+		} else {
+			lines = append(lines, a.dbUser)
+		}
+		lines = append(lines, a.appService, a.migrate, a.migrationsPath, a.deps, a.startDependencies)
+		lines = append(lines, a.env...)
+		lines = append(lines, "")
+	}
+	lines = append(lines, a.postCreate, a.gitContainer)
+	return strings.NewReader(strings.Join(lines, "\n") + "\n")
+}
+
 func TestStepperFillsAProjectFromScratch(t *testing.T) {
 	dir := repoWithCompose(t)
 	var out bytes.Buffer
-	in := strings.NewReader(strings.Join([]string{
-		dir,                        // repository directory
-		"main",                     // base branch
-		"y",                        // enable the backup
-		"",                         // database service, keep the default
-		"",                         // database engine, keep the detected one
-		"",                         // database user, keep the default
-		"backend",                  // service running the migrations
-		"python manage.py migrate", // migration command
-		"",                         // migrations pathspec, keep the default
-		"",                         // no deps command
-		"DB_NAME={{database}}",     // environment
-		"",                         // end of the environment
-		"manage.py seed_data",      // post_create
-		"y",                        // git-container
-	}, "\n") + "\n")
+	in := stepperAnswers{
+		dir:          dir,
+		base:         "main",
+		dump:         "y",
+		appService:   "backend",
+		migrate:      "python manage.py migrate",
+		env:          []string{"DB_NAME={{database}}"},
+		postCreate:   "manage.py seed_data",
+		gitContainer: "y",
+	}.reader()
 
 	u, err := runProjectStepper(newPrompter(in, &out), config.Project{}, config.FallbackBaseBranch)
 	if err != nil {
@@ -108,9 +134,7 @@ func TestStepperOnlyChangesWhatIsAnswered(t *testing.T) {
 			Env:            map[string]string{"DB_NAME": "{{database}}"},
 		},
 	}
-	in := strings.NewReader(strings.Join([]string{
-		"", "", "", "", "", "appuser", "", "", "", "", "", "", "",
-	}, "\n") + "\n")
+	in := stepperAnswers{dbUser: "appuser"}.reader()
 
 	u, err := runProjectStepper(newPrompter(in, new(bytes.Buffer)), current, config.FallbackBaseBranch)
 	if err != nil {
@@ -133,19 +157,9 @@ func TestStepperOnlyChangesWhatIsAnswered(t *testing.T) {
 // registering a mysql project is a plain enter, not a thing to know.
 func TestStepperDetectsTheEngineFromTheComposeImage(t *testing.T) {
 	dir := repoWithComposeBody(t, "services:\n  db:\n    image: mysql:8.4\n  backend:\n    build: .\n")
-	in := strings.NewReader(strings.Join([]string{
-		dir, "main", "y",
-		"",        // database service
-		"",        // database engine: keep the detected mysql
-		"",        // database user
-		"backend", // service running the migrations
-		"migrate", // migration command
-		"",        // migrations pathspec
-		"",        // deps
-		"",        // environment end
-		"",        // post_create
-		"n",       // git-container
-	}, "\n") + "\n")
+	// The engine is left empty on purpose: the detected mysql is the default.
+	in := stepperAnswers{dir: dir, base: "main", dump: "y",
+		appService: "backend", migrate: "migrate", gitContainer: "n"}.reader()
 
 	u, err := runProjectStepper(newPrompter(in, new(bytes.Buffer)), config.Project{}, config.FallbackBaseBranch)
 	if err != nil {
@@ -161,14 +175,9 @@ func TestStepperDetectsTheEngineFromTheComposeImage(t *testing.T) {
 func TestStepperAsksAgainForAnUnknownEngine(t *testing.T) {
 	dir := repoWithCompose(t)
 	var out bytes.Buffer
-	in := strings.NewReader(strings.Join([]string{
-		dir, "main", "y",
-		"",        // database service
-		"oracle",  // unknown engine
-		"mariadb", // corrected
-		"",        // database user
-		"backend", "migrate", "", "", "", "", "n",
-	}, "\n") + "\n")
+	in := stepperAnswers{dir: dir, base: "main", dump: "y",
+		dbEngine:   "oracle\nmariadb", // unknown, then corrected
+		appService: "backend", migrate: "migrate", gitContainer: "n"}.reader()
 
 	u, err := runProjectStepper(newPrompter(in, &out), config.Project{}, config.FallbackBaseBranch)
 	if err != nil {
@@ -187,14 +196,10 @@ func TestStepperAsksAgainForAnUnknownEngine(t *testing.T) {
 func TestStepperAsksForTheFileInsteadOfTheUserOnSQLite(t *testing.T) {
 	dir := repoWithCompose(t)
 	var out bytes.Buffer
-	in := strings.NewReader(strings.Join([]string{
-		dir, "main", "y",
-		"",           // database service
-		"sqlite",     // engine
-		"../evil.db", // escaping file path, re-asked
-		"var/app.db", // corrected
-		"backend", "migrate", "", "", "", "", "n",
-	}, "\n") + "\n")
+	in := stepperAnswers{dir: dir, base: "main", dump: "y",
+		dbEngine:   "sqlite",
+		dbPath:     "../evil.db\nvar/app.db", // escaping, then corrected
+		appService: "backend", migrate: "migrate", gitContainer: "n"}.reader()
 
 	u, err := runProjectStepper(newPrompter(in, &out), config.Project{}, config.FallbackBaseBranch)
 	if err != nil {
@@ -218,7 +223,8 @@ func TestStepperAsksForTheFileInsteadOfTheUserOnSQLite(t *testing.T) {
 func TestStepperAsksAgainForADirectoryThatDoesNotExist(t *testing.T) {
 	dir := repoWithCompose(t)
 	var out bytes.Buffer
-	in := strings.NewReader(filepath.Join(dir, "nope") + "\n" + dir + "\nmain\nn\n\nn\n")
+	in := stepperAnswers{dir: filepath.Join(dir, "nope") + "\n" + dir, // missing, then corrected
+		base: "main", dump: "n", gitContainer: "n"}.reader()
 
 	u, err := runProjectStepper(newPrompter(in, &out), config.Project{}, config.FallbackBaseBranch)
 	if err != nil {
@@ -237,19 +243,10 @@ func TestStepperAsksAgainForADirectoryThatDoesNotExist(t *testing.T) {
 // the flag path does, through the shared validateUpdate gate.
 func TestStepperAnswersGetTheSameValidationAsFlags(t *testing.T) {
 	dir := repoWithCompose(t)
-	a := &app{cfg: &config.Config{}, in: strings.NewReader(strings.Join([]string{
-		dir, "main", "y",
-		"",           // database service
-		"",           // database engine, keep the detected one
-		"",           // database user
-		"my Backend", // invalid identifier for the migration service
-		"migrate",    // migration command
-		"",           // migrations pathspec
-		"",           // no deps command
-		"",           // end of the environment
-		"",           // post_create
-		"n",          // git-container
-	}, "\n") + "\n"), out: new(bytes.Buffer)}
+	a := &app{cfg: &config.Config{}, out: new(bytes.Buffer), in: stepperAnswers{
+		dir: dir, base: "main", dump: "y",
+		appService: "my Backend", // invalid identifier for the migration service
+		migrate:    "migrate", gitContainer: "n"}.reader()}
 	f := &projectFlags{}
 	_, err := f.steppedUpdate(a, config.Project{})
 	if err == nil || !strings.Contains(err.Error(), "application service") {
@@ -264,7 +261,8 @@ func TestStepperRefusesADirectoryThatIsNotAGitRepository(t *testing.T) {
 	plain := t.TempDir()
 	repo := repoWithCompose(t)
 	var out bytes.Buffer
-	in := strings.NewReader(plain + "\n" + repo + "\nmain\nn\n\nn\n")
+	in := stepperAnswers{dir: plain + "\n" + repo, // not a repository, then corrected
+		base: "main", dump: "n", gitContainer: "n"}.reader()
 
 	u, err := runProjectStepper(newPrompter(in, &out), config.Project{}, config.FallbackBaseBranch)
 	if err != nil {
@@ -291,7 +289,7 @@ func TestStepperStopsWhenTheInputIsClosed(t *testing.T) {
 func TestStepperKeepsTheBaseBranchInheritedWhenNothingIsTyped(t *testing.T) {
 	dir := repoWithCompose(t)
 	var out bytes.Buffer
-	in := strings.NewReader(dir + "\n\nn\n\nn\n")
+	in := stepperAnswers{dir: dir, dump: "n", gitContainer: "n"}.reader()
 
 	u, err := runProjectStepper(newPrompter(in, &out), config.Project{}, "main")
 	if err != nil {
@@ -309,7 +307,7 @@ func TestStepperKeepsTheBaseBranchInheritedWhenNothingIsTyped(t *testing.T) {
 // Typing one still records it: inheriting is the default, not the only option.
 func TestStepperRecordsATypedBaseBranch(t *testing.T) {
 	dir := repoWithCompose(t)
-	in := strings.NewReader(dir + "\nrelease\nn\n\nn\n")
+	in := stepperAnswers{dir: dir, base: "release", dump: "n", gitContainer: "n"}.reader()
 
 	u, err := runProjectStepper(newPrompter(in, new(bytes.Buffer)), config.Project{}, "main")
 	if err != nil {
@@ -325,16 +323,9 @@ func TestStepperRecordsATypedBaseBranch(t *testing.T) {
 // way in but config.json.
 func TestStepperRecordsAMigrationsPathThatDiffersFromTheDefault(t *testing.T) {
 	dir := repoWithCompose(t)
-	in := strings.NewReader(strings.Join([]string{
-		dir, "main", "y",
-		"",        // database service
-		"",        // database engine
-		"",        // database user
-		"backend", // service running the migrations
-		"rails db:migrate",
-		"db/migrate/*", // migrations pathspec
-		"", "", "", "n",
-	}, "\n") + "\n")
+	in := stepperAnswers{dir: dir, base: "main", dump: "y",
+		appService: "backend", migrate: "rails db:migrate",
+		migrationsPath: "db/migrate/*", gitContainer: "n"}.reader()
 
 	u, err := runProjectStepper(newPrompter(in, new(bytes.Buffer)), config.Project{}, config.FallbackBaseBranch)
 	if err != nil {
