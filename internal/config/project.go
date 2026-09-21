@@ -21,6 +21,12 @@ type Project struct {
 	// Deriving it from git's listing order, which resorts alphabetically, would
 	// renumber running stacks: the index feeds ports and the compose project name.
 	WorktreeIndices map[string]int `json:"worktree_indices,omitempty"`
+	// Profiles name the subsets of the compose services a stack may start,
+	// e.g. {"light": ["db", "backend", "frontend"]}. Nothing to do with
+	// compose's own profiles, which live in the project's compose file and
+	// state a choice the team made once; these state one a worktree makes,
+	// which is why they live in the registry. No profile starts everything.
+	Profiles map[string][]string `json:"profiles,omitempty"`
 	// PostCreate runs in the application container once a new worktree's stack
 	// answers, e.g. "python manage.py seed_data". It is where a seed belongs
 	// when it has to be replayed per worktree; one that can live in the dump

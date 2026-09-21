@@ -124,10 +124,18 @@ func start(ctx context.Context, o Options, dest string) error {
 	if err != nil {
 		return err
 	}
-	if err := o.Stack.Up(ctx, o.projectName(wt), dest, files); err != nil {
+	services, err := o.Project.ServicesFor(o.Profile)
+	if err != nil {
+		return err
+	}
+	if err := o.Stack.Up(ctx, o.projectName(wt), dest, files, services); err != nil {
 		return fmt.Errorf("starting the stack: %w", err)
 	}
-	o.logf("stack started (worktree %d, %s)", wt.Index, o.Branch)
+	if o.Profile != "" {
+		o.logf("stack started (worktree %d, %s, profile %s)", wt.Index, o.Branch, o.Profile)
+	} else {
+		o.logf("stack started (worktree %d, %s)", wt.Index, o.Branch)
+	}
 	logEndpoints(o, wt)
 	return nil
 }

@@ -8,6 +8,26 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ### Added
 
+- `--profile` starts a named subset of a project's compose services, declared
+  once under `profiles` in the registry and completed by the shell. A worktree
+  rarely needs the whole stack: measured on a Django project, dropping the
+  admin UI, a kubectl sidecar and the periodic-task worker took a stack from
+  1510 MiB to 969, which on an 8 GB Docker VM is the difference between five
+  worktrees in parallel and eight. It buys no time, the containers starting in
+  parallel: ~1 second out of 10.
+  Nothing to do with compose's own profiles, which live in the project's
+  compose file and state a choice the team made once; these live in the
+  registry and state one a worktree makes. Deliberately not remembered: no flag
+  means the whole stack, as it always has. An unknown name fails before
+  anything starts, naming what the project offers, since bringing up everything
+  in silence is the one outcome worth refusing.
+  Narrowing is not retroactive. `compose up -d <services>` is additive, so
+  starting again with a wider profile brings up what was missing and leaves the
+  rest running, which is how a service a profile forgot is added; taking one
+  away needs a `wtm stop` first, and a service with a `build:` section is
+  recreated by the `--build` every start passes, so widening restarts the
+  application containers that were already up.
+
 - `start_dependencies` (`--start-dependencies`) brings up what the application
   service declares in `depends_on` while the backup refreshes. The refresh runs
   its throwaway container with `--no-deps`, which is right for a migration: it

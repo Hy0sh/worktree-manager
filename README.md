@@ -134,6 +134,7 @@ wtm adopt --no-start                        # adopt now, bring the stack up late
 # lifecycle
 wtm list                                    # worktrees of this project
 wtm start feat/my-branch                    # bring a stopped stack back up
+wtm start feat/my-branch --profile light    # only the services that profile names
 wtm stop feat/my-branch
 wtm stop --all                              # every worktree of the project
 wtm remove feat/my-branch                   # stack, volumes and built images go, branch kept
@@ -376,6 +377,43 @@ whose default matches Django, Prisma and MikroORM alike. A layout it does not
 match, `db/migrate/*` for Rails or `src/main/resources/db/migration/*` for
 Flyway, has to say so: no commit ever touches the default pathspec there, so
 every dump would be reported as up to date forever.
+
+## Starting part of a stack
+
+A worktree rarely needs every service its project declares. `profiles` names
+the subsets worth starting, and `--profile` picks one on `create`, `adopt` or
+`start`:
+
+```json
+"profiles": {
+  "light": ["db", "backend", "frontend"],
+  "async": ["db", "backend", "frontend", "celery_worker", "celery_beat"]
+}
+```
+
+What that saves is memory, not time. Measured on a Django project, dropping
+the admin UI, a kubectl sidecar and the periodic-task worker took the stack
+from 1510 MiB to 969; the containers start in parallel, so the start itself
+only lost a second out of ten. On an 8 GB Docker VM that is five worktrees at
+once instead of eight, which is the whole point when several agents share a
+machine.
+
+These are not compose's profiles. Those live in the project's compose file and
+state a choice its team made once; these live in the registry and state one a
+worktree makes. Nothing is remembered: no flag means the whole stack, which is
+what it has always meant, and a worktree that quietly came up narrowed months
+after someone typed a flag would be a puzzle worth more than the word it saves.
+A name the project does not declare fails before anything starts, since bringing
+up everything in silence is the one outcome worth refusing.
+
+The list is a floor, not an exact set: `compose up -d db backend` also brings
+up whatever `backend` declares in `depends_on`. Leaving a service out only
+keeps it down when nothing started depends on it. Narrowing is not retroactive
+either — starting again with a wider profile adds what was missing and leaves
+the rest running, which is how a service a profile forgot is brought in. Two
+caveats there: removing one needs a `wtm stop` first, and any service with a
+`build:` section is recreated by the `--build` every start passes, so widening
+restarts the application containers even though they were already up.
 
 ## How ports are isolated
 

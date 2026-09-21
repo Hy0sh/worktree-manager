@@ -29,8 +29,13 @@ type Options struct {
 	// RunAfter and ExecAfter are the commands of `create --run` and `create
 	// --exec`, played once the create is done: the first on the host from the
 	// worktree, the second in the container. Shell lines, never persisted.
-	RunAfter   string
-	ExecAfter  string
+	RunAfter  string
+	ExecAfter string
+	// Profile is the stack profile this start brings up, empty for the whole
+	// stack. Deliberately not remembered: a worktree that narrowed itself
+	// months ago, with nothing on screen saying so, is a puzzle, and naming it
+	// again is one word.
+	Profile    string
 	Force      bool // remove despite uncommitted tracked changes
 	BackupsDir string
 	Runner     execx.Runner

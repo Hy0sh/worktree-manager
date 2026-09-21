@@ -20,6 +20,14 @@ func bindIgnoreMemory(cmd *cobra.Command, into *bool) {
 		"start the stack without asking, however tight the machine's memory is")
 }
 
+// bindProfile gives the three verbs that bring a stack up the same flag, and
+// the completion that makes a name typable without opening config.json.
+func bindProfile(cmd *cobra.Command, a *app, into *string) {
+	cmd.Flags().StringVar(into, "profile", "",
+		"stack profile to start, among the project's `profiles` (default: the whole stack)")
+	_ = cmd.RegisterFlagCompletionFunc("profile", a.completeProfiles)
+}
+
 // afterFlags are what create and adopt both offer once the worktree stands: the
 // stack may stay down, the seed may be skipped, and a shell line may play on
 // either side. The verbs differ in how the worktree appears, never in what
@@ -30,14 +38,16 @@ type afterFlags struct {
 	run          string
 	exec         string
 	ignoreMemory bool
+	profile      string
 }
 
-func (f *afterFlags) bind(cmd *cobra.Command) {
+func (f *afterFlags) bind(cmd *cobra.Command, a *app) {
 	cmd.Flags().BoolVar(&f.noStart, "no-start", false, "prepares the worktree without starting the stack")
 	cmd.Flags().BoolVar(&f.noPostCreate, "no-post-create", false, "starts the stack without running the project's post_create")
 	cmd.Flags().StringVar(&f.run, "run", "", "shell line to play on your machine, from the worktree, once it is ready")
 	cmd.Flags().StringVar(&f.exec, "exec", "", "shell line to play in the application container, after the project's post_create")
 	bindIgnoreMemory(cmd, &f.ignoreMemory)
+	bindProfile(cmd, a, &f.profile)
 }
 
 // args adds the shell-line check to a verb's own positional form.
@@ -56,9 +66,10 @@ func (f *afterFlags) refuse() error {
 	return nil
 }
 
-func (f *afterFlags) applyTo(o *worktree.Options) {
+func (f *afterFlags) applyTo(cmd *cobra.Command, o *worktree.Options) {
 	o.NoStart, o.NoPostCreate = f.noStart, f.noPostCreate
 	o.RunAfter, o.ExecAfter = f.run, f.exec
+	o.Profile = f.profile
 	if f.ignoreMemory {
 		o.Confirm = nil
 	}
@@ -125,7 +136,7 @@ func newCreateCmd(a *app) *cobra.Command {
 				}
 				o.Base, o.BaseFromHere = cur.Branch, true
 			}
-			flags.applyTo(&o)
+			flags.applyTo(cmd, &o)
 			if p.Dump && !flags.noStart {
 				if st := a.manager().Check(cmd.Context(), name, p); st.Behind() {
 					fmt.Fprintf(a.out, "note: the dump is %s, `wtm backup refresh %s` would save the replay\n",
@@ -138,7 +149,7 @@ func newCreateCmd(a *app) *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&fromHere, "from-here", false,
 		"cut from the branch of the current directory instead of the project's base")
-	flags.bind(cmd)
+	flags.bind(cmd, a)
 	return cmd
 }
 
@@ -158,6 +169,7 @@ func (a *app) releaseVanished(ctx context.Context, name string) {
 
 func newStartCmd(a *app) *cobra.Command {
 	var ignoreMemory bool
+	var profile string
 	cmd := &cobra.Command{
 		Use:               "start [project] <branch>",
 		Short:             "Starts the stack of an existing worktree",
@@ -173,10 +185,12 @@ func newStartCmd(a *app) *cobra.Command {
 			if ignoreMemory {
 				o.Confirm = nil
 			}
+			o.Profile = profile
 			return worktree.Start(cmd.Context(), o)
 		},
 	}
 	bindIgnoreMemory(cmd, &ignoreMemory)
+	bindProfile(cmd, a, &profile)
 	return cmd
 }
 
@@ -223,7 +237,7 @@ func newAdoptCmd(a *app) *cobra.Command {
 				branch = rest[0]
 			}
 			o := a.options(name, p, branch)
-			flags.applyTo(&o)
+			flags.applyTo(cmd, &o)
 			o.RenameTo = renameTo
 			// Deliberately not a.confirmer(): with nobody to answer, adopting
 			// must refuse and name -y rather than write into somebody's
@@ -236,7 +250,7 @@ func newAdoptCmd(a *app) *cobra.Command {
 	}
 	cmd.Flags().StringVar(&renameTo, "as", "", "rename the branch to this on the way in")
 	cmd.Flags().BoolVarP(&assumeYes, "yes", "y", false, "do not ask for confirmation")
-	flags.bind(cmd)
+	flags.bind(cmd, a)
 	return cmd
 }
 
