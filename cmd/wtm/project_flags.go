@@ -33,6 +33,7 @@ type projectFlags struct {
 	readyTimeout  string
 	readyInterval string
 	env           []string
+	profiles      []string
 	noInput       bool
 }
 
@@ -54,6 +55,7 @@ func (f *projectFlags) bind(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.readyTimeout, "ready-timeout", "", "how long a service may take to answer before post_create runs, e.g. 2m (default: 1m for the database, 10m for the application)")
 	cmd.Flags().StringVar(&f.readyInterval, "ready-interval", "", "how often it is asked, e.g. 10s (default: 1s)")
 	cmd.Flags().StringArrayVar(&f.env, "env", nil, "variable passed to the migration container, repeatable, replaces the whole set (e.g. --env DB_NAME="+config.DatabasePlaceholder+")")
+	cmd.Flags().StringArrayVar(&f.profiles, "profile-set", nil, "subset of compose services `wtm start --profile` may bring up, repeatable, replaces the whole set (e.g. --profile-set light=db,backend)")
 	cmd.Flags().BoolVar(&f.noInput, "no-input", false, "fail instead of asking, for scripts and CI")
 }
 
@@ -110,6 +112,13 @@ func (f *projectFlags) update(cmd *cobra.Command) (config.ProjectUpdate, error) 
 			return u, err
 		}
 		u.Env = env
+	}
+	if changed("profile-set") {
+		profiles, err := parseProfiles(f.profiles)
+		if err != nil {
+			return u, err
+		}
+		u.Profiles = profiles
 	}
 	return u, validateUpdate(u)
 }

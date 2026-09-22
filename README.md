@@ -391,6 +391,14 @@ the subsets worth starting, and `--profile` picks one on `create`, `adopt` or
 }
 ```
 
+`wtm project create` and `wtm project edit` write them with `--profile-set`,
+repeatable and replacing the whole set:
+
+```sh
+wtm project edit my-app --profile-set light=db,backend,frontend \
+  --profile-set async=db,backend,frontend,celery_worker,celery_beat
+```
+
 What that saves is memory, not time. Measured on a Django project, dropping
 the admin UI, a kubectl sidecar and the periodic-task worker took the stack
 from 1510 MiB to 969; the containers start in parallel, so the start itself

@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"maps"
+	"slices"
 )
 
 // ProjectUpdate carries the fields an edit actually names. A nil pointer means
@@ -17,6 +18,9 @@ type ProjectUpdate struct {
 
 	ReadyTimeout  *string
 	ReadyInterval *string
+	// Profiles replaces the whole set when given, for the same reason Env does:
+	// merging name by name would leave no way to drop a profile.
+	Profiles map[string][]string
 
 	DBService         *string
 	DBUser            *string
@@ -37,7 +41,7 @@ type ProjectUpdate struct {
 func (u ProjectUpdate) IsEmpty() bool {
 	return u.Dir == nil && u.BaseBranch == nil && u.Dump == nil &&
 		u.GitContainer == nil && u.PostCreate == nil && u.ReadyTimeout == nil &&
-		u.ReadyInterval == nil && !u.touchesBackup()
+		u.ReadyInterval == nil && u.Profiles == nil && !u.touchesBackup()
 }
 
 type FieldChange struct {
@@ -72,6 +76,10 @@ func (u ProjectUpdate) Apply(p Project) (Project, []FieldChange) {
 	str("post_create", &p.PostCreate, u.PostCreate)
 	str("ready_timeout", &p.ReadyTimeout, u.ReadyTimeout)
 	str("ready_interval", &p.ReadyInterval, u.ReadyInterval)
+	if u.Profiles != nil && !maps.EqualFunc(p.Profiles, u.Profiles, slices.Equal) {
+		changes = append(changes, FieldChange{"profiles", fmt.Sprint(p.Profiles), fmt.Sprint(u.Profiles)})
+		p.Profiles = u.Profiles
+	}
 
 	if !u.touchesBackup() {
 		return p, changes

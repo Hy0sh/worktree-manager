@@ -119,3 +119,27 @@ func parseEnv(pairs []string) (map[string]string, error) {
 	}
 	return out, nil
 }
+
+// parseProfiles reads the NAME=svc,svc form. The services land on a docker
+// command line, and a profile naming none would start the whole stack rather
+// than nothing: both are refused here rather than at the first `start`.
+func parseProfiles(pairs []string) (map[string][]string, error) {
+	if len(pairs) == 0 {
+		return nil, nil
+	}
+	out := make(map[string][]string, len(pairs))
+	for _, pair := range pairs {
+		name, list, ok := strings.Cut(pair, "=")
+		if !ok || name == "" || list == "" {
+			return nil, fmt.Errorf("--profile-set expects NAME=service,service, got %q", pair)
+		}
+		services := strings.Split(list, ",")
+		for _, service := range services {
+			if err := config.ValidateIdentifier("compose service", service); err != nil {
+				return nil, fmt.Errorf("--profile-set %q: %w", name, err)
+			}
+		}
+		out[name] = services
+	}
+	return out, nil
+}

@@ -21,7 +21,7 @@ func (p Project) ServicesFor(name string) ([]string, error) {
 	if !ok {
 		if len(p.Profiles) == 0 {
 			return nil, fmt.Errorf("unknown profile %q: this project declares none "+
-				"(add one to its `profiles` entry in config.json)", name)
+				"(`wtm project edit <project> --profile-set %s=db,backend`)", name, name)
 		}
 		return nil, fmt.Errorf("unknown profile %q, this project has %s",
 			name, strings.Join(p.ProfileNames(), ", "))
