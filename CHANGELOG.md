@@ -6,6 +6,17 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Added
+
+- `wtm project profiles [project]` lists each profile with the services it
+  names, those its `depends_on` brings up on top, and those it leaves out. The
+  agents a machine runs never picked a profile: the names alone say nothing,
+  and the list in `config.json` lies by omission, a profile naming `backend`
+  also starting the mail catcher and object storage `backend` depends on.
+- `--profile-description NAME=text` on `project create` and `project edit`
+  says when to pick a profile, which its services do not. Repeatable, it
+  replaces the whole set like `--env`, and lands under `profile_descriptions`.
+
 ## [0.16.0] - 2026-09-22
 
 ### Added

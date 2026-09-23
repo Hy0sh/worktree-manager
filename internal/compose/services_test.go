@@ -68,3 +68,42 @@ func TestServicesOnAProjectWithoutCompose(t *testing.T) {
 		t.Fatal("a directory without a compose file should report it")
 	}
 }
+
+// The shape that matters on a real project: the profile names backend and
+// frontend, backend needs mail and storage in its mapping form, frontend
+// names backend in its list form, and the override adds one more.
+func TestWithDependenciesFollowsBothFormsAcrossFiles(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, filepath.Join(dir, "compose.yaml"), `services:
+  db:
+    image: postgres
+  mail:
+    image: mailhog
+  storage:
+    image: rustfs
+  backend:
+    depends_on:
+      db:
+        condition: service_healthy
+      mail:
+        condition: service_started
+  frontend:
+    depends_on:
+      - backend
+  worker:
+    depends_on: [db]
+`)
+	writeFile(t, filepath.Join(dir, "compose.override.yaml"), `services:
+  backend:
+    depends_on:
+      storage:
+        condition: service_started
+`)
+	got, err := WithDependencies(dir, []string{"frontend", "db"})
+	if err != nil {
+		t.Fatalf("WithDependencies: %v", err)
+	}
+	if strings.Join(got, ",") != "frontend,backend,db,mail,storage" {
+		t.Fatalf("services = %v, want the closure without worker", got)
+	}
+}

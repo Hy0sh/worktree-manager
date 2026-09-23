@@ -396,7 +396,23 @@ repeatable and replacing the whole set:
 
 ```sh
 wtm project edit my-app --profile-set light=db,backend,frontend \
-  --profile-set async=db,backend,frontend,celery_worker,celery_beat
+  --profile-set async=db,backend,frontend,celery_worker,celery_beat \
+  --profile-description 'async=Celery tasks and periodic jobs'
+```
+
+`wtm project profiles [project]` is what to read before choosing one: for each
+profile, the services it names, those `depends_on` pulls in on top, those it
+leaves out, and its description.
+
+```
+async   db, backend, frontend, celery_worker, celery_beat
+        plus, through depends_on: mail, storage
+        leaves out: admin_ui
+        Celery tasks and periodic jobs
+light   db, backend, frontend
+        plus, through depends_on: mail, storage
+        leaves out: admin_ui, celery_worker, celery_beat
+(none)  all 8 services
 ```
 
 What that saves is memory, not time. Measured on a Django project, dropping
