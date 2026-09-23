@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Hy0sh/worktree-manager/internal/backup"
 	"github.com/Hy0sh/worktree-manager/internal/compose"
 	"github.com/Hy0sh/worktree-manager/internal/dbengine"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
@@ -101,8 +102,8 @@ func linkGitContainer(ctx context.Context, o Options, dest string) error {
 // to be a directory symlink: the project bind-mounts ./.db-snapshot, and a file
 // symlink inside that mount would resolve inside the container and dangle.
 func linkSnapshotDir(o Options, dest string) error {
-	target := filepath.Join(o.BackupsDir, o.Name)
-	if err := os.MkdirAll(target, 0o755); err != nil {
+	target, err := backup.ProjectDir(o.BackupsDir, o.Name)
+	if err != nil {
 		return err
 	}
 	return forceSymlink(target, filepath.Join(dest, snapshotLink))
