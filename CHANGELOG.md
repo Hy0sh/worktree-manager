@@ -6,6 +6,28 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Security
+
+- The backups directory is reset to `0700` whenever wtm writes into it. The
+  dumps are `0644` so the database container can read them as its own user,
+  which leaves that directory as all that keeps them from other accounts, and
+  older installs had it `0755`: every account on a shared Mac could read them.
+  SECURITY.md said `0600`, and now says what the code does.
+- A branch or base name starting with `-` is refused. git accepts such a
+  refname, and one named `--upload-pack=<cmd>` handed to `git fetch` runs
+  `<cmd>` against a local remote; a teammate's branch reaches the base through
+  `create --from-here`.
+- `wtm project edit` and the stepper print env keys, never their values: a
+  `DATABASE_URL` carries its password, and agents run wtm with transcripts on.
+- `wtm doctor` reads at most 64 KiB from the module proxy and prints the
+  published version only when it is a bare `vX.Y.Z`, so an answer that is not
+  the proxy's cannot write escape codes to the terminal.
+
+### Fixed
+
+- `wtm exec` and `wtm run` refuse a second branch before their `--`: `wtm exec
+  myapp feat/a extra -- ls` ran on `feat/a` without a word about `extra`.
+
 ## [0.17.0] - 2026-09-23
 
 ### Added
