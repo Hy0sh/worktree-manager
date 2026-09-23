@@ -124,14 +124,9 @@ func afterCreate(ctx context.Context, o Options) {
 // --exec are lines and not argvs, so both go through `sh -c` as one argument:
 // nothing wtm computes is ever concatenated into it.
 func execInStack(ctx context.Context, o Options, wt stack.Worktree, service, command string) error {
-	_, err := o.Runner.Run(ctx, execx.Cmd{
-		Name: "docker",
-		Args: []string{"compose", "-p", o.projectName(wt), "exec", "-T", service,
-			"sh", "-c", command},
-		Dir:  wt.Path,
-		Env:  composeEnv(o, wt),
-		Live: true,
-	})
+	c := o.composeCmd(wt, "exec", "-T", service, "sh", "-c", command)
+	c.Live = true
+	_, err := o.Runner.Run(ctx, c)
 	return err
 }
 
@@ -193,12 +188,7 @@ func waitForApp(ctx context.Context, o Options, wt stack.Worktree, service strin
 // appHealth is empty for a service that declares no healthcheck, which is how
 // compose reports the absence of one.
 func appHealth(ctx context.Context, o Options, wt stack.Worktree, service string) (string, error) {
-	res, err := o.Runner.Run(ctx, execx.Cmd{
-		Name: "docker",
-		Args: []string{"compose", "-p", o.projectName(wt), "ps", "--format", "{{.Health}}", service},
-		Dir:  wt.Path,
-		Env:  composeEnv(o, wt),
-	})
+	res, err := o.Runner.Run(ctx, o.composeCmd(wt, "ps", "--format", "{{.Health}}", service))
 	if err != nil {
 		return "", err
 	}
@@ -235,13 +225,8 @@ func listening(ctx context.Context, o Options, wt stack.Worktree, service, port 
 	// Columns are `local_address rem_address st`, where 0A is LISTEN and a
 	// listener has no peer. tcp6 states the local address over 32 hex digits.
 	pattern := fmt.Sprintf(":%04X [0-9A-F]+:0000 0A", n)
-	_, err = o.Runner.Run(ctx, execx.Cmd{
-		Name: "docker",
-		Args: []string{"compose", "-p", o.projectName(wt), "exec", "-T", service,
-			"sh", "-c", "grep -qE '" + pattern + "' /proc/net/tcp /proc/net/tcp6"},
-		Dir: wt.Path,
-		Env: composeEnv(o, wt),
-	})
+	_, err = o.Runner.Run(ctx, o.composeCmd(wt, "exec", "-T", service,
+		"sh", "-c", "grep -qE '"+pattern+"' /proc/net/tcp /proc/net/tcp6"))
 	return err == nil, nil
 }
 
@@ -292,12 +277,7 @@ func waitForDatabase(ctx context.Context, o Options, wt stack.Worktree, service,
 	if err != nil {
 		return err
 	}
-	probe := execx.Cmd{
-		Name: "docker",
-		Args: append([]string{"compose", "-p", o.projectName(wt), "exec", "-T", service}, eng.ReadyArgs(user)...),
-		Dir:  wt.Path,
-		Env:  composeEnv(o, wt),
-	}
+	probe := o.composeCmd(wt, append([]string{"exec", "-T", service}, eng.ReadyArgs(user)...)...)
 	// One clock for the two services: a count of attempts floored to zero
 	// whenever the interval outlasted the timeout, skipping the wait. A refused
 	// probe is a database still restoring, a "not yet" and not an error.

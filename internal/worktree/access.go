@@ -30,17 +30,9 @@ func Exec(ctx context.Context, o Options, service string, command []string) erro
 		return fmt.Errorf("no application service known for this project: pass --service, " +
 			"or set app_service in its config")
 	}
-	args := append([]string{"compose", "-p", o.projectName(wt), "exec", service}, command...)
-	// Dir alone is not enough: a wtm called from inside a `wtm run` session
-	// inherits that session's COMPOSE_FILE, which compose reads ahead of the
-	// directory it runs from.
-	_, err = o.Runner.Run(ctx, execx.Cmd{
-		Name:        "docker",
-		Args:        args,
-		Dir:         wt.Path,
-		Env:         composeEnv(o, wt),
-		Interactive: true,
-	})
+	c := o.composeCmd(wt, append([]string{"exec", service}, command...)...)
+	c.Interactive = true
+	_, err = o.Runner.Run(ctx, c)
 	return err
 }
 

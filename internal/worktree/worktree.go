@@ -385,8 +385,7 @@ func Remove(ctx context.Context, o Options) error {
 		o.logf("stack removed, worktree kept: %s (wtm did not create it)", wt.Path)
 	}
 	if stackKnown {
-		removeVolumes(ctx, o, wt)
-		removeImages(ctx, o, wt)
+		removeLeftovers(ctx, o, wt)
 	}
 	if err := o.Resolver.Release(o.Branch); err != nil {
 		o.logf("warning: the index of %s could not be released: %v", o.Branch, err)
@@ -461,8 +460,7 @@ func releaseStale(ctx context.Context, o Options, n int) error {
 		if err := o.Stack.Down(ctx, o.projectName(wt), o.Project.Dir, true); err != nil {
 			return fmt.Errorf("taking down the stack left at index %d for %s (index kept): %w", n, o.Branch, err)
 		}
-		removeVolumes(ctx, o, wt)
-		removeImages(ctx, o, wt)
+		removeLeftovers(ctx, o, wt)
 	}
 	if err := o.Resolver.Release(o.Branch); err != nil {
 		return fmt.Errorf("releasing the index of %s: %w", o.Branch, err)
