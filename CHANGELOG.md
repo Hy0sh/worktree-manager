@@ -17,6 +17,13 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   says when to pick a profile, which its services do not. Repeatable, it
   replaces the whole set like `--env`, and lands under `profile_descriptions`.
 
+### Fixed
+
+- A `create`, `adopt` or `start` under `--profile` listed the addresses of
+  every service in the compose file, the ones the profile left down included:
+  five ports nothing answered on, measured on an eleven-service stack. Only
+  what the profile started, `depends_on` included, is listed now.
+
 ## [0.16.0] - 2026-09-22
 
 ### Added

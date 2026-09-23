@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strconv"
 
@@ -106,6 +107,27 @@ func portClash(o Options) func(n int) string {
 	}
 }
 
+// startedBy keeps the ports of what the profile brought up, depends_on
+// included: listing a service left down hands out an address nothing answers.
+// Without a profile, or when the compose files cannot be read, all of them.
+func startedBy(o Options, allocations []stack.Allocation) []stack.Allocation {
+	named, err := o.Project.ServicesFor(o.Profile)
+	if err != nil || named == nil {
+		return allocations
+	}
+	started, err := compose.WithDependencies(o.Project.Dir, named)
+	if err != nil {
+		return allocations
+	}
+	var kept []stack.Allocation
+	for _, a := range allocations {
+		if slices.Contains(started, a.Service) {
+			kept = append(kept, a)
+		}
+	}
+	return kept
+}
+
 // endpoints pairs each service with the port it actually listens on in this
 // worktree, so the output is a list of addresses to open rather than the raw
 // block of variables written into .env.
@@ -114,6 +136,7 @@ func endpoints(o Options, wt stack.Worktree) []string {
 	if err != nil || len(allocations) == 0 {
 		return nil
 	}
+	allocations = startedBy(o, allocations)
 
 	// A service can publish several ports (mailhog exposes SMTP and a web UI),
 	// and repeating its bare name would leave no way to tell them apart. The
