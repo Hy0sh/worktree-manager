@@ -80,6 +80,10 @@ func (a *app) resolveOne(args []string) (string, config.Project, string, error) 
 	if err != nil {
 		return "", config.Project{}, "", err
 	}
+	// exec and run take any count before their `--`.
+	if len(rest) > 1 {
+		return "", config.Project{}, "", fmt.Errorf("one branch expected, got %q", rest)
+	}
 	return name, p, rest[0], nil
 }
 

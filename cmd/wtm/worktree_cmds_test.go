@@ -243,6 +243,25 @@ func TestATypoedProjectNameIsNotTakenForABranch(t *testing.T) {
 	}
 }
 
+// exec and run take any count of arguments before `--`, so `wtm exec myapp
+// feat/a extra -- true` reached resolveOne with two branches and ran on the first.
+func TestExecAndRunRefuseASecondBranch(t *testing.T) {
+	f := newAllFixture(t, "")
+	for verb, build := range map[string]func(*app) *cobra.Command{"exec": newExecCmd, "run": newRunCmd} {
+		cmd := build(f.app)
+		cmd.SetArgs([]string{"myapp", "feat/a", "extra", "--", "true"})
+		cmd.SetOut(f.out)
+		if err := cmd.Execute(); err == nil || !strings.Contains(err.Error(), "extra") {
+			t.Errorf("`wtm %s` with two branches must be refused naming the extra one, got %v", verb, err)
+		}
+	}
+	for _, l := range f.fake.Lines() {
+		if strings.Contains(l, "compose") {
+			t.Fatalf("nothing should have run, got %q", l)
+		}
+	}
+}
+
 // A worktree removed outside wtm leaves its index recorded, and the allocator
 // then pushes the next one an index further out. The create that follows is
 // where the machine has both the git truth and a reason to care.
