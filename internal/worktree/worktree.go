@@ -85,6 +85,17 @@ func (o Options) dest() (string, error) {
 	return dest, nil
 }
 
+// refuseOptionLike stops a branch name git would read as an option: a refname
+// may start with `-`, and `--upload-pack=<cmd>` handed to `git fetch` runs <cmd>.
+func refuseOptionLike(names ...string) error {
+	for _, n := range names {
+		if strings.HasPrefix(n, "-") {
+			return fmt.Errorf("invalid branch name %q: git would read it as an option", n)
+		}
+	}
+	return nil
+}
+
 func (o Options) logf(format string, args ...any) {
 	if o.Out != nil {
 		fmt.Fprintf(o.Out, format+"\n", args...)
@@ -92,6 +103,9 @@ func (o Options) logf(format string, args ...any) {
 }
 
 func Create(ctx context.Context, o Options) error {
+	if err := refuseOptionLike(o.Branch, o.Base); err != nil {
+		return err
+	}
 	dest, err := o.dest()
 	if err != nil {
 		return err
@@ -170,6 +184,11 @@ func Adopt(ctx context.Context, o Options) error {
 	case o.Resolver.Recorded()[wt.Branch] > 0:
 		return fmt.Errorf("%s is already adopted: start its stack with `wtm start %s`",
 			wt.Path, wt.Branch)
+	}
+	if o.RenameTo != "" {
+		if err := refuseOptionLike(wt.Branch, o.RenameTo); err != nil {
+			return err
+		}
 	}
 	if o.RenameTo != "" && refExists(ctx, o, "refs/heads/"+o.RenameTo) {
 		return fmt.Errorf("branch %s already exists: pick another name for %s",
