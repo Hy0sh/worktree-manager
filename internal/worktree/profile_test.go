@@ -2,8 +2,11 @@ package worktree
 
 import (
 	"context"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
 
 // profiles is the fixture's project with one named subset of its compose.
@@ -46,6 +49,44 @@ func TestNoProfileStartsEverything(t *testing.T) {
 	}
 	if up := upLine(f.fake.Lines()); !strings.HasSuffix(up, "up -d --build") {
 		t.Fatalf("up = %q", up)
+	}
+}
+
+// The addresses printed after a start are the ones to open: a service the
+// profile left down has none, one depends_on brought up does.
+func TestEndpointsListOnlyWhatTheProfileStarted(t *testing.T) {
+	f := newFixture(t)
+	mustWrite(t, filepath.Join(f.root, "compose.yaml"), `services:
+  db:
+    ports:
+      - "${DB_PORT:-5432}:5432"
+  mail:
+    ports:
+      - "${MAIL_PORT:-8025}:8025"
+  admin:
+    ports:
+      - "${ADMIN_PORT:-5050}:80"
+  backend:
+    depends_on: [db, mail]
+    ports:
+      - "${BACKEND_PORT:-8000}:8000"
+`)
+	o := f.opts("feat/x")
+	o.Project.Profiles = map[string][]string{"light": {"backend"}}
+	o.Profile = "light"
+	got := strings.Join(endpoints(o, stack.Worktree{Index: 1, Branch: "feat/x"}), "\n")
+	for _, want := range []string{"db ", "mail ", "backend "} {
+		if !strings.Contains(got, want) {
+			t.Errorf("missing %q in:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "admin") {
+		t.Errorf("admin was left down and must not be listed:\n%s", got)
+	}
+
+	o.Profile = ""
+	if got := strings.Join(endpoints(o, stack.Worktree{Index: 1, Branch: "feat/x"}), "\n"); !strings.Contains(got, "admin") {
+		t.Errorf("without a profile every service is listed:\n%s", got)
 	}
 }
 
