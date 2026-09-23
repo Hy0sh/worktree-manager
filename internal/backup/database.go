@@ -74,7 +74,7 @@ func (m *Manager) cleanupStarted(ctx context.Context, p config.Project, cfg conf
 
 // startedServices names what the refresh must take back down: the database, and
 // with start_dependencies whatever runs now and was not *running* before, since
-// `compose run` turns a developer's stopped containers back on.
+// `compose run` turns stopped containers back on. A parallel start gets swept too.
 func (m *Manager) startedServices(ctx context.Context, p config.Project, cfg config.Backup, wasRunning map[string]bool) []string {
 	started := []string{cfg.DBService}
 	if !cfg.StartDependencies {

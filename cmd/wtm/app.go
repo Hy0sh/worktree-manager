@@ -143,7 +143,8 @@ func (a *app) confirmer() func(string) bool {
 	return func(question string) bool { return confirm(a.in, a.out, question) }
 }
 
-// warnf is the logf detectEngineIfUnset and warnPinnedContainers take.
+// warnf is the logf detectEngineIfUnset and warnPinnedContainers take: it adds
+// the newline their format strings leave out.
 func (a *app) warnf(format string, args ...any) {
 	fmt.Fprintf(a.out, format+"\n", args...)
 }
