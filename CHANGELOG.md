@@ -6,6 +6,8 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+## [0.17.1] - 2026-09-24
+
 ### Security
 
 - The backups directory is reset to `0700` whenever wtm writes into it. The
@@ -1001,7 +1003,8 @@ First tagged release. The whole worktree lifecycle behind one binary:
   identical so worktrees created with it keep working.
 - A project without a compose file is not an error, there is simply no stack.
 
-[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.17.1...HEAD
+[0.17.1]: https://github.com/Hy0sh/worktree-manager/compare/v0.17.0...v0.17.1
 [0.17.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.15.0...v0.16.0
 [0.15.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.14.1...v0.15.0
