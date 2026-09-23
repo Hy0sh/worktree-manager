@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Hy0sh/worktree-manager/internal/compose"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 	"github.com/Hy0sh/worktree-manager/internal/index"
 	"github.com/Hy0sh/worktree-manager/internal/stack"
@@ -44,7 +45,7 @@ func List(ctx context.Context, o Options) ([]Entry, error) {
 	}
 	// A project with no compose file has no stack, so it is neither up nor down.
 	running := map[string]bool(nil)
-	if hasCompose(o.Project.Dir) {
+	if compose.Has(o.Project.Dir) {
 		running = runningProjects(ctx, o.Runner)
 	}
 	indices := o.Resolver.Recorded()

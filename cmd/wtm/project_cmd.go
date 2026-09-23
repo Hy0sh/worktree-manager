@@ -169,10 +169,6 @@ func newProjectRemoveCmd(a *app) *cobra.Command {
 	return remove
 }
 
-func parseEnv(pairs []string) (map[string]string, error) {
-	return parsePairs("--env", "KEY=VALUE", pairs)
-}
-
 func parsePairs(flag, form string, pairs []string) (map[string]string, error) {
 	if len(pairs) == 0 {
 		return nil, nil

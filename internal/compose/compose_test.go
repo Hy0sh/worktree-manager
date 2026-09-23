@@ -31,16 +31,15 @@ func TestFilesDetection(t *testing.T) {
 	}
 }
 
-// Only the first base file matters for wtc, which never reads overrides.
-func TestBaseIgnoresOverrides(t *testing.T) {
+// An override alone is no stack: docker compose refuses to run on one.
+func TestHasNeedsABaseFile(t *testing.T) {
 	dir := t.TempDir()
-	base := write(t, dir, "compose.yaml", "services: {}\n")
 	write(t, dir, "compose.override.yaml", "services: {}\n")
-	got, err := Base(dir)
-	if err != nil {
-		t.Fatalf("Base: %v", err)
+	if Has(dir) {
+		t.Fatal("an override alone must not count as a stack")
 	}
-	if got != base {
-		t.Fatalf("Base = %q, want %q", got, base)
+	write(t, dir, "compose.yaml", "services: {}\n")
+	if !Has(dir) {
+		t.Fatal("a base file is a stack")
 	}
 }

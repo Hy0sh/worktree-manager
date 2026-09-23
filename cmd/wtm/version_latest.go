@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"net/http"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -42,7 +44,8 @@ func (a *app) newerRelease(ctx context.Context) string {
 		return ""
 	}
 	var answer struct{ Version string }
-	if err := json.NewDecoder(res.Body).Decode(&answer); err != nil {
+	// The proxy answers a few dozen bytes: past that it is not the proxy.
+	if err := json.NewDecoder(io.LimitReader(res.Body, 64<<10)).Decode(&answer); err != nil {
 		return ""
 	}
 	if !olderVersion(local, answer.Version) {
@@ -55,14 +58,16 @@ func (a *app) newerRelease(ctx context.Context) string {
 // installed from a commit carries. Anything else, "devel" included, answers
 // false: the check exists to point at an upgrade, never to guess at one.
 func olderVersion(local, published string) bool {
+	// The published version gets printed: a suffix is where an answer that is
+	// not the proxy's would carry terminal escape codes.
+	if !releaseTag.MatchString(published) {
+		return false
+	}
 	l, localPre, ok := semverFields(local)
 	if !ok {
 		return false
 	}
-	p, publishedPre, ok := semverFields(published)
-	if !ok {
-		return false
-	}
+	p, _, _ := semverFields(published)
 	for i := range l {
 		if l[i] != p[i] {
 			return l[i] < p[i]
@@ -70,8 +75,10 @@ func olderVersion(local, published string) bool {
 	}
 	// Same numbers: semver puts a pre-release before the release it leads to,
 	// which is how a build installed from a commit is told the tag is out.
-	return localPre && !publishedPre
+	return localPre
 }
+
+var releaseTag = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
 
 // semverFields reads the numbers of a version, and whether a pre-release suffix
 // follows them. `go install ...@main` stamps "v0.8.1-0.20260828143234-4c0fbbb36bed",

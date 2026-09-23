@@ -6,6 +6,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/Hy0sh/worktree-manager/internal/compose"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 	"github.com/Hy0sh/worktree-manager/internal/index"
 	"github.com/Hy0sh/worktree-manager/internal/stack"
@@ -29,17 +30,9 @@ func Exec(ctx context.Context, o Options, service string, command []string) erro
 		return fmt.Errorf("no application service known for this project: pass --service, " +
 			"or set app_service in its config")
 	}
-	args := append([]string{"compose", "-p", o.projectName(wt), "exec", service}, command...)
-	// Dir alone is not enough: a wtm called from inside a `wtm run` session
-	// inherits that session's COMPOSE_FILE, which compose reads ahead of the
-	// directory it runs from.
-	_, err = o.Runner.Run(ctx, execx.Cmd{
-		Name:        "docker",
-		Args:        args,
-		Dir:         wt.Path,
-		Env:         composeEnv(o, wt),
-		Interactive: true,
-	})
+	c := o.composeCmd(wt, append([]string{"exec", service}, command...)...)
+	c.Interactive = true
+	_, err = o.Runner.Run(ctx, c)
 	return err
 }
 
@@ -87,7 +80,7 @@ func runAfter(ctx context.Context, o Options) {
 	// The index was allocated by the start that just happened, so it is in the
 	// registry but not in the copy of the project this call was given. Under
 	// --no-start nothing allocated one, and a host command needs no stack.
-	if !o.NoStart && hasCompose(o.Project.Dir) {
+	if !o.NoStart && compose.Has(o.Project.Dir) {
 		if err := o.resolveIndex(ctx, &wt, index.MustExist); err != nil {
 			o.logf("warning: the compose environment is not set: %v", err)
 		}
@@ -104,7 +97,7 @@ func runAfter(ctx context.Context, o Options) {
 // stack, not one named after the directory it runs from. wtm's overrides are not
 // named `override`, hence COMPOSE_FILE, which compose lets an explicit -f beat.
 func composeEnv(o Options, wt stack.Worktree) []string {
-	if !hasCompose(o.Project.Dir) {
+	if !compose.Has(o.Project.Dir) {
 		return nil
 	}
 	// The registry and not the resolver: `wtm run` works with docker stopped,

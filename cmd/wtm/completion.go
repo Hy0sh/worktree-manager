@@ -150,8 +150,6 @@ func (a *app) adoptableBranches(name string) []string {
 	return branches
 }
 
-// worktreeBranches lists the branches that currently have a worktree, for the
-// named project or for the one of the current directory.
 func (a *app) worktreeBranches(name string) []string {
 	p, err := a.completionProject(name)
 	if err != nil {
@@ -169,8 +167,6 @@ func (a *app) worktreeBranches(name string) []string {
 	return branches
 }
 
-// completionProject resolves the project a suggestion is about: the named one,
-// or the one the current directory belongs to.
 func (a *app) completionProject(name string) (config.Project, error) {
 	if name != "" {
 		return a.cfg.Get(name)

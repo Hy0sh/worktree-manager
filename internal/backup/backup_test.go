@@ -140,6 +140,21 @@ func TestProjectDirRelaxesADirectoryLeftPrivate(t *testing.T) {
 	}
 }
 
+// The dumps are 0644 for the container's sake: the root is all that keeps them
+// from other accounts, and older installs, or a snapshot link laid first, left it 0755.
+func TestProjectDirTightensARootLeftOpen(t *testing.T) {
+	root := filepath.Join(t.TempDir(), "backups")
+	if err := os.MkdirAll(root, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := ProjectDir(root, "myapp"); err != nil {
+		t.Fatal(err)
+	}
+	if got := modeOf(t, root); got != 0o700 {
+		t.Fatalf("the backups root must be tightened, mode = %o", got)
+	}
+}
+
 func TestRefreshWritesADumpTheContainerCanRead(t *testing.T) {
 	f := &execx.Fake{Handler: okHandler}
 	m := newManager(t, f)

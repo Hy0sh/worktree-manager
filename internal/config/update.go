@@ -107,7 +107,10 @@ func (u ProjectUpdate) Apply(p Project) (Project, []FieldChange) {
 	boolean("start_dependencies", &b.StartDependencies, u.StartDependencies)
 	str("migrations_path", &b.MigrationsPath, u.MigrationsPath)
 	if u.Env != nil && !maps.Equal(b.Env, u.Env) {
-		changes = append(changes, FieldChange{"env", fmt.Sprint(b.Env), fmt.Sprint(u.Env)})
+		// Keys only: a DATABASE_URL carries its password, and agents run wtm
+		// with their transcripts recording everything it prints.
+		changes = append(changes, FieldChange{"env",
+			fmt.Sprint(slices.Sorted(maps.Keys(b.Env))), fmt.Sprint(slices.Sorted(maps.Keys(u.Env)))})
 		b.Env = u.Env
 	}
 	p.Backup = &b

@@ -12,10 +12,12 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/Hy0sh/worktree-manager/internal/compose"
 	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 	"github.com/Hy0sh/worktree-manager/internal/gitx"
 	"github.com/Hy0sh/worktree-manager/internal/index"
+	"github.com/Hy0sh/worktree-manager/internal/safefile"
 	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
 
@@ -32,16 +34,13 @@ type Options struct {
 	RunAfter  string
 	ExecAfter string
 	// Profile is the stack profile this start brings up, empty for the whole
-	// stack. Deliberately not remembered: a worktree that narrowed itself
-	// months ago, with nothing on screen saying so, is a puzzle, and naming it
-	// again is one word.
+	// stack. Deliberately not remembered: a worktree narrowed months ago, with
+	// nothing on screen saying so, is a puzzle, and naming it again is one word.
 	Profile string
 	Force   bool // remove despite uncommitted tracked changes
-	// Inferred says nobody named this branch: `wtm create` releases the indices
-	// of worktrees that left outside wtm before allocating its own. Such a
-	// removal acts on a guess, so it refuses to take down a stack that still
-	// runs; one somebody typed, or that `wtm clean` listed and had confirmed,
-	// gets no such benefit of the doubt and sweeps the leftover it was asked to.
+	// Inferred says nobody named this branch: `wtm create` releasing a vanished
+	// worktree's index acts on a guess, so it refuses to take down a stack that
+	// still runs. A branch somebody typed or confirmed sweeps what it was asked to.
 	Inferred   bool
 	BackupsDir string
 	Runner     execx.Runner
@@ -76,13 +75,36 @@ var errStackNotStarted = errors.New("stack not started")
 func (o Options) dest() (string, error) {
 	root := stack.WorktreesRoot(o.Project.Dir)
 	dest := filepath.Join(root, o.Branch)
-	if dest != root && !strings.HasPrefix(dest, root+string(os.PathSeparator)) {
+	if !safefile.Within(root, dest) {
 		return "", fmt.Errorf("invalid branch name %q: the worktree would land outside %s", o.Branch, root)
 	}
 	if dest == root {
 		return "", fmt.Errorf("invalid branch name %q", o.Branch)
 	}
 	return dest, nil
+}
+
+// refuseOptionLike stops a name git would read as an option: a refname may
+// start with `-`, and `--upload-pack=<cmd>` handed to `git fetch` runs <cmd>.
+func refuseOptionLike(names ...string) error {
+	for _, n := range names {
+		if strings.HasPrefix(n, "-") {
+			return fmt.Errorf("invalid branch name %q: git would read it as an option", n)
+		}
+	}
+	return nil
+}
+
+// refuseRefspec stops a branch name `git fetch` would read as a refspec:
+// `+main:victim` force-resets victim. No branch git can create carries these.
+// A base is a revision, where `main~3` is legitimate, so it is not checked here.
+func refuseRefspec(names ...string) error {
+	for _, n := range names {
+		if strings.ContainsAny(n, ":~^?*[\\ \t\n") {
+			return fmt.Errorf("invalid branch name %q: git refuses these characters in a branch", n)
+		}
+	}
+	return nil
 }
 
 func (o Options) logf(format string, args ...any) {
@@ -92,6 +114,12 @@ func (o Options) logf(format string, args ...any) {
 }
 
 func Create(ctx context.Context, o Options) error {
+	if err := refuseOptionLike(o.Branch, o.Base); err != nil {
+		return err
+	}
+	if err := refuseRefspec(o.Branch); err != nil {
+		return err
+	}
 	dest, err := o.dest()
 	if err != nil {
 		return err
@@ -171,6 +199,11 @@ func Adopt(ctx context.Context, o Options) error {
 		return fmt.Errorf("%s is already adopted: start its stack with `wtm start %s`",
 			wt.Path, wt.Branch)
 	}
+	if o.RenameTo != "" {
+		if err := refuseOptionLike(wt.Branch, o.RenameTo); err != nil {
+			return err
+		}
+	}
 	if o.RenameTo != "" && refExists(ctx, o, "refs/heads/"+o.RenameTo) {
 		return fmt.Errorf("branch %s already exists: pick another name for %s",
 			o.RenameTo, wt.Branch)
@@ -234,7 +267,7 @@ func adoptTarget(ctx context.Context, o *Options) (stack.Worktree, error) {
 			"name a branch, or run this from the worktree to adopt", cur.Path)
 	}
 	for _, wt := range all {
-		if sameDir(wt.Path, cur.Path) {
+		if config.SamePath(wt.Path, cur.Path) {
 			o.Branch = wt.Branch
 			return wt, nil
 		}
@@ -255,17 +288,6 @@ func removeArtifacts(o Options, dest string) {
 	if err := stack.StripEnvOverrides(dest); err != nil {
 		o.logf("warning: the port block could not be taken out of %s/.env: %v", dest, err)
 	}
-}
-
-// sameDir compares two paths git and the shell can spell differently: macOS
-// hands out symlinked temporary directories, and only the resolved forms match.
-func sameDir(a, b string) bool {
-	if filepath.Clean(a) == filepath.Clean(b) {
-		return true
-	}
-	ra, errA := filepath.EvalSymlinks(a)
-	rb, errB := filepath.EvalSymlinks(b)
-	return errA == nil && errB == nil && ra == rb
 }
 
 // Start brings an existing worktree's stack back up. Without it, restarting a
@@ -289,7 +311,7 @@ func Stop(ctx context.Context, o Options) error {
 	if err != nil {
 		return err
 	}
-	if !hasCompose(o.Project.Dir) {
+	if !compose.Has(o.Project.Dir) {
 		o.logf("no compose file in this project: no stack to stop")
 		return nil
 	}
@@ -339,7 +361,7 @@ func Remove(ctx context.Context, o Options) error {
 	}
 
 	stackKnown := false
-	if hasCompose(o.Project.Dir) {
+	if compose.Has(o.Project.Dir) {
 		switch err := o.resolveIndex(ctx, &wt, index.MustExist); {
 		case errors.Is(err, index.ErrNoIndex):
 			o.logf("no stack was ever started for %s: removing the worktree alone", o.Branch)
@@ -375,8 +397,7 @@ func Remove(ctx context.Context, o Options) error {
 		o.logf("stack removed, worktree kept: %s (wtm did not create it)", wt.Path)
 	}
 	if stackKnown {
-		removeVolumes(ctx, o, wt)
-		removeImages(ctx, o, wt)
+		removeLeftovers(ctx, o, wt)
 	}
 	if err := o.Resolver.Release(o.Branch); err != nil {
 		o.logf("warning: the index of %s could not be released: %v", o.Branch, err)
@@ -393,16 +414,9 @@ func forgetPath(o Options) {
 	}
 }
 
-// removeAbandoned deletes a directory git has forgotten: one whose
-// administrative directory was pruned, which hides it from `git worktree list`
-// while `wtm create` still refuses the branch because the destination exists.
-// Between the two, the branch could not be recreated at all.
-//
-// Stack.Abandoned is what says the directory is really orphan, and not a live
-// worktree this branch simply no longer names: a renamed branch leaves git
-// listing the same path under the new name, and deleting it would cost a
-// checkout somebody is working in. listErr, git's own answer, stands whenever
-// the directory is not one of those.
+// removeAbandoned deletes a directory git forgot, which `wtm create` would refuse
+// the branch over forever. Stack.Abandoned tells it from a live worktree git now
+// lists under a renamed branch; for anything else, git's own listErr stands.
 func removeAbandoned(ctx context.Context, o Options, listErr error) error {
 	dest, err := o.dest()
 	if err != nil {
@@ -433,12 +447,10 @@ func removeAbandoned(ctx context.Context, o Options, listErr error) error {
 // is gone, so the repository stands in, since -p alone finds it by label.
 func releaseStale(ctx context.Context, o Options, n int) error {
 	wt := stack.Worktree{Index: n, Branch: o.Branch}
-	if hasCompose(o.Project.Dir) {
-		// A stack still running is not a leftover. Switching branches inside a
-		// worktree drops its old name out of `git worktree list` while its
-		// containers keep carrying it, so the worktree reads as vanished while
-		// somebody is working in it. This runs on every create, and `--volumes`
-		// would take that worktree's database with it.
+	if compose.Has(o.Project.Dir) {
+		// A running stack is not a leftover: a branch switched inside a worktree
+		// drops out of `git worktree list` while its containers keep the name, and
+		// this runs on every create, where `--volumes` takes that database along.
 		if ids := runningContainers(ctx, o, wt); o.Inferred && len(ids) > 0 {
 			return fmt.Errorf("branch %s has no worktree, but the stack at index %d still runs %d container(s), "+
 				"which is what a worktree that switched branches looks like: the index is kept and nothing was removed.\n"+
@@ -451,8 +463,7 @@ func releaseStale(ctx context.Context, o Options, n int) error {
 		if err := o.Stack.Down(ctx, o.projectName(wt), o.Project.Dir, true); err != nil {
 			return fmt.Errorf("taking down the stack left at index %d for %s (index kept): %w", n, o.Branch, err)
 		}
-		removeVolumes(ctx, o, wt)
-		removeImages(ctx, o, wt)
+		removeLeftovers(ctx, o, wt)
 	}
 	if err := o.Resolver.Release(o.Branch); err != nil {
 		return fmt.Errorf("releasing the index of %s: %w", o.Branch, err)

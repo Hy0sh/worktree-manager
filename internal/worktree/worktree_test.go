@@ -334,6 +334,39 @@ func TestCreateRefusesABranchEscapingTheWorktreeDirectory(t *testing.T) {
 	}
 }
 
+// git accepts a refname starting with `-`, and a teammate's branch reaches
+// Base through --from-here: `git fetch origin --upload-pack=<cmd>` runs <cmd>.
+func TestCreateRefusesABranchGitWouldReadAsAnOption(t *testing.T) {
+	f := newFixture(t)
+	const payload = "--upload-pack=touch${IFS}x"
+	for _, tc := range []struct{ branch, base string }{{payload, "main"}, {"feat/x", payload}} {
+		o := f.opts(tc.branch)
+		o.Base, o.NoStart = tc.base, true
+		err := Create(context.Background(), o)
+		if err == nil || !strings.Contains(err.Error(), "read it as an option") {
+			t.Fatalf("branch %q base %q: got %v", o.Branch, o.Base, err)
+		}
+		if len(f.fake.Calls) != 0 {
+			t.Fatalf("nothing should run, got %v", f.fake.Lines())
+		}
+	}
+}
+
+// A branch name reaches `git fetch <remote> <branch>`, where `+main:victim`
+// force-resets victim to the remote's main, unpushed commits and all.
+func TestCreateRefusesABranchGitWouldReadAsARefspec(t *testing.T) {
+	f := newFixture(t)
+	o := f.opts("+main:victim")
+	o.NoStart = true
+	err := Create(context.Background(), o)
+	if err == nil || !strings.Contains(err.Error(), "invalid branch name") {
+		t.Fatalf("got %v", err)
+	}
+	if len(f.fake.Calls) != 0 {
+		t.Fatalf("nothing should run, got %v", f.fake.Lines())
+	}
+}
+
 // Claude Code locks the worktrees it creates, and git refuses a locked one even
 // with a single --force, so the removal used to fail after the stack had
 // already been taken down.

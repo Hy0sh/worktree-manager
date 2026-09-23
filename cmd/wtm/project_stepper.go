@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -84,7 +85,7 @@ func askBackup(p *prompter, dir string, project config.Project, u *config.Projec
 	if services, err := compose.Services(dir); err == nil && len(services) > 0 {
 		p.logf("  services in the compose file: %s", strings.Join(services, ", "))
 	}
-	dbService, err := p.ask("  database service", or(current.DBService, config.DefaultDBService))
+	dbService, err := p.ask("  database service", cmp.Or(current.DBService, config.DefaultDBService))
 	if err != nil {
 		return err
 	}
@@ -101,7 +102,7 @@ func askBackup(p *prompter, dir string, project config.Project, u *config.Projec
 	var dbUser, dbPath string
 	if dbengine.IsFileBased(engine) {
 		for {
-			dbPath, err = p.ask("  database file (relative to the project)", or(current.DBPath, config.DefaultDBPath))
+			dbPath, err = p.ask("  database file (relative to the project)", cmp.Or(current.DBPath, config.DefaultDBPath))
 			if err != nil {
 				return err
 			}
@@ -111,7 +112,7 @@ func askBackup(p *prompter, dir string, project config.Project, u *config.Projec
 			p.logf("  must be a relative path inside the project")
 		}
 	} else {
-		dbUser, err = p.ask("  database user", or(current.DBUser, config.DefaultDBUser))
+		dbUser, err = p.ask("  database user", cmp.Or(current.DBUser, config.DefaultDBUser))
 		if err != nil {
 			return err
 		}
@@ -127,7 +128,7 @@ func askBackup(p *prompter, dir string, project config.Project, u *config.Projec
 	// The default matches Django, Prisma and MikroORM, and nothing else: a
 	// project whose migrations live elsewhere would have its dump reported as
 	// up to date forever, since no commit ever touches that pathspec.
-	migrations, err := p.ask("  git pathspec of the migration files, used to spot a stale dump (e.g. db/migrate/*)", or(current.MigrationsPath, config.DefaultMigrationsPath))
+	migrations, err := p.ask("  git pathspec of the migration files, used to spot a stale dump (e.g. db/migrate/*)", cmp.Or(current.MigrationsPath, config.DefaultMigrationsPath))
 	if err != nil {
 		return err
 	}
@@ -173,7 +174,7 @@ func askEngine(p *prompter, dir, dbService, current string) (string, error) {
 		}
 	}
 	for {
-		engine, err := p.ask("  database engine ("+strings.Join(dbengine.Names(), ", ")+")", or(current, detected))
+		engine, err := p.ask("  database engine ("+strings.Join(dbengine.Names(), ", ")+")", cmp.Or(current, detected))
 		if err != nil {
 			return "", err
 		}
@@ -248,11 +249,4 @@ func projectDir(input string) (string, error) {
 		return "", fmt.Errorf("%s is not a git repository: wtm creates worktrees, which git alone can do", abs)
 	}
 	return abs, nil
-}
-
-func or(value, fallback string) string {
-	if value != "" {
-		return value
-	}
-	return fallback
 }

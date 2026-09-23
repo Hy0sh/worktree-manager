@@ -48,7 +48,7 @@ func TestOrphanVolumesKeepsWhatALiveWorktreeOwns(t *testing.T) {
 		"my-app_postgres_data",           // the main stack, not a worktree
 	}
 	rw := repoWorktrees{Repo: "my-app", Live: []string{"my-app-wt-1-feat-x"}}
-	orphans := rw.orphanVolumes(all)
+	orphans := rw.orphans(all, "_")
 	want := []string{
 		"my-app-wt-2-fix-migration_files_data",
 		"my-app-wt-2-fix-migration_postgres_data",
@@ -66,7 +66,7 @@ func TestOrphanVolumesKeepsWhatALiveWorktreeOwns(t *testing.T) {
 // With no live worktree recorded, everything under the prefix is orphan: that
 // is exactly the state a project left after its worktrees were removed.
 func TestOrphanVolumesReportsAllWhenNothingIsLive(t *testing.T) {
-	orphans := repoWorktrees{Repo: "my-api"}.orphanVolumes([]string{"my-api-wt-1-feat-x_pgdata", "my-api_pgdata"})
+	orphans := repoWorktrees{Repo: "my-api"}.orphans([]string{"my-api-wt-1-feat-x_pgdata", "my-api_pgdata"}, "_")
 	if len(orphans) != 1 || orphans[0] != "my-api-wt-1-feat-x_pgdata" {
 		t.Fatalf("orphans = %v", orphans)
 	}
@@ -82,7 +82,7 @@ func TestOrphanImagesKeepsWhatALiveWorktreeOwns(t *testing.T) {
 		"postgres",
 	}
 	rw := repoWorktrees{Repo: "my-app", Live: []string{"my-app-wt-1-feat-x"}}
-	orphans := rw.orphanImages(all)
+	orphans := rw.orphans(all, "-")
 	want := []string{
 		"my-app-wt-2-fix-migration-frontend",
 		"my-app-wt-2-fix-migration-worker",
@@ -103,7 +103,7 @@ func TestOrphanImagesKeepsWhatALiveWorktreeOwns(t *testing.T) {
 func TestOrphanVolumesMatchTheNameComposeActuallyBuilds(t *testing.T) {
 	all := []string{"myapp-wt-1-feat-x_db_data", "myapp-wt-2-old_db_data", "unrelated_data"}
 	live := []string{stack.ProjectName("MyApp", 1, "feat/x")}
-	got := repoWorktrees{Repo: "MyApp", Live: live}.orphanVolumes(all)
+	got := repoWorktrees{Repo: "MyApp", Live: live}.orphans(all, "_")
 	if len(got) != 1 || got[0] != "myapp-wt-2-old_db_data" {
 		t.Fatalf("orphans = %v, want only the removed worktree's volume", got)
 	}
@@ -115,12 +115,12 @@ func TestOrphanVolumesMatchTheNameComposeActuallyBuilds(t *testing.T) {
 func TestNoOrphanIsClaimedWhileAWorktreeHasNoIndex(t *testing.T) {
 	all := []string{"myapp-wt-1-feat-x_db_data", "myapp-wt-9-gone_db_data"}
 	rw := repoWorktrees{Repo: "myapp", Live: nil, Unindexed: []string{"feat/x"}}
-	if got := rw.orphanVolumes(all); got != nil {
+	if got := rw.orphans(all, "_"); got != nil {
 		t.Fatalf("orphans = %v, want none: one worktree cannot be accounted for", got)
 	}
 	rw.Unindexed = nil
 	rw.Live = []string{stack.ProjectName("myapp", 1, "feat/x")}
-	if got := rw.orphanVolumes(all); len(got) != 1 || got[0] != "myapp-wt-9-gone_db_data" {
+	if got := rw.orphans(all, "_"); len(got) != 1 || got[0] != "myapp-wt-9-gone_db_data" {
 		t.Fatalf("orphans = %v, want the one nobody owns", got)
 	}
 }

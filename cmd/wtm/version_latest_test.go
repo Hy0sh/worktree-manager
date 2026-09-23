@@ -40,6 +40,9 @@ func TestNewerReleaseOnlyReportsWhatIsAhead(t *testing.T) {
 			local: "v0.8.1-0.20260828143234-4c0fbbb36bed", answer: "v0.8.1", reported: true},
 		{name: "commit past the published tag", local: "v0.9.1-0.20260828143234-4c0fbbb36bed",
 			answer: "v0.9.0"},
+		// Printed as is by doctor: only a bare release tag is worth a line.
+		{name: "escape codes in a pre-release", local: "v0.4.7", answer: "v0.4.8-\x1b]0;x\a"},
+		{name: "escape codes in build metadata", local: "v0.4.7", answer: "v0.4.8+\x1b[2J"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			if got := olderVersion(tc.local, tc.answer); got != tc.reported {

@@ -80,6 +80,10 @@ func (a *app) resolveOne(args []string) (string, config.Project, string, error) 
 	if err != nil {
 		return "", config.Project{}, "", err
 	}
+	// exec and run take any count before their `--`.
+	if len(rest) > 1 {
+		return "", config.Project{}, "", fmt.Errorf("one branch expected, got %q", rest)
+	}
 	return name, p, rest[0], nil
 }
 
@@ -139,8 +143,8 @@ func (a *app) confirmer() func(string) bool {
 	return func(question string) bool { return confirm(a.in, a.out, question) }
 }
 
-// warnf is the logf detectEngineIfUnset and warnPinnedContainers take: the
-// newline is added here, and the warnings land where the command prints.
+// warnf is the logf detectEngineIfUnset and warnPinnedContainers take: it adds
+// the newline their format strings leave out.
 func (a *app) warnf(format string, args ...any) {
 	fmt.Fprintf(a.out, format+"\n", args...)
 }

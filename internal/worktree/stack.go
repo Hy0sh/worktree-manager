@@ -33,17 +33,11 @@ var (
 	imageSweep = sweep{noun: "image", list: []string{"images", "-q"}, rm: []string{"rmi"}}
 )
 
-// removeVolumes drops the stack's volumes once the worktree is gone. `docker
-// compose down`, which stop runs, deliberately keeps them: without this
-// every removed worktree leaves its database behind forever.
-func removeVolumes(ctx context.Context, o Options, wt stack.Worktree) {
+// removeLeftovers drops the stack's volumes and built images once the worktree
+// is gone. `docker compose down`, which stop runs, keeps both: without this
+// every removal leaves its database and gigabytes of images behind forever.
+func removeLeftovers(ctx context.Context, o Options, wt stack.Worktree) {
 	removeSwept(ctx, o, wt, volumeSweep)
-}
-
-// removeImages drops what the stack built once the worktree is gone. `docker
-// compose down` keeps images as it keeps volumes, and a stack builds its own
-// copy of every service image: without this each removal leaves gigabytes.
-func removeImages(ctx context.Context, o Options, wt stack.Worktree) {
 	removeSwept(ctx, o, wt, imageSweep)
 }
 
@@ -83,7 +77,7 @@ func removeSwept(ctx context.Context, o Options, wt stack.Worktree, s sweep) {
 func start(ctx context.Context, o Options, dest string) error {
 	// A repository without a compose file simply has no stack. The worktree is
 	// still perfectly usable, so this is a note and not a failure.
-	if !hasCompose(o.Project.Dir) {
+	if !compose.Has(o.Project.Dir) {
 		o.logf("no compose file in this project: no stack to start, the worktree is ready")
 		return nil
 	}
@@ -149,15 +143,22 @@ func logEndpoints(o Options, wt stack.Worktree) {
 	}
 }
 
-func hasCompose(projectDir string) bool {
-	_, err := compose.Base(projectDir)
-	return err == nil
-}
-
 // projectName is the compose project of a worktree stack, which isolates its
 // containers, network and volumes from the main stack and from one another.
 func (o Options) projectName(wt stack.Worktree) string {
 	return stack.ProjectName(filepath.Base(o.Project.Dir), wt.Index, wt.Branch)
+}
+
+// composeCmd runs compose against a worktree's stack. Dir alone is not enough:
+// a wtm called from inside a `wtm run` session inherits that session's
+// COMPOSE_FILE, which compose reads ahead of the directory it runs from.
+func (o Options) composeCmd(wt stack.Worktree, args ...string) execx.Cmd {
+	return execx.Cmd{
+		Name: "docker",
+		Args: append([]string{"compose", "-p", o.projectName(wt)}, args...),
+		Dir:  wt.Path,
+		Env:  composeEnv(o, wt),
+	}
 }
 
 func (o Options) resolveIndex(ctx context.Context, wt *stack.Worktree, mode index.Mode) error {

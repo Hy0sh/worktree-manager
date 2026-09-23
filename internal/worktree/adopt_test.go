@@ -282,6 +282,19 @@ func TestAdoptRefusesToRenameOntoAnExistingBranch(t *testing.T) {
 	}
 }
 
+func TestAdoptRefusesARenameGitWouldReadAsAnOption(t *testing.T) {
+	f, _ := foreignFixture(t)
+	o := f.opts("")
+	o.RenameTo = "--force"
+	err := Adopt(context.Background(), o)
+	if err == nil || !strings.Contains(err.Error(), "read it as an option") {
+		t.Fatalf("expected a refusal, got %v", err)
+	}
+	if got := lastCall(f, "branch -m"); got != "" {
+		t.Fatalf("nothing may be renamed, got %q", got)
+	}
+}
+
 // The question is what somebody reads before saying yes, so it has to carry the
 // rename: adopting under another name is not the same act.
 func TestAdoptQuestionNamesTheRename(t *testing.T) {

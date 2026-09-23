@@ -42,26 +42,6 @@ func allArgs(all *bool, branchForm cobra.PositionalArgs) cobra.PositionalArgs {
 	}
 }
 
-// shellLineArgs refuses a --run or --exec value that is really a flag. pflag
-// takes whatever follows a long flag as its value, `--` and another flag
-// included, so `--exec --no-start` left --no-start unset.
-func shellLineArgs(run, exec *string, form cobra.PositionalArgs) cobra.PositionalArgs {
-	return func(cmd *cobra.Command, given []string) error {
-		for _, f := range []struct {
-			name  string
-			value *string
-		}{{"run", run}, {"exec", exec}} {
-			if strings.HasPrefix(*f.value, "--") {
-				return fmt.Errorf("--%s takes a shell line, not %q: quote it "+
-					"(`--%s 'npm run seed'`), it is not an argv after `--`",
-					f.name, *f.value, f.name)
-			}
-		}
-		return form(cmd, given)
-	}
-}
-
-// projectArg reads an explicit project name, or falls back to the current one.
 func (a *app) projectArg(args []string) (string, config.Project, error) {
 	if len(args) == 1 {
 		p, err := a.cfg.Get(args[0])

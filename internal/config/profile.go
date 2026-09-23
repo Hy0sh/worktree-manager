@@ -2,17 +2,14 @@ package config
 
 import (
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 )
 
-// ServicesFor resolves a profile name to the compose services a stack starts.
-// nil means every service, which is what a project without profiles, and a
-// worktree naming none, has always done.
-//
-// The list is a floor and not an exact set: `compose up -d db backend` also
-// brings up whatever backend declares in depends_on. Leaving a service out
-// only keeps it down when nothing running depends on it.
+// ServicesFor resolves a profile to the services a stack starts, nil for all.
+// The list is a floor: `compose up -d db backend` also starts backend's
+// depends_on, so leaving a service out keeps it down only if nothing needs it.
 func (p Project) ServicesFor(name string) ([]string, error) {
 	if name == "" {
 		return nil, nil
@@ -42,10 +39,5 @@ func (p Project) ServicesFor(name string) ([]string, error) {
 // ProfileNames lists what a project offers, sorted so the completion and the
 // error above agree from one call to the next.
 func (p Project) ProfileNames() []string {
-	names := make([]string, 0, len(p.Profiles))
-	for name := range p.Profiles {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
+	return slices.Sorted(maps.Keys(p.Profiles))
 }

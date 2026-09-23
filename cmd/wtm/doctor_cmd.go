@@ -3,7 +3,9 @@ package main
 import (
 	"context"
 	"fmt"
+	"maps"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"text/tabwriter"
@@ -28,12 +30,7 @@ func (a *app) reportPortClashes() {
 			continue // no compose file, or a directory that moved: nothing to compute
 		}
 		stride := stack.Stride(p.Dir)
-		branches := make([]string, 0, len(p.WorktreeIndices))
-		for branch := range p.WorktreeIndices {
-			branches = append(branches, branch)
-		}
-		sort.Strings(branches)
-		for _, branch := range branches {
+		for _, branch := range slices.Sorted(maps.Keys(p.WorktreeIndices)) {
 			allocations, err := stack.Allocate(services, p.WorktreeIndices[branch], stride, p.PortOffset)
 			if err != nil {
 				continue
@@ -47,23 +44,23 @@ func (a *app) reportPortClashes() {
 			}
 		}
 	}
-	if clashes := portClashes(holders); len(clashes) > 0 {
-		fmt.Fprintln(a.out)
-		fmt.Fprintln(a.out, "port clashes between projects (those stacks cannot run at the same time):")
-		for _, line := range clashes {
-			fmt.Fprintf(a.out, "  %s\n", line)
-		}
-		fmt.Fprintln(a.out, "  offsets are handed out once, at registration: keep those stacks from running together, or")
-		fmt.Fprintln(a.out, "  raise `port_offset` for one project in config.json and recreate its worktrees, whose .env carry the old ports")
+	a.section("port clashes between projects (those stacks cannot run at the same time):", portClashes(holders),
+		"offsets are handed out once, at registration: keep those stacks from running together, or",
+		"raise `port_offset` for one project in config.json and recreate its worktrees, whose .env carry the old ports")
+	a.section("port clashes between worktrees of one project (those two cannot run at the same time):", intraProjectClashes(holders),
+		"the stride is too small for ports that sit close together: set `portStride` in the project's",
+		".wtcrc.json above their spread, then recreate the worktrees, whose .env carry the old ports")
+}
+
+// section prints one report of the diagnosis, and nothing at all without lines.
+func (a *app) section(title string, lines []string, hints ...string) {
+	if len(lines) == 0 {
+		return
 	}
-	if clashes := intraProjectClashes(holders); len(clashes) > 0 {
-		fmt.Fprintln(a.out)
-		fmt.Fprintln(a.out, "port clashes between worktrees of one project (those two cannot run at the same time):")
-		for _, line := range clashes {
-			fmt.Fprintf(a.out, "  %s\n", line)
-		}
-		fmt.Fprintln(a.out, "  the stride is too small for ports that sit close together: set `portStride` in the project's")
-		fmt.Fprintln(a.out, "  .wtcrc.json above their spread, then recreate the worktrees, whose .env carry the old ports")
+	fmt.Fprintln(a.out)
+	fmt.Fprintln(a.out, title)
+	for _, l := range slices.Concat(lines, hints) {
+		fmt.Fprintf(a.out, "  %s\n", l)
 	}
 }
 
@@ -118,7 +115,7 @@ func (a *app) liveProjects(ctx context.Context, names []string) []repoWorktrees 
 		// A project with no compose file starts no stack, so none of its
 		// worktrees ever gets an index and nothing docker holds can be theirs:
 		// counting them would hold back every report below, forever.
-		if _, err := compose.Base(p.Dir); err != nil {
+		if !compose.Has(p.Dir) {
 			unindexed = nil
 		}
 		// A worktree still standing where a branch was recorded did not vanish:
@@ -162,15 +159,8 @@ func (a *app) reportDrifted(rws []repoWorktrees) {
 				rw.Name, p.WorktreeIndices[branch], branch, p.WorktreePaths[branch]))
 		}
 	}
-	if len(lines) == 0 {
-		return
-	}
-	fmt.Fprintln(a.out)
-	fmt.Fprintln(a.out, "worktrees whose branch was switched (their stack still answers to the old name):")
-	for _, l := range lines {
-		fmt.Fprintf(a.out, "  %s\n", l)
-	}
-	fmt.Fprintln(a.out, "  nothing to clean: address that stack by its recorded branch, or move the worktree back to it")
+	a.section("worktrees whose branch was switched (their stack still answers to the old name):", lines,
+		"nothing to clean: address that stack by its recorded branch, or move the worktree back to it")
 }
 
 func (a *app) reportStaleIndices(stale []staleIndex) {
@@ -179,21 +169,13 @@ func (a *app) reportStaleIndices(stale []staleIndex) {
 		lines = append(lines, fmt.Sprintf("%s: index %d is recorded for %s, which has no worktree", s.Project, s.Index, s.Branch))
 		cmds = append(cmds, fmt.Sprintf("wtm remove %s %s", s.Project, s.Branch))
 	}
-	if len(lines) == 0 {
-		return
-	}
-	fmt.Fprintln(a.out)
-	fmt.Fprintln(a.out, "recorded indices with no worktree behind them (each pushes new worktrees one index further out):")
-	for _, l := range lines {
-		fmt.Fprintf(a.out, "  %s\n", l)
-	}
-	fmt.Fprintf(a.out, "  release them with `%s`\n", strings.Join(cmds, "`, `"))
+	a.section("recorded indices with no worktree behind them (each pushes new worktrees one index further out):", lines,
+		fmt.Sprintf("release them with `%s`", strings.Join(cmds, "`, `")))
 }
 
-// reportUnindexed names the worktrees the registry holds no index for, and
-// says what their presence costs. Every leftover report below holds back for
-// their whole project, which used to happen without a word: doctor answered
-// "nothing" where it meant "cannot tell".
+// reportUnindexed names the worktrees the registry holds no index for. Every
+// leftover report holds back for their whole project, which used to happen
+// without a word: doctor answered "nothing" where it meant "cannot tell".
 func (a *app) reportUnindexed(rws []repoWorktrees) {
 	var lines []string
 	for _, rw := range rws {
@@ -201,40 +183,28 @@ func (a *app) reportUnindexed(rws []repoWorktrees) {
 			lines = append(lines, fmt.Sprintf("%s: %s", rw.Name, branch))
 		}
 	}
-	if len(lines) == 0 {
-		return
-	}
-	fmt.Fprintln(a.out)
-	fmt.Fprintln(a.out, "worktrees with no recorded index, which holds back every leftover report of their project")
-	fmt.Fprintln(a.out, "(a stack of theirs cannot be told from one a removed worktree left):")
-	for _, l := range lines {
-		fmt.Fprintf(a.out, "  %s\n", l)
-	}
-	fmt.Fprintln(a.out, "  `wtm start <branch>` records the index, `wtm remove <branch>` takes the worktree out")
+	a.section("worktrees with no recorded index, which holds back every leftover report of their project\n"+
+		"(a stack of theirs cannot be told from one a removed worktree left):", lines,
+		"`wtm start <branch>` records the index, `wtm remove <branch>` takes the worktree out")
 }
 
 // reportOrphanStacks lists the containers of worktrees that no longer exist.
 // The index allocator sees them and refuses their index; until this report,
 // nothing told the developer, so `wtm clean` said "done" and left them running.
 func (a *app) reportOrphanStacks(orphans []orphanStack) {
-	if len(orphans) == 0 {
-		return
-	}
-	fmt.Fprintln(a.out)
-	fmt.Fprintf(a.out, "%d stack(s) of removed worktrees, still holding their containers "+
-		"and the indices their ports came from:\n", len(orphans))
-	cmds := make([]string, 0, len(orphans))
+	var lines, cmds []string
 	for _, o := range orphans {
-		fmt.Fprintf(a.out, "  %s\n", o.Stack)
+		lines = append(lines, o.Stack)
 		cmds = append(cmds, fmt.Sprintf("docker compose -p %s down --volumes", o.Stack))
 	}
-	fmt.Fprintf(a.out, "  take them down with `%s`\n", strings.Join(cmds, "`, `"))
+	a.section(fmt.Sprintf("%d stack(s) of removed worktrees, still holding their containers "+
+		"and the indices their ports came from:", len(lines)), lines,
+		fmt.Sprintf("take them down with `%s`", strings.Join(cmds, "`, `")))
 }
 
-// reportAbandonedWorktrees lists the directories git has forgotten. `wtm clean`
-// leaves them deliberately: their administrative directory is gone, so nothing
-// can read whether they hold uncommitted work, and deleting somebody's checkout
-// is not a sweep's call. They also make `wtm create` refuse the branch.
+// reportAbandonedWorktrees lists the directories git has forgotten, which `wtm
+// clean` leaves on purpose: nothing can read whether they hold uncommitted work.
+// They also make `wtm create` refuse the branch.
 func (a *app) reportAbandonedWorktrees(rws []repoWorktrees) {
 	var lines, cmds []string
 	for _, rw := range rws {
@@ -244,32 +214,18 @@ func (a *app) reportAbandonedWorktrees(rws []repoWorktrees) {
 				rw.Name, abandonedBranch(a.cfg.Projects[rw.Name].Dir, path)))
 		}
 	}
-	if len(lines) == 0 {
-		return
-	}
-	fmt.Fprintln(a.out)
-	fmt.Fprintf(a.out, "%d directory(ies) still on disk that git no longer lists as worktrees "+
-		"(`wtm create` refuses their branch):\n", len(lines))
-	for _, l := range lines {
-		fmt.Fprintf(a.out, "  %s\n", l)
-	}
-	fmt.Fprintf(a.out, "  delete them with `%s`, which `wtm clean` will not do "+
-		"(no one can tell any more whether they hold uncommitted work)\n", strings.Join(cmds, "`, `"))
+	a.section(fmt.Sprintf("%d directory(ies) still on disk that git no longer lists as worktrees "+
+		"(`wtm create` refuses their branch):", len(lines)), lines,
+		fmt.Sprintf("delete them with `%s`, which `wtm clean` will not do "+
+			"(no one can tell any more whether they hold uncommitted work)", strings.Join(cmds, "`, `")))
 }
 
 // reportOrphanVolumes lists the volumes of worktrees that no longer exist.
 // They squat the indices their stacks were created at, which pushes every new
 // worktree further out, and nothing else ever mentions them.
 func (a *app) reportOrphanVolumes(orphans []string) {
-	if len(orphans) == 0 {
-		return
-	}
-	fmt.Fprintln(a.out)
-	fmt.Fprintf(a.out, "%d volume(s) of removed worktrees, squatting the indices their ports came from:\n", len(orphans))
-	for _, name := range orphans {
-		fmt.Fprintf(a.out, "  %s\n", name)
-	}
-	fmt.Fprintf(a.out, "  drop them with `docker volume rm %s`\n", strings.Join(orphans, " "))
+	a.section(fmt.Sprintf("%d volume(s) of removed worktrees, squatting the indices their ports came from:", len(orphans)),
+		orphans, fmt.Sprintf("drop them with `docker volume rm %s`", strings.Join(orphans, " ")))
 }
 
 // reportAnonymousVolumes counts what the orphan report cannot see: volumes an
@@ -289,15 +245,8 @@ func (a *app) reportAnonymousVolumes(ctx context.Context) {
 // build for them. A stack builds one image per service, so this list is several
 // times longer than the volume one for the same removed worktrees.
 func (a *app) reportOrphanImages(orphans []string) {
-	if len(orphans) == 0 {
-		return
-	}
-	fmt.Fprintln(a.out)
-	fmt.Fprintf(a.out, "%d image(s) built for removed worktrees, several GB each:\n", len(orphans))
-	for _, name := range orphans {
-		fmt.Fprintf(a.out, "  %s\n", name)
-	}
-	fmt.Fprintf(a.out, "  drop them with `docker rmi %s`\n", strings.Join(orphans, " "))
+	a.section(fmt.Sprintf("%d image(s) built for removed worktrees, several GB each:", len(orphans)),
+		orphans, fmt.Sprintf("drop them with `docker rmi %s`", strings.Join(orphans, " ")))
 }
 
 // buildCache is reported and never removed: buildkit attributes none of it, so

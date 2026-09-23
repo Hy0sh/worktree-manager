@@ -26,7 +26,7 @@ func Write(root, path string, data []byte, perm fs.FileMode) error {
 	if err != nil {
 		return fmt.Errorf("resolving %s: %w", filepath.Dir(path), err)
 	}
-	if dirReal != rootReal && !strings.HasPrefix(dirReal, rootReal+string(os.PathSeparator)) {
+	if !Within(rootReal, dirReal) {
 		return fmt.Errorf("%s resolves outside %s (a symlink the checkout laid down?): move it away and retry", path, root)
 	}
 	// The leaf is written at the resolved directory so the check above and
@@ -40,4 +40,10 @@ func Write(root, path string, data []byte, perm fs.FileMode) error {
 		}
 	}
 	return os.WriteFile(dst, data, perm)
+}
+
+// Within says whether p is root or lies under it. A bare prefix test would let
+// /repo-evil pass for /repo; both paths must be resolved the same way.
+func Within(root, p string) bool {
+	return p == root || strings.HasPrefix(p, root+string(os.PathSeparator))
 }

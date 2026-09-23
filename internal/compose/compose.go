@@ -40,14 +40,10 @@ func Files(dir string) ([]string, error) {
 	return files, nil
 }
 
-// Base is the first compose file docker would read. Its only caller asks
-// whether the project has a stack at all; nothing reads the file itself.
-func Base(dir string) (string, error) {
-	files, err := Files(dir)
-	if err != nil {
-		return "", err
-	}
-	return files[0], nil
+// Has says whether dir holds a compose file, which is whether it has a stack.
+func Has(dir string) bool {
+	_, err := Files(dir)
+	return err == nil
 }
 
 func exists(path string) bool {

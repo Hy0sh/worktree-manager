@@ -29,9 +29,7 @@ func bindProfile(cmd *cobra.Command, a *app, into *string) {
 }
 
 // afterFlags are what create and adopt both offer once the worktree stands: the
-// stack may stay down, the seed may be skipped, and a shell line may play on
-// either side. The verbs differ in how the worktree appears, never in what
-// happens to it next.
+// verbs differ in how the worktree appears, never in what happens to it next.
 type afterFlags struct {
 	noStart      bool
 	noPostCreate bool
@@ -50,9 +48,19 @@ func (f *afterFlags) bind(cmd *cobra.Command, a *app) {
 	bindProfile(cmd, a, &f.profile)
 }
 
-// args adds the shell-line check to a verb's own positional form.
+// args refuses a --run or --exec value that is really a flag. pflag takes
+// whatever follows a long flag as its value, `--` and another flag included,
+// so `--exec --no-start` left --no-start unset.
 func (f *afterFlags) args(form cobra.PositionalArgs) cobra.PositionalArgs {
-	return shellLineArgs(&f.run, &f.exec, form)
+	return func(cmd *cobra.Command, given []string) error {
+		for _, flag := range [][2]string{{"run", f.run}, {"exec", f.exec}} {
+			if name, value := flag[0], flag[1]; strings.HasPrefix(value, "--") {
+				return fmt.Errorf("--%s takes a shell line, not %q: quote it "+
+					"(`--%s 'npm run seed'`), it is not an argv after `--`", name, value, name)
+			}
+		}
+		return form(cmd, given)
+	}
 }
 
 // refuse names the one combination that cannot work, before anything is
@@ -153,11 +161,9 @@ func newCreateCmd(a *app) *cobra.Command {
 	return cmd
 }
 
-// releaseVanished frees the indices of worktrees that left outside wtm, which
-// is `wtm clean`'s job everywhere else. A create is where they cost something:
-// the allocator skips a recorded index, so every one of them pushes the new
-// worktree further out, onto ports its neighbours never used. A failure is not
-// the create's, and only worth a line.
+// releaseVanished frees the indices of worktrees that left outside wtm. A create
+// is where they cost something: each recorded one pushes the new worktree onto
+// ports further out. A failure is not the create's, and only worth a line.
 func (a *app) releaseVanished(ctx context.Context, name string) {
 	for _, s := range a.staleIndices(a.liveProjects(ctx, []string{name})) {
 		o := a.options(name, a.cfg.Projects[name], s.Branch)
