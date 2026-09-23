@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
+	"slices"
 	"strings"
 )
 
@@ -101,8 +103,9 @@ func (p *prompter) askYesNo(question string, current bool) (bool, error) {
 // migration container's environment takes.
 func (p *prompter) askPairs(question string, current map[string]string) (map[string]string, error) {
 	p.logf("%s, KEY=VALUE, empty line to stop:", question)
-	for k, v := range current {
-		p.logf("  currently %s=%s", k, v)
+	// The value is left out: a DATABASE_URL carries its password.
+	for _, k := range slices.Sorted(maps.Keys(current)) {
+		p.logf("  currently %s is set", k)
 	}
 	pairs := map[string]string{}
 	for {

@@ -1,6 +1,9 @@
 package config
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func str(s string) *string { return &s }
 func flag(b bool) *bool    { return &b }
@@ -126,5 +129,19 @@ func TestApplyReportsARenamedEmptyEnvVariable(t *testing.T) {
 	}
 	if len(changes) != 1 || changes[0].Field != "env" {
 		t.Fatalf("changes = %+v", changes)
+	}
+}
+
+// `project edit` prints every change, and a DATABASE_URL carries its password.
+func TestApplyReportsEnvKeysNotValues(t *testing.T) {
+	p := Project{Backup: &Backup{Env: map[string]string{"DATABASE_URL": "postgres://u:old-secret@db/x"}}}
+	_, changes := ProjectUpdate{
+		Env: map[string]string{"DATABASE_URL": "postgres://u:new-secret@db/x"},
+	}.Apply(p)
+	if len(changes) != 1 {
+		t.Fatalf("changes = %+v", changes)
+	}
+	if printed := changes[0].From + changes[0].To; strings.Contains(printed, "secret") {
+		t.Fatalf("a value leaked into the change: %+v", changes[0])
 	}
 }
