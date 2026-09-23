@@ -4,8 +4,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
-	"sort"
+	"slices"
 
 	"github.com/Hy0sh/worktree-manager/internal/compose"
 	"github.com/Hy0sh/worktree-manager/internal/config"
@@ -49,7 +50,8 @@ func (m *Manager) migrate(ctx context.Context, p config.Project, cfg config.Back
 	// Keeping the values out of the argument list keeps credentials (these are
 	// often a DATABASE_URL) out of the error messages that quote the command.
 	var env []string
-	for _, k := range sortedKeys(cfg.Env) {
+	// Sorted to keep the generated command stable across runs.
+	for _, k := range slices.Sorted(maps.Keys(cfg.Env)) {
 		args = append(args, "-e", k)
 		env = append(env, k+"="+config.Expand(cfg.Env[k], db))
 	}
@@ -81,16 +83,6 @@ func writeMemOverride(dir, service string) (string, error) {
 		return "", err
 	}
 	return f.Name(), nil
-}
-
-// sortedKeys keeps the generated command stable across runs.
-func sortedKeys(m map[string]string) []string {
-	keys := make([]string, 0, len(m))
-	for k := range m {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	return keys
 }
 
 // withOOMHint turns a bare SIGKILL into something actionable. Replaying the

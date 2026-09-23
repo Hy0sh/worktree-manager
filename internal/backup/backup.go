@@ -35,7 +35,12 @@ type Manager struct {
 }
 
 func (m *Manager) DumpPath(name string) string {
-	return filepath.Join(m.Root, name, name+".dump")
+	return DumpPath(m.Root, name)
+}
+
+// DumpPath is for the readers holding a backups root and no Manager.
+func DumpPath(root, name string) string {
+	return filepath.Join(root, name, name+".dump")
 }
 
 func (m *Manager) MetaPath(name string) string {

@@ -189,7 +189,7 @@ func copyEnvFiles(root, dest string, mode provisionMode, logf func(string, ...an
 				logf("warning: %s is a symlink whose target is missing, not copied", rel)
 				return nil
 			}
-			if target != rootReal && !strings.HasPrefix(target, rootReal+string(os.PathSeparator)) {
+			if !safefile.Within(rootReal, target) {
 				logf("warning: %s links outside the project (%s), not copied", rel, target)
 				return nil
 			}

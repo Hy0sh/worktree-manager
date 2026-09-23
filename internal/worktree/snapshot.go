@@ -52,7 +52,7 @@ func ensureDBFileCopy(o Options, dest string, cfg config.Backup) error {
 	if err := config.ValidateRelativePath("db_path", cfg.DBPath); err != nil {
 		return err
 	}
-	src := filepath.Join(o.BackupsDir, o.Name, o.Name+".dump")
+	src := backup.DumpPath(o.BackupsDir, o.Name)
 	if _, err := os.Stat(src); err != nil {
 		o.logf("no dump yet: the database starts empty, run `wtm backup refresh %s` to build one", o.Name)
 		return nil

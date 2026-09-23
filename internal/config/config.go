@@ -5,9 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"os"
 	"path/filepath"
-	"sort"
+	"slices"
 	"strings"
 )
 
@@ -72,12 +73,7 @@ func (c *Config) NextPortOffset() int {
 }
 
 func (c *Config) Names() []string {
-	names := make([]string, 0, len(c.Projects))
-	for name := range c.Projects {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
+	return slices.Sorted(maps.Keys(c.Projects))
 }
 
 // Has reports whether a name is registered, which is how the CLI tells a

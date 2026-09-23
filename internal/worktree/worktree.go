@@ -17,6 +17,7 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 	"github.com/Hy0sh/worktree-manager/internal/gitx"
 	"github.com/Hy0sh/worktree-manager/internal/index"
+	"github.com/Hy0sh/worktree-manager/internal/safefile"
 	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
 
@@ -77,7 +78,7 @@ var errStackNotStarted = errors.New("stack not started")
 func (o Options) dest() (string, error) {
 	root := stack.WorktreesRoot(o.Project.Dir)
 	dest := filepath.Join(root, o.Branch)
-	if dest != root && !strings.HasPrefix(dest, root+string(os.PathSeparator)) {
+	if !safefile.Within(root, dest) {
 		return "", fmt.Errorf("invalid branch name %q: the worktree would land outside %s", o.Branch, root)
 	}
 	if dest == root {

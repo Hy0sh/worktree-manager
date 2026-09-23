@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"maps"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -29,12 +30,7 @@ func (a *app) reportPortClashes() {
 			continue // no compose file, or a directory that moved: nothing to compute
 		}
 		stride := stack.Stride(p.Dir)
-		branches := make([]string, 0, len(p.WorktreeIndices))
-		for branch := range p.WorktreeIndices {
-			branches = append(branches, branch)
-		}
-		sort.Strings(branches)
-		for _, branch := range branches {
+		for _, branch := range slices.Sorted(maps.Keys(p.WorktreeIndices)) {
 			allocations, err := stack.Allocate(services, p.WorktreeIndices[branch], stride, p.PortOffset)
 			if err != nil {
 				continue

@@ -2,7 +2,8 @@ package config
 
 import (
 	"fmt"
-	"sort"
+	"maps"
+	"slices"
 	"strings"
 )
 
@@ -42,10 +43,5 @@ func (p Project) ServicesFor(name string) ([]string, error) {
 // ProfileNames lists what a project offers, sorted so the completion and the
 // error above agree from one call to the next.
 func (p Project) ProfileNames() []string {
-	names := make([]string, 0, len(p.Profiles))
-	for name := range p.Profiles {
-		names = append(names, name)
-	}
-	sort.Strings(names)
-	return names
+	return slices.Sorted(maps.Keys(p.Profiles))
 }
