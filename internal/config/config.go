@@ -101,7 +101,7 @@ func (c *Config) Get(name string) (Project, error) {
 
 func (c *Config) ResolveCurrent(repoRoot string) (string, Project, error) {
 	for _, name := range c.Names() {
-		if samePath(c.Projects[name].Dir, repoRoot) {
+		if SamePath(c.Projects[name].Dir, repoRoot) {
 			return name, c.Projects[name], nil
 		}
 	}
@@ -119,9 +119,9 @@ func (c *Config) BaseBranchFor(p Project) string {
 	return FallbackBaseBranch
 }
 
-// samePath compares directories, tolerating trailing slashes and the symlinked
-// temp directories macOS hands out.
-func samePath(a, b string) bool {
+// SamePath compares directories, tolerating trailing slashes and the symlinked
+// temp directories macOS hands out, which git and the shell spell differently.
+func SamePath(a, b string) bool {
 	a, b = filepath.Clean(a), filepath.Clean(b)
 	if a == b {
 		return true

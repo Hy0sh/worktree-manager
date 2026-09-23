@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/Hy0sh/worktree-manager/internal/compose"
 	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 	"github.com/Hy0sh/worktree-manager/internal/gitx"
@@ -253,7 +254,7 @@ func adoptTarget(ctx context.Context, o *Options) (stack.Worktree, error) {
 			"name a branch, or run this from the worktree to adopt", cur.Path)
 	}
 	for _, wt := range all {
-		if sameDir(wt.Path, cur.Path) {
+		if config.SamePath(wt.Path, cur.Path) {
 			o.Branch = wt.Branch
 			return wt, nil
 		}
@@ -274,17 +275,6 @@ func removeArtifacts(o Options, dest string) {
 	if err := stack.StripEnvOverrides(dest); err != nil {
 		o.logf("warning: the port block could not be taken out of %s/.env: %v", dest, err)
 	}
-}
-
-// sameDir compares two paths git and the shell can spell differently: macOS
-// hands out symlinked temporary directories, and only the resolved forms match.
-func sameDir(a, b string) bool {
-	if filepath.Clean(a) == filepath.Clean(b) {
-		return true
-	}
-	ra, errA := filepath.EvalSymlinks(a)
-	rb, errB := filepath.EvalSymlinks(b)
-	return errA == nil && errB == nil && ra == rb
 }
 
 // Start brings an existing worktree's stack back up. Without it, restarting a
@@ -308,7 +298,7 @@ func Stop(ctx context.Context, o Options) error {
 	if err != nil {
 		return err
 	}
-	if !hasCompose(o.Project.Dir) {
+	if !compose.Has(o.Project.Dir) {
 		o.logf("no compose file in this project: no stack to stop")
 		return nil
 	}
@@ -358,7 +348,7 @@ func Remove(ctx context.Context, o Options) error {
 	}
 
 	stackKnown := false
-	if hasCompose(o.Project.Dir) {
+	if compose.Has(o.Project.Dir) {
 		switch err := o.resolveIndex(ctx, &wt, index.MustExist); {
 		case errors.Is(err, index.ErrNoIndex):
 			o.logf("no stack was ever started for %s: removing the worktree alone", o.Branch)
@@ -452,7 +442,7 @@ func removeAbandoned(ctx context.Context, o Options, listErr error) error {
 // is gone, so the repository stands in, since -p alone finds it by label.
 func releaseStale(ctx context.Context, o Options, n int) error {
 	wt := stack.Worktree{Index: n, Branch: o.Branch}
-	if hasCompose(o.Project.Dir) {
+	if compose.Has(o.Project.Dir) {
 		// A stack still running is not a leftover. Switching branches inside a
 		// worktree drops its old name out of `git worktree list` while its
 		// containers keep carrying it, so the worktree reads as vanished while

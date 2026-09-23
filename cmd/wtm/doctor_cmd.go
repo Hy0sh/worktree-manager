@@ -119,7 +119,7 @@ func (a *app) liveProjects(ctx context.Context, names []string) []repoWorktrees 
 		// A project with no compose file starts no stack, so none of its
 		// worktrees ever gets an index and nothing docker holds can be theirs:
 		// counting them would hold back every report below, forever.
-		if _, err := compose.Base(p.Dir); err != nil {
+		if !compose.Has(p.Dir) {
 			unindexed = nil
 		}
 		// A worktree still standing where a branch was recorded did not vanish:

@@ -83,7 +83,7 @@ func removeSwept(ctx context.Context, o Options, wt stack.Worktree, s sweep) {
 func start(ctx context.Context, o Options, dest string) error {
 	// A repository without a compose file simply has no stack. The worktree is
 	// still perfectly usable, so this is a note and not a failure.
-	if !hasCompose(o.Project.Dir) {
+	if !compose.Has(o.Project.Dir) {
 		o.logf("no compose file in this project: no stack to start, the worktree is ready")
 		return nil
 	}
@@ -147,11 +147,6 @@ func logEndpoints(o Options, wt stack.Worktree) {
 	for _, line := range endpoints(o, wt) {
 		o.logf("  %s", line)
 	}
-}
-
-func hasCompose(projectDir string) bool {
-	_, err := compose.Base(projectDir)
-	return err == nil
 }
 
 // projectName is the compose project of a worktree stack, which isolates its
