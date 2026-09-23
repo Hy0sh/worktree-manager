@@ -352,6 +352,21 @@ func TestCreateRefusesABranchGitWouldReadAsAnOption(t *testing.T) {
 	}
 }
 
+// A branch name reaches `git fetch <remote> <branch>`, where `+main:victim`
+// force-resets victim to the remote's main, unpushed commits and all.
+func TestCreateRefusesABranchGitWouldReadAsARefspec(t *testing.T) {
+	f := newFixture(t)
+	o := f.opts("+main:victim")
+	o.NoStart = true
+	err := Create(context.Background(), o)
+	if err == nil || !strings.Contains(err.Error(), "invalid branch name") {
+		t.Fatalf("got %v", err)
+	}
+	if len(f.fake.Calls) != 0 {
+		t.Fatalf("nothing should run, got %v", f.fake.Lines())
+	}
+}
+
 // Claude Code locks the worktrees it creates, and git refuses a locked one even
 // with a single --force, so the removal used to fail after the stack had
 // already been taken down.

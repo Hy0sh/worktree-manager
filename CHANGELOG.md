@@ -18,7 +18,9 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   refname, and one named `--upload-pack=<cmd>` handed to `git fetch` runs
   `<cmd>` against a local remote; a teammate's branch reaches the base through
   `create --from-here`. A bare `-` as the base, which git read as the previous
-  branch, is refused with them.
+  branch, is refused with them. So is a branch carrying a character git never
+  allows in one (`: ~ ^ ? * [ \` or a space): `+main:victim` reached `git fetch`
+  as a refspec and force-reset `victim` to the remote's `main`.
 - `wtm project edit` and the stepper print env keys, never their values: a
   `DATABASE_URL` carries its password, and agents run wtm with transcripts on.
 - `wtm doctor` reads at most 64 KiB from the module proxy and prints the

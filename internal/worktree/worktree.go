@@ -84,12 +84,24 @@ func (o Options) dest() (string, error) {
 	return dest, nil
 }
 
-// refuseOptionLike stops a branch name git would read as an option: a refname
-// may start with `-`, and `--upload-pack=<cmd>` handed to `git fetch` runs <cmd>.
+// refuseOptionLike stops a name git would read as an option: a refname may
+// start with `-`, and `--upload-pack=<cmd>` handed to `git fetch` runs <cmd>.
 func refuseOptionLike(names ...string) error {
 	for _, n := range names {
 		if strings.HasPrefix(n, "-") {
 			return fmt.Errorf("invalid branch name %q: git would read it as an option", n)
+		}
+	}
+	return nil
+}
+
+// refuseRefspec stops a branch name `git fetch` would read as a refspec:
+// `+main:victim` force-resets victim. No branch git can create carries these.
+// A base is a revision, where `main~3` is legitimate, so it is not checked here.
+func refuseRefspec(names ...string) error {
+	for _, n := range names {
+		if strings.ContainsAny(n, ":~^?*[\\ \t\n") {
+			return fmt.Errorf("invalid branch name %q: git refuses these characters in a branch", n)
 		}
 	}
 	return nil
@@ -103,6 +115,9 @@ func (o Options) logf(format string, args ...any) {
 
 func Create(ctx context.Context, o Options) error {
 	if err := refuseOptionLike(o.Branch, o.Base); err != nil {
+		return err
+	}
+	if err := refuseRefspec(o.Branch); err != nil {
 		return err
 	}
 	dest, err := o.dest()
