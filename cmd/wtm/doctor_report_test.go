@@ -66,8 +66,8 @@ func TestOrphanVolumesKeepsWhatALiveWorktreeOwns(t *testing.T) {
 // With no live worktree recorded, everything under the prefix is orphan: that
 // is exactly the state a project left after its worktrees were removed.
 func TestOrphanVolumesReportsAllWhenNothingIsLive(t *testing.T) {
-	orphans := repoWorktrees{Repo: "webshop"}.orphanVolumes([]string{"webshop-wt-1-feat-x_pgdata", "webshop_pgdata"})
-	if len(orphans) != 1 || orphans[0] != "webshop-wt-1-feat-x_pgdata" {
+	orphans := repoWorktrees{Repo: "my-api"}.orphanVolumes([]string{"my-api-wt-1-feat-x_pgdata", "my-api_pgdata"})
+	if len(orphans) != 1 || orphans[0] != "my-api-wt-1-feat-x_pgdata" {
 		t.Fatalf("orphans = %v", orphans)
 	}
 }

@@ -20,7 +20,8 @@ type ProjectUpdate struct {
 	ReadyInterval *string
 	// Profiles replaces the whole set when given, for the same reason Env does:
 	// merging name by name would leave no way to drop a profile.
-	Profiles map[string][]string
+	Profiles            map[string][]string
+	ProfileDescriptions map[string]string
 
 	DBService         *string
 	DBUser            *string
@@ -41,7 +42,8 @@ type ProjectUpdate struct {
 func (u ProjectUpdate) IsEmpty() bool {
 	return u.Dir == nil && u.BaseBranch == nil && u.Dump == nil &&
 		u.GitContainer == nil && u.PostCreate == nil && u.ReadyTimeout == nil &&
-		u.ReadyInterval == nil && u.Profiles == nil && !u.touchesBackup()
+		u.ReadyInterval == nil && u.Profiles == nil && u.ProfileDescriptions == nil &&
+		!u.touchesBackup()
 }
 
 type FieldChange struct {
@@ -79,6 +81,11 @@ func (u ProjectUpdate) Apply(p Project) (Project, []FieldChange) {
 	if u.Profiles != nil && !maps.EqualFunc(p.Profiles, u.Profiles, slices.Equal) {
 		changes = append(changes, FieldChange{"profiles", fmt.Sprint(p.Profiles), fmt.Sprint(u.Profiles)})
 		p.Profiles = u.Profiles
+	}
+	if u.ProfileDescriptions != nil && !maps.Equal(p.ProfileDescriptions, u.ProfileDescriptions) {
+		changes = append(changes, FieldChange{"profile_descriptions",
+			fmt.Sprint(p.ProfileDescriptions), fmt.Sprint(u.ProfileDescriptions)})
+		p.ProfileDescriptions = u.ProfileDescriptions
 	}
 
 	if !u.touchesBackup() {

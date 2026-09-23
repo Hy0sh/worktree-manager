@@ -1,6 +1,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -8,6 +10,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Hy0sh/worktree-manager/internal/config"
+	"github.com/Hy0sh/worktree-manager/internal/execx"
 )
 
 // parsedFlags returns the settings a command line carries, the way create and
@@ -62,13 +65,49 @@ func TestProfileSetRefusesWhatStartWouldRefuseLater(t *testing.T) {
 	}
 }
 
+// What an agent reads to choose: a service a profile pulls in through
+// depends_on is started, not left out, and the description says when to pick.
+func TestProjectProfilesShowsWhatEachStartsAndLeavesOut(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "compose.yaml"), []byte(`services:
+  db: {}
+  mail: {}
+  backend:
+    depends_on: [db, mail]
+  worker:
+    depends_on: [db]
+`), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	cfg := &config.Config{Projects: map[string]config.Project{"myapp": {
+		Dir:                 dir,
+		Profiles:            map[string][]string{"light": {"backend"}},
+		ProfileDescriptions: map[string]string{"light": "anything but the tasks"},
+	}}}
+	a, _, out := newTestApp(t, cfg, "", func(execx.Cmd) (execx.Result, error) { return execx.Result{}, nil })
+
+	cmd := newProjectProfilesCmd(a)
+	if err := cmd.RunE(cmd, []string{"myapp"}); err != nil {
+		t.Fatalf("profiles: %v", err)
+	}
+	for _, want := range []string{
+		"light   backend\n", "plus, through depends_on: db, mail\n", "leaves out: worker\n",
+		"anything but the tasks", "(none)  all 4 services",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("missing %q in:\n%s", want, out.String())
+		}
+	}
+}
+
 // flagForSetting names the flag of every registry field whose flag is not its
 // json name with dashes.
 var flagForSetting = map[string]string{
-	"base_branch":     "base",
-	"deps_command":    "deps",
-	"migrate_command": "migrate",
-	"profiles":        "profile-set",
+	"base_branch":          "base",
+	"deps_command":         "deps",
+	"migrate_command":      "migrate",
+	"profiles":             "profile-set",
+	"profile_descriptions": "profile-description",
 }
 
 // settingsWithoutAFlag are the fields the command line deliberately leaves
