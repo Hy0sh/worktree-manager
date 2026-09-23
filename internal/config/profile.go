@@ -7,13 +7,9 @@ import (
 	"strings"
 )
 
-// ServicesFor resolves a profile name to the compose services a stack starts.
-// nil means every service, which is what a project without profiles, and a
-// worktree naming none, has always done.
-//
-// The list is a floor and not an exact set: `compose up -d db backend` also
-// brings up whatever backend declares in depends_on. Leaving a service out
-// only keeps it down when nothing running depends on it.
+// ServicesFor resolves a profile to the services a stack starts, nil for all.
+// The list is a floor: `compose up -d db backend` also starts backend's
+// depends_on, so leaving a service out keeps it down only if nothing needs it.
 func (p Project) ServicesFor(name string) ([]string, error) {
 	if name == "" {
 		return nil, nil

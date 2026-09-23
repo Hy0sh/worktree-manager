@@ -206,9 +206,8 @@ func unclaimed(all []string, repoName, sep string, live []string) []string {
 }
 
 // unclaimedProjects keeps the compose projects of repoName's worktrees that no
-// live worktree owns. A container's label is the project name itself, where a
-// volume or an image name only starts with it: hence an equality and not the
-// prefix test unclaimed does.
+// live worktree owns. A container label is the project name itself, where a
+// volume or image name only starts with it: equality, not unclaimed's prefix.
 func unclaimedProjects(all []string, repoName string, live []string) []string {
 	prefix := stack.WorktreePrefix(repoName)
 	seen := map[string]bool{}

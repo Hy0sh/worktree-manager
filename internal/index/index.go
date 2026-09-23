@@ -45,7 +45,6 @@ func (r *Resolver) logf(format string, args ...any) {
 	}
 }
 
-// conflicts is Conflicts with the nil check folded in.
 func (r *Resolver) conflicts(n int) string {
 	if r.Conflicts == nil {
 		return ""

@@ -23,13 +23,9 @@ type Client struct {
 	Managed map[string]bool
 }
 
-// Up brings a worktree's stack up. The port assignments live in the .env of
-// the worktree, which docker compose reads from the project directory.
-//
-// services narrows what starts, empty meaning the whole stack. Naming some is
-// additive on a stack already up: compose starts what is missing and leaves
-// the rest running, so a service left out of a profile is added by starting
-// again with a wider one. Taking one away needs a stop first.
+// Up brings a worktree's stack up, its ports read from the worktree's .env.
+// services narrows what starts, empty for all. Naming some is additive on a
+// stack already up, so taking a service away needs a stop first.
 func (c *Client) Up(ctx context.Context, project, worktreeDir string, files, services []string) error {
 	args := []string{"compose", "-p", project, "--project-directory", worktreeDir}
 	for _, f := range files {

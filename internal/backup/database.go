@@ -72,14 +72,9 @@ func (m *Manager) cleanupStarted(ctx context.Context, p config.Project, cfg conf
 	}
 }
 
-// startedServices names what the refresh is answerable for. The database
-// always, since ensureUp brought it up; and with start_dependencies, whatever
-// runs now and did not when the refresh began, which is what `compose run`
-// pulled up behind the application service. The comparison is against what was
-// *running*, not against what had a container: those services usually have a
-// stopped one, and a developer's stopped container is exactly what wtm turns
-// back on. Anything a parallel process started in that window would be swept
-// too, which the refresh lock makes unlikely and a warning survivable.
+// startedServices names what the refresh must take back down: the database, and
+// with start_dependencies whatever runs now and was not *running* before, since
+// `compose run` turns a developer's stopped containers back on.
 func (m *Manager) startedServices(ctx context.Context, p config.Project, cfg config.Backup, wasRunning map[string]bool) []string {
 	started := []string{cfg.DBService}
 	if !cfg.StartDependencies {
@@ -100,7 +95,6 @@ func (m *Manager) startedServices(ctx context.Context, p config.Project, cfg con
 	return append(started, deps...)
 }
 
-// services lists what `compose ps` answers for the given selection.
 func (m *Manager) services(ctx context.Context, p config.Project, args ...string) (map[string]bool, error) {
 	res, err := m.Runner.Run(ctx, execx.Cmd{Name: "docker", Args: append([]string{"compose"}, args...), Dir: p.Dir})
 	if err != nil {

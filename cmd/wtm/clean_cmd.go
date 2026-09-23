@@ -57,10 +57,9 @@ func newCleanCmd(a *app) *cobra.Command {
 					failed = append(failed, fmt.Sprintf("  %s %s: %v", s.Project, s.Branch, err))
 				}
 			}
-			// Releasing an index takes its stack down and sweeps the volumes and
-			// images labelled with it, so part of what was scanned above is gone
-			// already. Dropping that first list would fail on names docker no
-			// longer holds and report a cleanup that in fact went through.
+			// Releasing an index already swept part of what was scanned above:
+			// dropping that first list would fail on names docker no longer holds,
+			// and report as failed a cleanup that went through. Hence a new scan.
 			failed = append(failed, a.downOrphanStacks(ctx, a.orphanStackNames(ctx, rws))...)
 			// After the stacks: a volume a container still mounts refuses to go.
 			failed = append(failed, a.drop(ctx, "volume", []string{"volume", "rm"}, a.orphanVolumeNames(ctx, rws))...)
@@ -76,10 +75,9 @@ func newCleanCmd(a *app) *cobra.Command {
 	return cmd
 }
 
-// reportLeftAlone accounts for what `wtm doctor` reports and this verb does not
-// drop. Without it a machine holding nothing else read doctor naming a finding
-// and clean answering "nothing to clean" one command later, which says the two
-// disagree where in fact one of them declines on purpose.
+// reportLeftAlone accounts for what `wtm doctor` reports and this verb declines
+// on purpose. Without it doctor named a finding and clean answered "nothing to
+// clean" one command later, as if the two disagreed.
 func (a *app) reportLeftAlone(ctx context.Context, rws []repoWorktrees) {
 	var lines []string
 	for _, rw := range rws {
@@ -148,11 +146,9 @@ func cleanQuestion(stale []staleIndex, stacks []orphanStack, volumes, images []s
 	return fmt.Sprintf("clean %s? (no worktree stands behind them)", strings.Join(parts, ", "))
 }
 
-// downOrphanStacks takes down the stacks of worktrees that no longer exist,
-// which is the one leftover a `docker rm` alone cannot settle: the network and
-// the anonymous volumes go with the project. `-p` finds the containers by
-// label, so the registered project's repository only has to be a directory
-// compose can run from, as it does for a stale index.
+// downOrphanStacks takes down the stacks of removed worktrees, whose network and
+// anonymous volumes a `docker rm` cannot settle. `-p` finds the containers by
+// label, so the repository only has to be a directory compose can run from.
 func (a *app) downOrphanStacks(ctx context.Context, orphans []orphanStack) []string {
 	var failed []string
 	for _, o := range orphans {
@@ -162,11 +158,9 @@ func (a *app) downOrphanStacks(ctx context.Context, orphans []orphanStack) []str
 			failed = append(failed, fmt.Sprintf("  stack %s: %v", o.Stack, err))
 			continue
 		}
-		// compose down settles only what it labelled as a service of the
-		// project. A container carrying the project label alone, a `compose
-		// run` leftover or one started by hand on the stack's network, makes it
-		// answer "No resource found to remove" and stay: measured on a stack
-		// whose volume then refused to go, mounted by that very container.
+		// compose down settles only its labelled services. A container carrying
+		// the project label alone (a `compose run` leftover) makes it answer "No
+		// resource found to remove", and keeps the volume that container mounts.
 		if err := a.removeLabelledContainers(ctx, o.Stack); err != nil {
 			failed = append(failed, fmt.Sprintf("  containers of %s: %v", o.Stack, err))
 			continue

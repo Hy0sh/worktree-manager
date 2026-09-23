@@ -34,16 +34,13 @@ type Options struct {
 	RunAfter  string
 	ExecAfter string
 	// Profile is the stack profile this start brings up, empty for the whole
-	// stack. Deliberately not remembered: a worktree that narrowed itself
-	// months ago, with nothing on screen saying so, is a puzzle, and naming it
-	// again is one word.
+	// stack. Deliberately not remembered: a worktree narrowed months ago, with
+	// nothing on screen saying so, is a puzzle, and naming it again is one word.
 	Profile string
 	Force   bool // remove despite uncommitted tracked changes
-	// Inferred says nobody named this branch: `wtm create` releases the indices
-	// of worktrees that left outside wtm before allocating its own. Such a
-	// removal acts on a guess, so it refuses to take down a stack that still
-	// runs; one somebody typed, or that `wtm clean` listed and had confirmed,
-	// gets no such benefit of the doubt and sweeps the leftover it was asked to.
+	// Inferred says nobody named this branch: `wtm create` releasing a vanished
+	// worktree's index acts on a guess, so it refuses to take down a stack that
+	// still runs. A branch somebody typed or confirmed sweeps what it was asked to.
 	Inferred   bool
 	BackupsDir string
 	Runner     execx.Runner
@@ -402,16 +399,9 @@ func forgetPath(o Options) {
 	}
 }
 
-// removeAbandoned deletes a directory git has forgotten: one whose
-// administrative directory was pruned, which hides it from `git worktree list`
-// while `wtm create` still refuses the branch because the destination exists.
-// Between the two, the branch could not be recreated at all.
-//
-// Stack.Abandoned is what says the directory is really orphan, and not a live
-// worktree this branch simply no longer names: a renamed branch leaves git
-// listing the same path under the new name, and deleting it would cost a
-// checkout somebody is working in. listErr, git's own answer, stands whenever
-// the directory is not one of those.
+// removeAbandoned deletes a directory git forgot, which `wtm create` would refuse
+// the branch over forever. Stack.Abandoned tells it from a live worktree git now
+// lists under a renamed branch; for anything else, git's own listErr stands.
 func removeAbandoned(ctx context.Context, o Options, listErr error) error {
 	dest, err := o.dest()
 	if err != nil {
@@ -443,11 +433,9 @@ func removeAbandoned(ctx context.Context, o Options, listErr error) error {
 func releaseStale(ctx context.Context, o Options, n int) error {
 	wt := stack.Worktree{Index: n, Branch: o.Branch}
 	if compose.Has(o.Project.Dir) {
-		// A stack still running is not a leftover. Switching branches inside a
-		// worktree drops its old name out of `git worktree list` while its
-		// containers keep carrying it, so the worktree reads as vanished while
-		// somebody is working in it. This runs on every create, and `--volumes`
-		// would take that worktree's database with it.
+		// A running stack is not a leftover: a branch switched inside a worktree
+		// drops out of `git worktree list` while its containers keep the name, and
+		// this runs on every create, where `--volumes` takes that database along.
 		if ids := runningContainers(ctx, o, wt); o.Inferred && len(ids) > 0 {
 			return fmt.Errorf("branch %s has no worktree, but the stack at index %d still runs %d container(s), "+
 				"which is what a worktree that switched branches looks like: the index is kept and nothing was removed.\n"+

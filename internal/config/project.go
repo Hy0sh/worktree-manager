@@ -21,11 +21,9 @@ type Project struct {
 	// Deriving it from git's listing order, which resorts alphabetically, would
 	// renumber running stacks: the index feeds ports and the compose project name.
 	WorktreeIndices map[string]int `json:"worktree_indices,omitempty"`
-	// Profiles name the subsets of the compose services a stack may start,
-	// e.g. {"light": ["db", "backend", "frontend"]}. Nothing to do with
-	// compose's own profiles, which live in the project's compose file and
-	// state a choice the team made once; these state one a worktree makes,
-	// which is why they live in the registry. No profile starts everything.
+	// Profiles name subsets of the compose services a stack may start, e.g.
+	// {"light": ["db", "backend"]}. Unlike compose's own profiles, a choice the
+	// team made once in the compose file, these are a worktree's: hence here.
 	Profiles map[string][]string `json:"profiles,omitempty"`
 	// ProfileDescriptions say when to pick a profile ("the Celery tasks"),
 	// which its services alone do not; `wtm project profiles` shows them.
@@ -85,11 +83,9 @@ type Backup struct {
 	// MigrateCommand builds the schema, e.g. "python manage.py migrate",
 	// "npx prisma migrate deploy", "mikro-orm migration:up". Required.
 	MigrateCommand string `json:"migrate_command,omitempty"`
-	// StartDependencies brings up what the application service declares in
-	// depends_on for the duration of the refresh. Off by default: a migration
-	// only ever talks to the database. A migrate_command that also seeds may
-	// need more — object storage, a cache, a search index — and fails without
-	// it. The refresh takes back down whatever it started.
+	// StartDependencies brings up the application service's depends_on for the
+	// refresh, for a migrate_command that also seeds and needs a cache or object
+	// storage. Off by default; the refresh takes down whatever it started.
 	StartDependencies bool `json:"start_dependencies,omitempty"`
 	// MigrationsPath is the git pathspec of the migration files, used to tell
 	// whether a dump has fallen behind. The default matches the layout of

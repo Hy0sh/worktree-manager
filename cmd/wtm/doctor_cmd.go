@@ -173,10 +173,9 @@ func (a *app) reportStaleIndices(stale []staleIndex) {
 		fmt.Sprintf("release them with `%s`", strings.Join(cmds, "`, `")))
 }
 
-// reportUnindexed names the worktrees the registry holds no index for, and
-// says what their presence costs. Every leftover report below holds back for
-// their whole project, which used to happen without a word: doctor answered
-// "nothing" where it meant "cannot tell".
+// reportUnindexed names the worktrees the registry holds no index for. Every
+// leftover report holds back for their whole project, which used to happen
+// without a word: doctor answered "nothing" where it meant "cannot tell".
 func (a *app) reportUnindexed(rws []repoWorktrees) {
 	var lines []string
 	for _, rw := range rws {
@@ -203,10 +202,9 @@ func (a *app) reportOrphanStacks(orphans []orphanStack) {
 		fmt.Sprintf("take them down with `%s`", strings.Join(cmds, "`, `")))
 }
 
-// reportAbandonedWorktrees lists the directories git has forgotten. `wtm clean`
-// leaves them deliberately: their administrative directory is gone, so nothing
-// can read whether they hold uncommitted work, and deleting somebody's checkout
-// is not a sweep's call. They also make `wtm create` refuse the branch.
+// reportAbandonedWorktrees lists the directories git has forgotten, which `wtm
+// clean` leaves on purpose: nothing can read whether they hold uncommitted work.
+// They also make `wtm create` refuse the branch.
 func (a *app) reportAbandonedWorktrees(rws []repoWorktrees) {
 	var lines, cmds []string
 	for _, rw := range rws {

@@ -150,7 +150,6 @@ func replayLine(o Options, verb, command string) string {
 		" -- sh -c " + execx.ShellQuote(command) + "`"
 }
 
-// replayLines prints the pastable line of each command that did not run.
 func replayLines(o Options, verb string, commands ...string) {
 	for _, c := range commands {
 		if c != "" {
