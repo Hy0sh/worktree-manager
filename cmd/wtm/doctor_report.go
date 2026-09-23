@@ -118,14 +118,24 @@ type orphanStack struct {
 // caller cannot tell from a machine that holds no leftovers. That suits all
 // of them: the report has nothing to print, and the cleanup nothing to drop.
 func (a *app) orphanVolumeNames(ctx context.Context, rws []repoWorktrees) []string {
-	res, err := a.runner.Run(ctx, execx.Cmd{Name: "docker", Args: []string{"volume", "ls", "-q"}})
+	return a.orphanNames(ctx, rws, "_", "volume", "ls", "-q")
+}
+
+// An untagged leftover of a rebuild carries no "<project>-<service>" name at
+// all, and stays for `docker image prune`.
+func (a *app) orphanImageNames(ctx context.Context, rws []repoWorktrees) []string {
+	return a.orphanNames(ctx, rws, "-", "images", "--format", "{{.Repository}}")
+}
+
+func (a *app) orphanNames(ctx context.Context, rws []repoWorktrees, sep string, args ...string) []string {
+	res, err := a.runner.Run(ctx, execx.Cmd{Name: "docker", Args: args})
 	if err != nil {
 		return nil
 	}
 	all := strings.Fields(res.Stdout)
 	var out []string
 	for _, rw := range rws {
-		out = append(out, rw.orphanVolumes(all)...)
+		out = append(out, rw.orphans(all, sep)...)
 	}
 	return out
 }
@@ -151,48 +161,23 @@ func (a *app) orphanStackNames(ctx context.Context, rws []repoWorktrees) []orpha
 	return out
 }
 
-func (a *app) orphanImageNames(ctx context.Context, rws []repoWorktrees) []string {
-	res, err := a.runner.Run(ctx, execx.Cmd{
-		Name: "docker",
-		Args: []string{"images", "--format", "{{.Repository}}"},
-	})
-	if err != nil {
-		return nil
-	}
-	all := strings.Fields(res.Stdout)
-	var out []string
-	for _, rw := range rws {
-		out = append(out, rw.orphanImages(all)...)
-	}
-	return out
-}
-
-// Both answer nothing while a worktree of the project has no recorded index: it
-// cannot be turned into the compose project name that would claim its volumes,
-// and a wrong `docker rmi` costs a live worktree.
-func (rw repoWorktrees) orphanVolumes(all []string) []string {
+// orphans answers nothing while a worktree of the project has no recorded index:
+// it cannot be turned into the compose project name that would claim its
+// volumes, and a wrong `docker rmi` costs a live worktree.
+func (rw repoWorktrees) orphans(all []string, sep string) []string {
 	if len(rw.Unindexed) > 0 {
 		return nil
 	}
-	return unclaimed(all, rw.Repo, "_", rw.Live)
+	return unclaimed(all, rw.Repo, sep, rw.Live)
 }
 
-// orphanStacks holds back on an unindexed worktree for the same reason as the
-// two above, and the stake is higher: taking a live worktree's stack down.
+// orphanStacks holds back on an unindexed worktree for the same reason as
+// orphans, and the stake is higher: taking a live worktree's stack down.
 func (rw repoWorktrees) orphanStacks(all []string) []string {
 	if len(rw.Unindexed) > 0 {
 		return nil
 	}
 	return unclaimedProjects(all, rw.Repo, rw.Live)
-}
-
-// An untagged leftover of a rebuild carries no "<project>-<service>" name at
-// all, and stays for `docker image prune`.
-func (rw repoWorktrees) orphanImages(all []string) []string {
-	if len(rw.Unindexed) > 0 {
-		return nil
-	}
-	return unclaimed(all, rw.Repo, "-", rw.Live)
 }
 
 // unclaimed keeps the names built on a worktree project of repoName that none of

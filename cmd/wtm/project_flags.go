@@ -1,6 +1,7 @@
 package main
 
 import (
+	"cmp"
 	"fmt"
 	"strings"
 	"time"
@@ -109,7 +110,7 @@ func (f *projectFlags) update(cmd *cobra.Command) (config.ProjectUpdate, error) 
 		}
 	}
 	if changed("env") {
-		env, err := parseEnv(f.env)
+		env, err := parsePairs("--env", "KEY=VALUE", f.env)
 		if err != nil {
 			return u, err
 		}
@@ -244,13 +245,6 @@ func printChanges(a *app, name string, changes []config.FieldChange) {
 		}
 	}
 	for _, c := range changes {
-		fmt.Fprintf(a.out, "  %-*s  %s -> %s\n", width, c.Field, unsetOr(c.From), unsetOr(c.To))
+		fmt.Fprintf(a.out, "  %-*s  %s -> %s\n", width, c.Field, cmp.Or(c.From, "(unset)"), cmp.Or(c.To, "(unset)"))
 	}
-}
-
-func unsetOr(value string) string {
-	if value == "" {
-		return "(unset)"
-	}
-	return value
 }
