@@ -275,14 +275,14 @@ wtm project create my-app --dir ~/dev/projects/my-app \
   --env 'DB_NAME={{database}}'
 
 # Prisma + bun, differently named database, non-postgres user
-wtm project create webshop --dir ~/dev/projects/webshop \
+wtm project create my-api --dir ~/dev/projects/my-api \
   --dump --db-user appuser --app-service api \
   --deps 'bun install --frozen-lockfile' \
   --migrate 'bunx prisma migrate deploy' \
   --env 'DATABASE_URL=postgresql://appuser:secret@db:5432/{{database}}'
 
 # MikroORM + pnpm, database service named "postgres"
-wtm project create platform --dir ~/dev/projects/platform \
+wtm project create my-service --dir ~/dev/projects/my-service \
   --dump --db-service postgres --app-service api \
   --deps 'pnpm install' \
   --migrate 'pnpm --filter @acme/api migration:up' \

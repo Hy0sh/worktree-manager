@@ -42,11 +42,11 @@ func registered(t *testing.T, a *app) map[string]config.Project {
 
 func TestCreateAsksForTheNameWhenItIsNotGiven(t *testing.T) {
 	dir := repoWithCompose(t)
-	a, err := createWithAnswers(t, dir, "webshop\n", "--dir", dir, "--base", "main")
+	a, err := createWithAnswers(t, dir, "my-api\n", "--dir", dir, "--base", "main")
 	if err != nil {
 		t.Fatalf("create: %v", err)
 	}
-	if _, ok := registered(t, a)["webshop"]; !ok {
+	if _, ok := registered(t, a)["my-api"]; !ok {
 		t.Fatalf("the typed name should be the registry key, got %v", registered(t, a))
 	}
 }
@@ -79,11 +79,11 @@ func TestAskNameRefusesWhatWouldNotDoAsAName(t *testing.T) {
 	var out bytes.Buffer
 	// A directory named "my project" cannot be offered: the name ends up in a
 	// compose project name.
-	name, err := askName(newPrompter(strings.NewReader("webshop\n"), &out), "my project")
+	name, err := askName(newPrompter(strings.NewReader("my-api\n"), &out), "my project")
 	if err != nil {
 		t.Fatalf("askName: %v", err)
 	}
-	if name != "webshop" {
+	if name != "my-api" {
 		t.Fatalf("name = %q", name)
 	}
 	if strings.Contains(out.String(), "my project") {
@@ -92,11 +92,11 @@ func TestAskNameRefusesWhatWouldNotDoAsAName(t *testing.T) {
 
 	// A typed answer gets the same treatment, and the question comes back.
 	out.Reset()
-	name, err = askName(newPrompter(strings.NewReader("no good\nwebshop\n"), &out), "")
+	name, err = askName(newPrompter(strings.NewReader("no good\nmy-api\n"), &out), "")
 	if err != nil {
 		t.Fatalf("askName: %v", err)
 	}
-	if name != "webshop" {
+	if name != "my-api" {
 		t.Fatalf("name = %q", name)
 	}
 	if strings.Count(out.String(), "project name:") != 2 {
