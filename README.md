@@ -38,8 +38,15 @@ go install github.com/Hy0sh/worktree-manager/cmd/wtm@latest
 ```
 
 That puts the binary in `$(go env GOPATH)/bin`, usually `~/go/bin`, which is
-not always on your PATH. Either add it, or send the binary somewhere already on
-it:
+not always on your PATH. Either add it, for your shell:
+
+```sh
+echo 'export PATH="$(go env GOPATH)/bin:$PATH"' >> ~/.zshrc    # zsh
+echo 'export PATH="$(go env GOPATH)/bin:$PATH"' >> ~/.bashrc   # bash
+fish_add_path (go env GOPATH)/bin                              # fish, persists on its own
+```
+
+then open a new terminal. Or send the binary somewhere already on it:
 
 ```sh
 GOBIN=$HOME/.local/bin go install github.com/Hy0sh/worktree-manager/cmd/wtm@latest
