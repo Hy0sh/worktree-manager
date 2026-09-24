@@ -84,28 +84,47 @@ func (p *prompter) askYesNo(question string, current bool) (bool, error) {
 	if current {
 		hint = "Y/n"
 	}
-	fmt.Fprintf(p.out, "%s [%s] ", question, hint)
-	if !p.in.Scan() {
-		fmt.Fprintln(p.out)
-		return false, errNoInput
+	for {
+		fmt.Fprintf(p.out, "%s [%s] ", question, hint)
+		if !p.in.Scan() {
+			fmt.Fprintln(p.out)
+			return false, errNoInput
+		}
+		switch strings.ToLower(strings.TrimSpace(p.in.Text())) {
+		case "":
+			return current, nil
+		case "y", "yes":
+			return true, nil
+		case "n", "no":
+			return false, nil
+		}
+		// Anything else read as no, which switched off a backup for an "oui".
+		p.logf("  answer y or n")
 	}
-	switch strings.ToLower(strings.TrimSpace(p.in.Text())) {
-	case "":
-		return current, nil
-	case "y", "yes":
-		return true, nil
-	default:
-		return false, nil
+}
+
+// explain prints what a question is for above it, for the questions whose
+// wording alone assumes knowing how wtm works.
+func (p *prompter) explain(lines ...string) {
+	for _, line := range lines {
+		p.logf("  # %s", line)
 	}
 }
 
 // askPairs collects KEY=VALUE lines until an empty one, the shape the
-// migration container's environment takes.
-func (p *prompter) askPairs(question string, current map[string]string) (map[string]string, error) {
-	p.logf("%s, KEY=VALUE, empty line to stop:", question)
+// migration container's environment takes. suggested stands in for an empty
+// current, so a plain enter takes it.
+func (p *prompter) askPairs(question string, current, suggested map[string]string) (map[string]string, error) {
+	p.logf("%s, one KEY=VALUE per line, empty line to finish:", question)
 	// The value is left out: a DATABASE_URL carries its password.
 	for _, k := range slices.Sorted(maps.Keys(current)) {
 		p.logf("  currently %s is set", k)
+	}
+	if len(current) == 0 && len(suggested) > 0 {
+		current = suggested
+		for _, k := range slices.Sorted(maps.Keys(suggested)) {
+			p.logf("  suggested from the compose file: %s, its database name replaced by {{database}}; empty line to take it", k)
+		}
 	}
 	pairs := map[string]string{}
 	for {

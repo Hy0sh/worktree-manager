@@ -33,8 +33,22 @@ func newProjectEditCmd(a *app) *cobra.Command {
 				return err
 			}
 			if u.IsEmpty() {
-				if u, err = f.steppedUpdate(a, current); err != nil {
+				in := newPrompter(a.in, a.out)
+				if u, err = f.steppedUpdate(a, in, current); err != nil {
 					return err
+				}
+				_, review := u.Apply(current)
+				if len(review) == 0 {
+					printChanges(a, name, nil)
+					return nil
+				}
+				ok, err := confirmChanges(in, review, true)
+				if err != nil {
+					return err
+				}
+				if !ok {
+					fmt.Fprintf(a.out, "project %s left as it was\n", name)
+					return nil
 				}
 			}
 

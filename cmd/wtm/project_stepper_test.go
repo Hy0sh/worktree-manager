@@ -2,12 +2,14 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/Hy0sh/worktree-manager/internal/config"
+	"github.com/Hy0sh/worktree-manager/internal/execx"
 )
 
 // repoWithCompose is what the stepper points at: a git repository, whose
@@ -41,7 +43,8 @@ type stepperAnswers struct {
 	dbService, dbEngine, dbUser, dbPath string
 	appService, migrate                 string
 	migrationsPath, deps                string
-	startDependencies                   string
+	startDependencies                   string   // only asked of a service with other depends_on
+	userless                            bool     // an engine other than postgres asks no user
 	env                                 []string // pairs, the blank terminator is added
 	postCreate, gitContainer            string
 }
@@ -53,10 +56,13 @@ func (a stepperAnswers) reader() *strings.Reader {
 		// A file-based engine is asked for the file instead of the user.
 		if a.dbPath != "" {
 			lines = append(lines, a.dbPath)
-		} else {
+		} else if !a.userless {
 			lines = append(lines, a.dbUser)
 		}
-		lines = append(lines, a.appService, a.migrate, a.migrationsPath, a.deps, a.startDependencies)
+		lines = append(lines, a.appService, a.migrate, a.migrationsPath, a.deps)
+		if a.startDependencies != "" {
+			lines = append(lines, a.startDependencies)
+		}
 		lines = append(lines, a.env...)
 		lines = append(lines, "")
 	}
@@ -65,7 +71,7 @@ func (a stepperAnswers) reader() *strings.Reader {
 }
 
 func TestStepperFillsAProjectFromScratch(t *testing.T) {
-	dir := repoWithCompose(t)
+	dir := repoWithComposeBody(t, "services:\n  db:\n    image: postgres\n  backend:\n    build: .\n    volumes:\n      - ./.git-container:/app/.git\n")
 	var out bytes.Buffer
 	in := stepperAnswers{
 		dir:          dir,
@@ -78,7 +84,7 @@ func TestStepperFillsAProjectFromScratch(t *testing.T) {
 		gitContainer: "y",
 	}.reader()
 
-	u, err := runProjectStepper(newPrompter(in, &out), config.Project{}, config.FallbackBaseBranch)
+	u, err := runProjectStepper(nil, newPrompter(in, &out), config.Project{}, config.FallbackBaseBranch)
 	if err != nil {
 		t.Fatalf("stepper: %v", err)
 	}
@@ -136,7 +142,7 @@ func TestStepperOnlyChangesWhatIsAnswered(t *testing.T) {
 	}
 	in := stepperAnswers{dbUser: "appuser"}.reader()
 
-	u, err := runProjectStepper(newPrompter(in, new(bytes.Buffer)), current, config.FallbackBaseBranch)
+	u, err := runProjectStepper(nil, newPrompter(in, new(bytes.Buffer)), current, config.FallbackBaseBranch)
 	if err != nil {
 		t.Fatalf("stepper: %v", err)
 	}
@@ -158,15 +164,107 @@ func TestStepperOnlyChangesWhatIsAnswered(t *testing.T) {
 func TestStepperDetectsTheEngineFromTheComposeImage(t *testing.T) {
 	dir := repoWithComposeBody(t, "services:\n  db:\n    image: mysql:8.4\n  backend:\n    build: .\n")
 	// The engine is left empty on purpose: the detected mysql is the default.
-	in := stepperAnswers{dir: dir, base: "main", dump: "y",
-		appService: "backend", migrate: "migrate", gitContainer: "n"}.reader()
+	in := stepperAnswers{dir: dir, base: "main", dump: "y", userless: true,
+		appService: "backend", migrate: "migrate"}.reader()
 
-	u, err := runProjectStepper(newPrompter(in, new(bytes.Buffer)), config.Project{}, config.FallbackBaseBranch)
+	u, err := runProjectStepper(nil, newPrompter(in, new(bytes.Buffer)), config.Project{}, config.FallbackBaseBranch)
 	if err != nil {
 		t.Fatalf("stepper: %v", err)
 	}
 	if u.DBEngine == nil || *u.DBEngine != "mysql" {
 		t.Fatalf("engine = %q, the compose image says mysql", *u.DBEngine)
+	}
+	// mysql connects as root: a user question would be one nothing reads.
+	if u.DBUser != nil {
+		t.Fatalf("no user should be asked for mysql, got %q", *u.DBUser)
+	}
+}
+
+// A database service not called "db" is found by its image: offering "db"
+// there had the refresh look for a service the compose file does not declare.
+func TestStepperOffersTheServiceRunningADatabaseImage(t *testing.T) {
+	dir := repoWithComposeBody(t, "services:\n  php:\n    build: .\n  database:\n    image: postgres:17\n")
+	in := stepperAnswers{dir: dir, base: "main", dump: "y",
+		appService: "php", migrate: "migrate"}.reader()
+
+	u, err := runProjectStepper(nil, newPrompter(in, new(bytes.Buffer)), config.Project{}, config.FallbackBaseBranch)
+	if err != nil {
+		t.Fatalf("stepper: %v", err)
+	}
+	if u.DBService == nil || *u.DBService != "database" {
+		t.Fatalf("db_service = %v, the postgres image runs in database", u.DBService)
+	}
+}
+
+// The migration service is picked among the compose services, the database
+// left out, and a name that is none of them is questioned before it is kept.
+func TestStepperOffersTheComposeServicesForTheMigrations(t *testing.T) {
+	dir := repoWithComposeBody(t, "services:\n  api:\n    build: .\n  postgres:\n    image: postgres:17\n  redis:\n    image: redis\n")
+	var out bytes.Buffer
+	in := stepperAnswers{dir: dir, base: "main", dump: "y",
+		appService: "backend\napi", // not a service, then corrected
+		migrate:    "migrate"}.reader()
+
+	u, err := runProjectStepper(nil, newPrompter(in, &out), config.Project{}, config.FallbackBaseBranch)
+	if err != nil {
+		t.Fatalf("stepper: %v", err)
+	}
+	if u.AppService == nil || *u.AppService != "api" {
+		t.Fatalf("app_service = %v", u.AppService)
+	}
+	if !strings.Contains(out.String(), "service running the migrations (api, redis)") {
+		t.Fatalf("the choices should be the services minus the database:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "backend is not a service") {
+		t.Fatalf("the unknown service should be flagged:\n%s", out.String())
+	}
+}
+
+// What the compose file and the repository already say is offered, so a
+// Symfony project is registered on enters: the user its postgres image
+// creates, the one service built from the repository, the Doctrine command,
+// the DATABASE_URL it reads, and start_dependencies only because of a redis.
+func TestStepperOffersWhatTheProjectAlreadySays(t *testing.T) {
+	dir := repoWithComposeBody(t, `services:
+  php:
+    build: .
+    depends_on: [database, redis]
+    environment:
+      DATABASE_URL: postgresql://app:secret@database:5432/app?serverVersion=17
+  database:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: app
+  redis:
+    image: redis
+`)
+	if err := os.MkdirAll(filepath.Join(dir, "bin"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "bin", "console"), nil, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	var out bytes.Buffer
+	in := stepperAnswers{dir: dir, base: "main", dump: "y", startDependencies: "n"}.reader()
+
+	u, err := runProjectStepper(nil, newPrompter(in, &out), config.Project{}, config.FallbackBaseBranch)
+	if err != nil {
+		t.Fatalf("stepper: %v", err)
+	}
+	p, _ := u.Apply(config.Project{})
+	b := p.BackupConfig()
+	if b.DBUser != "app" || b.AppService != "php" || b.MigrateCommand != "php bin/console doctrine:migrations:migrate --no-interaction" {
+		t.Fatalf("backup = %+v", b)
+	}
+	if want := "postgresql://app:secret@database:5432/{{database}}?serverVersion=17"; b.Env["DATABASE_URL"] != want {
+		t.Fatalf("DATABASE_URL = %q, want %q", b.Env["DATABASE_URL"], want)
+	}
+	if !strings.Contains(out.String(), "php also depends on redis") {
+		t.Fatalf("the other dependencies should be named:\n%s", out.String())
+	}
+	// The password stays off the terminal, suggestion or not.
+	if strings.Contains(out.String(), "secret") {
+		t.Fatalf("the DATABASE_URL value must not be printed:\n%s", out.String())
 	}
 }
 
@@ -175,11 +273,11 @@ func TestStepperDetectsTheEngineFromTheComposeImage(t *testing.T) {
 func TestStepperAsksAgainForAnUnknownEngine(t *testing.T) {
 	dir := repoWithCompose(t)
 	var out bytes.Buffer
-	in := stepperAnswers{dir: dir, base: "main", dump: "y",
+	in := stepperAnswers{dir: dir, base: "main", dump: "y", userless: true,
 		dbEngine:   "oracle\nmariadb", // unknown, then corrected
-		appService: "backend", migrate: "migrate", gitContainer: "n"}.reader()
+		appService: "backend", migrate: "migrate"}.reader()
 
-	u, err := runProjectStepper(newPrompter(in, &out), config.Project{}, config.FallbackBaseBranch)
+	u, err := runProjectStepper(nil, newPrompter(in, &out), config.Project{}, config.FallbackBaseBranch)
 	if err != nil {
 		t.Fatalf("stepper: %v", err)
 	}
@@ -199,9 +297,9 @@ func TestStepperAsksForTheFileInsteadOfTheUserOnSQLite(t *testing.T) {
 	in := stepperAnswers{dir: dir, base: "main", dump: "y",
 		dbEngine:   "sqlite",
 		dbPath:     "../evil.db\nvar/app.db", // escaping, then corrected
-		appService: "backend", migrate: "migrate", gitContainer: "n"}.reader()
+		appService: "backend", migrate: "migrate"}.reader()
 
-	u, err := runProjectStepper(newPrompter(in, &out), config.Project{}, config.FallbackBaseBranch)
+	u, err := runProjectStepper(nil, newPrompter(in, &out), config.Project{}, config.FallbackBaseBranch)
 	if err != nil {
 		t.Fatalf("stepper: %v", err)
 	}
@@ -219,14 +317,30 @@ func TestStepperAsksForTheFileInsteadOfTheUserOnSQLite(t *testing.T) {
 	}
 }
 
+// The .git-container question means nothing to a project whose compose file
+// never mounts the git-dir, so it is not asked there, and nothing is recorded.
+func TestStepperSkipsTheGitContainerQuestionWithoutAGitMount(t *testing.T) {
+	dir := repoWithCompose(t)
+	var out bytes.Buffer
+	in := stepperAnswers{dir: dir, base: "main", dump: "n"}.reader()
+
+	u, err := runProjectStepper(nil, newPrompter(in, &out), config.Project{}, config.FallbackBaseBranch)
+	if err != nil {
+		t.Fatalf("stepper: %v", err)
+	}
+	if u.GitContainer != nil || strings.Contains(out.String(), ".git-container") {
+		t.Fatalf("the question should not be asked:\n%s", out.String())
+	}
+}
+
 // A mistyped path is caught while the user is still there to fix it.
 func TestStepperAsksAgainForADirectoryThatDoesNotExist(t *testing.T) {
 	dir := repoWithCompose(t)
 	var out bytes.Buffer
 	in := stepperAnswers{dir: filepath.Join(dir, "nope") + "\n" + dir, // missing, then corrected
-		base: "main", dump: "n", gitContainer: "n"}.reader()
+		base: "main", dump: "n"}.reader()
 
-	u, err := runProjectStepper(newPrompter(in, &out), config.Project{}, config.FallbackBaseBranch)
+	u, err := runProjectStepper(nil, newPrompter(in, &out), config.Project{}, config.FallbackBaseBranch)
 	if err != nil {
 		t.Fatalf("stepper: %v", err)
 	}
@@ -245,10 +359,10 @@ func TestStepperAnswersGetTheSameValidationAsFlags(t *testing.T) {
 	dir := repoWithCompose(t)
 	a := &app{cfg: &config.Config{}, out: new(bytes.Buffer), in: stepperAnswers{
 		dir: dir, base: "main", dump: "y",
-		appService: "my Backend", // invalid identifier for the migration service
-		migrate:    "migrate", gitContainer: "n"}.reader()}
+		appService: "my Backend\n", // invalid identifier, kept past the not-a-service warning
+		migrate:    "migrate"}.reader()}
 	f := &projectFlags{}
-	_, err := f.steppedUpdate(a, config.Project{})
+	_, err := f.steppedUpdate(a, newPrompter(a.in, a.out), config.Project{})
 	if err == nil || !strings.Contains(err.Error(), "application service") {
 		t.Fatalf("prompt answers must pass the flag path's validation, got %v", err)
 	}
@@ -262,9 +376,9 @@ func TestStepperRefusesADirectoryThatIsNotAGitRepository(t *testing.T) {
 	repo := repoWithCompose(t)
 	var out bytes.Buffer
 	in := stepperAnswers{dir: plain + "\n" + repo, // not a repository, then corrected
-		base: "main", dump: "n", gitContainer: "n"}.reader()
+		base: "main", dump: "n"}.reader()
 
-	u, err := runProjectStepper(newPrompter(in, &out), config.Project{}, config.FallbackBaseBranch)
+	u, err := runProjectStepper(nil, newPrompter(in, &out), config.Project{}, config.FallbackBaseBranch)
 	if err != nil {
 		t.Fatalf("stepper: %v", err)
 	}
@@ -278,7 +392,7 @@ func TestStepperRefusesADirectoryThatIsNotAGitRepository(t *testing.T) {
 
 // Nothing to read means nothing to ask: the stepper stops instead of looping.
 func TestStepperStopsWhenTheInputIsClosed(t *testing.T) {
-	if _, err := runProjectStepper(newPrompter(strings.NewReader(""), new(bytes.Buffer)), config.Project{}, config.FallbackBaseBranch); err == nil {
+	if _, err := runProjectStepper(nil, newPrompter(strings.NewReader(""), new(bytes.Buffer)), config.Project{}, config.FallbackBaseBranch); err == nil {
 		t.Fatal("a closed input should end the stepper")
 	}
 }
@@ -289,9 +403,9 @@ func TestStepperStopsWhenTheInputIsClosed(t *testing.T) {
 func TestStepperKeepsTheBaseBranchInheritedWhenNothingIsTyped(t *testing.T) {
 	dir := repoWithCompose(t)
 	var out bytes.Buffer
-	in := stepperAnswers{dir: dir, dump: "n", gitContainer: "n"}.reader()
+	in := stepperAnswers{dir: dir, dump: "n"}.reader()
 
-	u, err := runProjectStepper(newPrompter(in, &out), config.Project{}, "main")
+	u, err := runProjectStepper(nil, newPrompter(in, &out), config.Project{}, "main")
 	if err != nil {
 		t.Fatalf("stepper: %v", err)
 	}
@@ -307,14 +421,48 @@ func TestStepperKeepsTheBaseBranchInheritedWhenNothingIsTyped(t *testing.T) {
 // Typing one still records it: inheriting is the default, not the only option.
 func TestStepperRecordsATypedBaseBranch(t *testing.T) {
 	dir := repoWithCompose(t)
-	in := stepperAnswers{dir: dir, base: "release", dump: "n", gitContainer: "n"}.reader()
+	in := stepperAnswers{dir: dir, base: "release", dump: "n"}.reader()
 
-	u, err := runProjectStepper(newPrompter(in, new(bytes.Buffer)), config.Project{}, "main")
+	u, err := runProjectStepper(nil, newPrompter(in, new(bytes.Buffer)), config.Project{}, "main")
 	if err != nil {
 		t.Fatalf("stepper: %v", err)
 	}
 	if u.BaseBranch == nil || *u.BaseBranch != "release" {
 		t.Fatalf("base_branch = %v", u.BaseBranch)
+	}
+}
+
+// A pathspec no tracked file matches would report the dump up to date forever,
+// so the stepper says so; typing it again keeps it, since the migrations may
+// simply not be committed yet.
+func TestStepperWarnsAboutAMigrationsPathMatchingNothing(t *testing.T) {
+	for name, tc := range map[string]struct {
+		lsFiles error
+		warned  bool
+	}{
+		"matches":      {nil, false},
+		"matches none": {errors.New("error: pathspec did not match any file"), true},
+	} {
+		dir := repoWithCompose(t)
+		var out bytes.Buffer
+		fake := &execx.Fake{Handler: func(execx.Cmd) (execx.Result, error) { return execx.Result{}, tc.lsFiles }}
+		answer := "src/Entity/*"
+		if tc.warned {
+			answer += "\n" // then enter, which keeps it
+		}
+		in := stepperAnswers{dir: dir, base: "main", dump: "y",
+			appService: "backend", migrate: "migrate", migrationsPath: answer}.reader()
+
+		u, err := runProjectStepper(fake, newPrompter(in, &out), config.Project{}, config.FallbackBaseBranch)
+		if err != nil {
+			t.Fatalf("%s: stepper: %v", name, err)
+		}
+		if u.MigrationsPath == nil || *u.MigrationsPath != "src/Entity/*" {
+			t.Fatalf("%s: migrations_path = %v", name, u.MigrationsPath)
+		}
+		if got := strings.Contains(out.String(), "matches no file"); got != tc.warned {
+			t.Fatalf("%s: warned = %v, want %v:\n%s", name, got, tc.warned, out.String())
+		}
 	}
 }
 
@@ -325,9 +473,9 @@ func TestStepperRecordsAMigrationsPathThatDiffersFromTheDefault(t *testing.T) {
 	dir := repoWithCompose(t)
 	in := stepperAnswers{dir: dir, base: "main", dump: "y",
 		appService: "backend", migrate: "rails db:migrate",
-		migrationsPath: "db/migrate/*", gitContainer: "n"}.reader()
+		migrationsPath: "db/migrate/*"}.reader()
 
-	u, err := runProjectStepper(newPrompter(in, new(bytes.Buffer)), config.Project{}, config.FallbackBaseBranch)
+	u, err := runProjectStepper(nil, newPrompter(in, new(bytes.Buffer)), config.Project{}, config.FallbackBaseBranch)
 	if err != nil {
 		t.Fatalf("stepper: %v", err)
 	}

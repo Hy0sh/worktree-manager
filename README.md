@@ -355,11 +355,37 @@ there yet: a database being worked in is never overwritten.
 None of this has to be known in advance: `wtm project create <name>` without
 `--dir`, and `wtm project edit <name>` without any flag, ask one question at a
 time, offer the services found in the project's compose file, and only bring up
-the migration command once the backup is enabled. Every question defaults to
-what the project already has, so editing is a run of empty answers plus the one
-field being changed. Flags and questions mix: what is passed on the command
-line becomes the answer offered by default. `--no-input` turns a missing value
-into an error rather than a question, for scripts and CI.
+the migration command once the backup is enabled. The questions that assume
+knowing how wtm works come with a line saying what they are for. Every question
+defaults to what the project already has, so editing is a run of empty answers
+plus the one field being changed. Flags and questions mix: what is passed on the
+command line becomes the answer offered by default. `--no-input` turns a missing
+value into an error rather than a question, for scripts and CI.
+
+The project answers what it can, and each answer becomes the default offered:
+
+| Question | Read from |
+|---|---|
+| repository directory | the repository the command runs in |
+| base branch | its local branches, listed when there are eight or fewer |
+| database service | the service running a database image, whatever it is called |
+| database engine | that image |
+| database user | `POSTGRES_USER` in its compose environment; not asked for the other engines, which connect as root |
+| service running the migrations | the one service built from the repository (`build:`), with the others listed |
+| migration command and pathspec | the framework, from `manage.py`, `bin/console`, `artisan`, `bin/rails`, `prisma/schema.prisma` or `alembic.ini` at the root |
+| services besides the database | only asked when the service depends on others, named in the question |
+| variables | the database variables the service's compose `environment:` sets, the name replaced by `{{database}}` |
+| `.git-container` | only asked when a volume mounts `.git` | The walk ends on a summary of what the answers change, saved only
+once confirmed; `create` then prints the next commands to run.
+
+What the backup questions ask, for a Symfony project whose database service is
+called `database`:
+
+| Question | What it is for | Typical answer |
+|---|---|---|
+| git pathspec of the migration files | Nothing is run from it: a commit touching these files marks the dump stale. A project without migration files, its schema synced from the code, names what defines the schema instead. | Enter: `*migrations/*` covers `migrations/` |
+| does the migration command need services besides the database? | The migration runs next to the database alone; `y` when it also reaches a cache, object storage or a search index. | `n` |
+| variables pointing the migration at that database | The migration targets a temporary database; `{{database}}` stands for its name. | `DATABASE_URL=postgresql://app:app@database:5432/{{database}}?serverVersion=17` |
 
 `wtm project edit` never touches the port offset nor the recorded worktree
 indices, which is what re-registering a project would do: every running stack
@@ -373,7 +399,10 @@ project that names none follows `default_base_branch` from `config.json`, and
 branches off something else.
 
 `--git-container` is only useful for projects whose compose bind-mounts the
-git-dir into a container; left off, it creates nothing.
+git-dir into a container: in a worktree `.git` is a pointer file Docker on macOS
+cannot mount, so wtm links `.git-container` to the real git-dir. Left off, it
+creates nothing, and the stepper only asks about it when a volume in the compose
+file mounts `.git` or `.git-container`.
 
 `backup list` also reports how far each dump has fallen behind, by counting the
 commits touching migrations since the revision recorded next to it, and `create`

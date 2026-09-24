@@ -103,3 +103,22 @@ func TestAskNameRefusesWhatWouldNotDoAsAName(t *testing.T) {
 		t.Fatalf("the question should come back once:\n%s", out.String())
 	}
 }
+
+// A walk through the questions ends on a summary: declining it writes nothing,
+// so a wrong enter costs a rerun rather than a `project remove`.
+func TestSteppedCreateSavesOnlyOnceConfirmed(t *testing.T) {
+	dir := repoWithCompose(t)
+	for answer, want := range map[string]bool{"n": false, "": true} {
+		// directory, base, backup, post_create, name, then the summary
+		a, err := createWithAnswers(t, dir, dir+"\nmain\nn\n\nmy-api\n"+answer+"\n")
+		if err != nil {
+			t.Fatalf("create: %v", err)
+		}
+		if _, ok := registered(t, a)["my-api"]; ok != want {
+			t.Fatalf("summary answered %q: registered = %v, want %v", answer, ok, want)
+		}
+		if !strings.Contains(a.out.(*bytes.Buffer).String(), "Summary") {
+			t.Fatalf("the summary should be shown:\n%s", a.out)
+		}
+	}
+}
