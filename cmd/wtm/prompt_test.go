@@ -55,9 +55,18 @@ func TestAskYesNoDefaultsToTheCurrentSetting(t *testing.T) {
 	}
 }
 
+// An answer that is neither yes nor no is asked again: reading it as no
+// turned an "oui" into a backup switched off.
+func TestAskYesNoAsksAgainOnAnUnknownAnswer(t *testing.T) {
+	got, err := answering("oui", "y").askYesNo("enable?", false)
+	if err != nil || !got {
+		t.Fatalf("got %v, err %v", got, err)
+	}
+}
+
 func TestAskPairsReadsUntilAnEmptyLine(t *testing.T) {
 	p := answering("DB_NAME={{database}}", "not-a-pair", "DEBUG=1", "")
-	got, err := p.askPairs("environment", nil)
+	got, err := p.askPairs("environment", nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -69,11 +78,19 @@ func TestAskPairsReadsUntilAnEmptyLine(t *testing.T) {
 // Answering nothing at all leaves the variables the project already had.
 func TestAskPairsKeepsTheCurrentSetWhenNothingIsTyped(t *testing.T) {
 	current := map[string]string{"DB_NAME": "{{database}}"}
-	got, err := answering("").askPairs("environment", current)
+	got, err := answering("").askPairs("environment", current, map[string]string{"OTHER": "x"})
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(got) != 1 || got["DB_NAME"] != "{{database}}" {
 		t.Fatalf("pairs = %v", got)
+	}
+}
+
+// A project with nothing set yet takes the suggestion on a plain enter.
+func TestAskPairsTakesTheSuggestionWhenNothingIsSet(t *testing.T) {
+	got, err := answering("").askPairs("environment", nil, map[string]string{"DB_NAME": "{{database}}"})
+	if err != nil || got["DB_NAME"] != "{{database}}" {
+		t.Fatalf("pairs = %v, err %v", got, err)
 	}
 }

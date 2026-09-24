@@ -6,6 +6,43 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Changed
+
+- The `wtm project create` and `wtm project edit` questions are grouped under
+  headings, and the ones that assumed knowing wtm (the migrations pathspec, the
+  services besides the database, the environment of the migration) say what
+  they are for, with a `DATABASE_URL` example next to `DB_NAME`.
+- The walk ends on a summary of what the answers change, written only once
+  confirmed. An edit that changes nothing says so without asking. `create`
+  then prints the next commands: `backup refresh` when the backup is on, and
+  `create <branch>`.
+- The database service offered by default is the one running a database image,
+  where it used to be `db` even for a compose file that has none.
+- The database and migration service questions list the compose services to
+  pick from, the database left out of the second, and flag a name that is none
+  of them. Typing it again keeps it, for a service declared in a file wtm does
+  not read.
+- The questions offer what the project already says: the repository the
+  command runs in, its local branches, the `POSTGRES_USER` of the database
+  service, the one service built from the repository, the migration command of
+  the framework found at the root (Django, Symfony, Laravel, Rails, Prisma,
+  Alembic), and the database variables the service's compose environment sets,
+  the name replaced by `{{database}}`.
+- The database user is only asked for postgres: mysql, mariadb and mongodb
+  connect as root and never read it. The services besides the database are
+  only asked about when the migration service depends on others, named then.
+- The migrations pathspec is checked against the files git tracks, and one
+  matching none is flagged: no commit would ever touch it, so the dump would
+  read as up to date forever. Typing it again keeps it. The question also says
+  what to give for a schema synced from the code, e.g. `src/Entity/*`.
+- The `.git-container` question is asked only when a compose volume mounts
+  `.git` or `.git-container`, or to turn the setting off.
+
+### Fixed
+
+- A yes/no question answered with anything but `y`, `yes`, `n` or `no` is asked
+  again. `oui` used to read as no.
+
 ## [0.17.1] - 2026-09-24
 
 ### Security

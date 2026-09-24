@@ -3,6 +3,7 @@ package main
 import (
 	"cmp"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -219,15 +220,23 @@ func warnPinnedContainers(p config.Project, logf func(string, ...any)) {
 // steppedUpdate walks the questions, unless the command was told not to ask,
 // then applies the same gate the flag path gets in update(): answers typed at
 // the prompt land in generated files too.
-func (f *projectFlags) steppedUpdate(a *app, current config.Project) (config.ProjectUpdate, error) {
+func (f *projectFlags) steppedUpdate(a *app, p *prompter, current config.Project) (config.ProjectUpdate, error) {
 	if f.noInput {
 		return config.ProjectUpdate{}, fmt.Errorf("nothing to do: pass the settings as flags, or drop --no-input to be asked")
 	}
-	u, err := runProjectStepper(newPrompter(a.in, a.out), current, a.cfg.BaseBranchFor(config.Project{}))
+	u, err := runProjectStepper(a.runner, p, current, a.cfg.BaseBranchFor(config.Project{}))
 	if err != nil {
 		return u, err
 	}
 	return u, validateUpdate(u)
+}
+
+// confirmChanges shows what the answers amount to before anything is written:
+// a dozen questions in, one wrong enter is easier to catch in a table.
+func confirmChanges(p *prompter, changes []config.FieldChange, withFrom bool) (bool, error) {
+	p.logf("\nSummary")
+	writeChanges(p.out, changes, withFrom)
+	return p.askYesNo("save?", true)
 }
 
 // printChanges reports what the edit did, field by field, so adding a backup
@@ -238,6 +247,12 @@ func printChanges(a *app, name string, changes []config.FieldChange) {
 		return
 	}
 	fmt.Fprintf(a.out, "project %s updated\n", name)
+	writeChanges(a.out, changes, true)
+}
+
+// writeChanges leaves the old value out for a registration, where it is
+// always unset.
+func writeChanges(out io.Writer, changes []config.FieldChange, withFrom bool) {
 	width := 0
 	for _, c := range changes {
 		if len(c.Field) > width {
@@ -245,6 +260,10 @@ func printChanges(a *app, name string, changes []config.FieldChange) {
 		}
 	}
 	for _, c := range changes {
-		fmt.Fprintf(a.out, "  %-*s  %s -> %s\n", width, c.Field, cmp.Or(c.From, "(unset)"), cmp.Or(c.To, "(unset)"))
+		if withFrom {
+			fmt.Fprintf(out, "  %-*s  %s -> %s\n", width, c.Field, cmp.Or(c.From, "(unset)"), cmp.Or(c.To, "(unset)"))
+		} else {
+			fmt.Fprintf(out, "  %-*s  %s\n", width, c.Field, c.To)
+		}
 	}
 }

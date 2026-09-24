@@ -35,13 +35,18 @@ func newProjectCreateCmd(a *app) *cobra.Command {
 			}
 			// The repository is the one thing a project cannot do without, so
 			// its absence is what tells a scripted call from a bare one.
+			// One prompter for the whole session: a second one would lose what
+			// the first buffered.
+			in := newPrompter(a.in, a.out)
 			p, _ := u.Apply(config.Project{})
+			var review []config.FieldChange
 			if u.Dir == nil {
-				stepped, err := f.steppedUpdate(a, p)
+				stepped, err := f.steppedUpdate(a, in, p)
 				if err != nil {
 					return err
 				}
 				p, _ = stepped.Apply(p)
+				_, review = stepped.Apply(config.Project{})
 			}
 			// Asked once the directory is known, whether it came from a flag or
 			// from the stepper, because that is what the answer defaults to.
@@ -50,8 +55,19 @@ func newProjectCreateCmd(a *app) *cobra.Command {
 					return fmt.Errorf("name the project, as in `wtm project create my-app`, " +
 						"or drop --no-input to be asked")
 				}
-				if name, err = askName(newPrompter(a.in, a.out), filepath.Base(p.Dir)); err != nil {
+				if name, err = askName(in, filepath.Base(p.Dir)); err != nil {
 					return err
+				}
+			}
+			if review != nil {
+				review = append([]config.FieldChange{{Field: "name", To: name}}, review...)
+				ok, err := confirmChanges(in, review, false)
+				if err != nil {
+					return err
+				}
+				if !ok {
+					fmt.Fprintln(a.out, "nothing registered")
+					return nil
 				}
 			}
 			// The stepper asks for the engine; a flags-only registration gets
@@ -75,6 +91,18 @@ func newProjectCreateCmd(a *app) *cobra.Command {
 			fmt.Fprintf(a.out, "project %s registered (%s)\n", name, p.Dir)
 			if p.PortOffset > 0 {
 				fmt.Fprintf(a.out, "ports shifted by %d so they do not clash with the other projects\n", p.PortOffset)
+			}
+			next := [][2]string{{"wtm create " + name + " <branch>", "cuts a worktree with its own stack"}}
+			if p.Dump {
+				next = append([][2]string{{"wtm backup refresh " + name, "builds the dump new worktrees restore"}}, next...)
+			}
+			width := 0
+			for _, n := range next {
+				width = max(width, len(n[0]))
+			}
+			fmt.Fprintln(a.out, "next:")
+			for _, n := range next {
+				fmt.Fprintf(a.out, "  %-*s  %s\n", width, n[0], n[1])
 			}
 			return nil
 		},
