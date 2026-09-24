@@ -6,6 +6,8 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-09-24
+
 ### Changed
 
 - The `wtm project create` and `wtm project edit` questions are grouped under
@@ -1040,7 +1042,8 @@ First tagged release. The whole worktree lifecycle behind one binary:
   identical so worktrees created with it keep working.
 - A project without a compose file is not an error, there is simply no stack.
 
-[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.17.1...HEAD
+[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.17.1...v0.18.0
 [0.17.1]: https://github.com/Hy0sh/worktree-manager/compare/v0.17.0...v0.17.1
 [0.17.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.16.0...v0.17.0
 [0.16.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.15.0...v0.16.0
