@@ -69,6 +69,35 @@ func newRunCmd(a *app) *cobra.Command {
 	}
 }
 
+func newPortsCmd(a *app) *cobra.Command {
+	return &cobra.Command{
+		Use:   "ports [project] <branch>",
+		Short: "Prints the addresses of the worktree's stack",
+		Long: "Prints one line per published port, service then address, the same\n" +
+			"lines `wtm start` prints, for whoever works on a stack it did not start.",
+		Args:              needArgs(1, 2, "name the branch, as in `wtm ports feat/my-branch`"),
+		ValidArgsFunction: a.completeTargets,
+		SilenceUsage:      true,
+		SilenceErrors:     true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			o, err := a.optionsFor(args)
+			if err != nil {
+				return err
+			}
+			// Read by scripts as well, which a diagnosis line would feed a bogus address.
+			o.Stack.Out = io.Discard
+			lines, err := worktree.Ports(cmd.Context(), o)
+			if err != nil {
+				return err
+			}
+			for _, l := range lines {
+				fmt.Fprintln(a.out, l)
+			}
+			return nil
+		},
+	}
+}
+
 func newPathCmd(a *app) *cobra.Command {
 	return &cobra.Command{
 		Use:               "path [project] <branch>",
