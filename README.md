@@ -159,6 +159,7 @@ wtm run feat/my-branch -- claude
 wtm run feat/my-branch -- git status
 wtm run feat/my-branch -- scripts/some-compose-script.sh
 cd $(wtm path feat/my-branch)
+wtm ports feat/my-branch             # the addresses `start` printed, one service per line
 
 # database backup
 wtm backup refresh my-app            # starts the db if needed, and stops it again after

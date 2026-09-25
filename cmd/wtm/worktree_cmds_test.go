@@ -215,7 +215,7 @@ func TestATypoedProjectNameIsNotTakenForABranch(t *testing.T) {
 	f := newAllFixture(t, "")
 	commands := map[string]func(*app) *cobra.Command{
 		"start": newStartCmd, "stop": newStopCmd, "remove": newRemoveCmd,
-		"path": newPathCmd, "exec": newExecCmd, "run": newRunCmd,
+		"path": newPathCmd, "ports": newPortsCmd, "exec": newExecCmd, "run": newRunCmd,
 	}
 	for verb, build := range commands {
 		args := []string{"myap", "feat/a"}

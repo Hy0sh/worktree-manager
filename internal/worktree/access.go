@@ -46,6 +46,20 @@ func Path(ctx context.Context, o Options) (string, error) {
 	return wt.Path, nil
 }
 
+// Ports returns the addresses `start` prints, for a process handed a stack it
+// did not start. The profile it was started with is not recorded, so every
+// published port is listed.
+func Ports(ctx context.Context, o Options) ([]string, error) {
+	wt, err := o.Stack.FindByBranch(ctx, o.Branch)
+	if err != nil {
+		return nil, err
+	}
+	if err := o.resolveIndex(ctx, &wt, index.MustExist); err != nil {
+		return nil, err
+	}
+	return endpoints(o, wt), nil
+}
+
 // Run is the counterpart of Exec: it stays on the machine, with the worktree as
 // working directory, for editors, agents and anything else working on the files
 // rather than in the running application.

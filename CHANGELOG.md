@@ -6,6 +6,11 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Added
+
+- `wtm ports <branch>` prints the addresses of a worktree's stack, the lines
+  `start` prints, for a process handed a stack it did not start.
+
 ## [0.18.0] - 2026-09-24
 
 ### Changed

@@ -89,6 +89,20 @@ func TestPathReturnsTheWorktreeDirectory(t *testing.T) {
 	}
 }
 
+// Whoever picks up a stack another process started never saw what `start`
+// printed, and needs the same addresses.
+func TestPortsListsTheAddressesStartPrints(t *testing.T) {
+	f := newFixture(t)
+	got, err := Ports(context.Background(), f.opts("feat/x"))
+	if err != nil {
+		t.Fatalf("Ports: %v", err)
+	}
+	want := []string{"db       localhost:25439", "backend  http://localhost:28007"}
+	if !slices.Equal(got, want) {
+		t.Fatalf("Ports =\n  %q\nwant\n  %q", got, want)
+	}
+}
+
 // Run stays on the host, unlike Exec which enters the container.
 func TestRunExecutesOnTheHostFromTheWorktree(t *testing.T) {
 	f := newFixture(t)
