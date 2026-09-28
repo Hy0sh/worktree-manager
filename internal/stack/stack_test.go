@@ -3,6 +3,7 @@ package stack
 import (
 	"context"
 	"io"
+	"slices"
 	"strings"
 	"testing"
 
@@ -21,7 +22,7 @@ func TestUpTargetsTheWorktreeProject(t *testing.T) {
 	f := &execx.Fake{}
 	c, _ := newClient(t, f)
 	files := []string{"/wt/compose.yaml", "/wt/.wtm-snapshot.yaml"}
-	if err := c.Up(context.Background(), "myapp-wt-1-feat-x", "/wt", files, nil); err != nil {
+	if err := c.Up(context.Background(), "myapp-wt-1-feat-x", "/wt", files, []string{"API_PORT=20087"}, nil); err != nil {
 		t.Fatalf("Up: %v", err)
 	}
 	line := f.Lines()[0]
@@ -35,6 +36,9 @@ func TestUpTargetsTheWorktreeProject(t *testing.T) {
 	}
 	if f.Calls[0].Dir != "/wt" {
 		t.Fatalf("must run from the worktree, got %q", f.Calls[0].Dir)
+	}
+	if !slices.Contains(f.Calls[0].Env, "API_PORT=20087") {
+		t.Fatalf("the port variables must reach compose's interpolation, got %q", f.Calls[0].Env)
 	}
 }
 
@@ -67,7 +71,7 @@ func TestUpNamesTheContainerHoldingABusyPort(t *testing.T) {
 		return execx.Result{}, nil
 	}}
 	c := &Client{Runner: f, Dir: "/repo"}
-	err := c.Up(context.Background(), "p", "/repo/wt", nil, nil)
+	err := c.Up(context.Background(), "p", "/repo/wt", nil, nil, nil)
 	if err == nil {
 		t.Fatal("expected the failure")
 	}
@@ -84,7 +88,7 @@ func TestUpLeavesOtherFailuresAlone(t *testing.T) {
 		return execx.Result{}, nil
 	}}
 	c := &Client{Runner: f, Dir: "/repo"}
-	err := c.Up(context.Background(), "p", "/repo/wt", nil, nil)
+	err := c.Up(context.Background(), "p", "/repo/wt", nil, nil, nil)
 	if err == nil || strings.Contains(err.Error(), "published by") {
 		t.Fatalf("no port in that failure, got %v", err)
 	}

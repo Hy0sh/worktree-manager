@@ -6,6 +6,17 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Fixed
+
+- A worktree whose `.env` is versioned gets its port variables everywhere
+  compose reads them, not only in `ports:`. The generated compose file rebased
+  the published ports, but `.env` was left alone and carried none, so
+  `environment: API_URL: http://localhost:${API_PORT}` still pointed the
+  application at the main stack's port. wtm now passes the variables in the
+  environment of `up`, `exec`, `run` and every compose call it makes, which
+  compose prefers to `.env` when interpolating. Commands started by `wtm run`
+  see them too.
+
 ### Added
 
 - A service can state the address it is reached through in a `wtm.url` label,

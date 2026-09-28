@@ -510,7 +510,10 @@ whose database listens on 5432 would land on the same host port; it is assigned
 at registration, and the first project keeps 0 so its existing worktrees are
 untouched. And a `.env` tracked by git is left alone, the generated compose
 file carrying the ports instead, so starting a stack never dirties the
-worktree.
+worktree. The port variables still reach compose through the environment of
+every call wtm makes, which compose reads ahead of `.env`: an
+`environment: API_URL: http://localhost:${API_PORT}` gets the worktree's port
+either way.
 
 ### Addresses behind a proxy
 
