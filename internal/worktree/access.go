@@ -75,6 +75,24 @@ func Run(ctx context.Context, o Options, command []string) error {
 	return runIn(ctx, o, wt, execx.Cmd{Name: command[0], Args: command[1:]})
 }
 
+// Env is the environment `wtm run` sets, for a shell or an editor to load once
+// (`eval "$(wtm env)"`, direnv). The generated compose.override.yaml covers the
+// project name and ports only: interpolated variables need this.
+func Env(ctx context.Context, o Options) ([]string, error) {
+	if !compose.Has(o.Project.Dir) {
+		return nil, fmt.Errorf("no compose file in %s: there is no stack environment to set", o.Project.Dir)
+	}
+	wt, err := o.Stack.FindByBranch(ctx, o.Branch)
+	if err != nil {
+		return nil, err
+	}
+	env := composeEnv(o, wt)
+	if env == nil {
+		return nil, fmt.Errorf("no stack index is recorded for %s: run `wtm start %s` first", o.Branch, o.Branch)
+	}
+	return env, nil
+}
+
 func runIn(ctx context.Context, o Options, wt stack.Worktree, c execx.Cmd) error {
 	c.Dir = wt.Path
 	c.Env = composeEnv(o, wt)

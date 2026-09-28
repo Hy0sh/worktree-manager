@@ -162,7 +162,9 @@ wtm run feat/my-branch -- scripts/some-compose-script.sh
 cd $(wtm path feat/my-branch)       # a bare `docker compose` there reaches the worktree's
                                      # stack too, through a generated compose.override.yaml,
                                      # unless the project has an override of its own
-wtm ports                            # typed from a worktree, ports, path, exec and run take its branch
+eval "$(wtm env feat/my-branch)"     # the same environment as run, for a shell or direnv:
+                                     # the only way a bare compose interpolates ${PORT}s right
+wtm ports                            # typed from a worktree, ports, path, env, exec and run take its branch
 wtm ports feat/my-branch             # the addresses `start` printed, one service per line
 
 # database backup

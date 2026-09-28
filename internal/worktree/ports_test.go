@@ -221,6 +221,33 @@ func TestATrackedEnvStillGivesComposeThePortVariables(t *testing.T) {
 	}
 }
 
+// `wtm env` is for the compose calls the generated override cannot reach: a
+// URL built from ${HTTP_PORT} needs the variable, which no compose file sets.
+func TestEnvHandsAShellWhatRunSets(t *testing.T) {
+	f := newFixture(t)
+	f.envTracked = true
+	mustWrite(t, filepath.Join(f.root, ".env"), "ROOT=1")
+	o := f.opts("feat/x")
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	// This copy of the project predates the index Create recorded.
+	if _, err := Env(context.Background(), o); err == nil || !strings.Contains(err.Error(), "wtm start feat/x") {
+		t.Fatalf("err = %v, want to be told to start the stack first", err)
+	}
+	o.Project.WorktreeIndices = map[string]int{"feat/x": 1}
+	env, err := Env(context.Background(), o)
+	if err != nil {
+		t.Fatalf("Env: %v", err)
+	}
+	for _, want := range []string{"COMPOSE_PROJECT_NAME=" + stack.ProjectName(filepath.Base(f.root), 1, "feat/x"),
+		"BACKEND_PORT=28007", "DB_PORT=25439"} {
+		if !slices.Contains(env, want) {
+			t.Errorf("env = %v, want %q", env, want)
+		}
+	}
+}
+
 // shop's shape: db on 5432, db_test on 5433, no .wtcrc.json so the stride is
 // 1. Index 1 puts db_test on 26434 and index 2 puts db there too.
 func twoDBFixture(t *testing.T) *fixture {

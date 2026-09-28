@@ -3,7 +3,9 @@ package main
 import (
 	"fmt"
 	"io"
+	"strings"
 
+	"github.com/Hy0sh/worktree-manager/internal/execx"
 	"github.com/Hy0sh/worktree-manager/internal/worktree"
 	"github.com/spf13/cobra"
 )
@@ -96,6 +98,41 @@ func newPortsCmd(a *app) *cobra.Command {
 			}
 			for _, l := range lines {
 				fmt.Fprintln(a.out, l)
+			}
+			return nil
+		},
+	}
+}
+
+func newEnvCmd(a *app) *cobra.Command {
+	return &cobra.Command{
+		Use:   "env [project] [branch]",
+		Short: "Prints the environment `wtm run` sets, as export lines",
+		Long: "Prints COMPOSE_PROJECT_NAME, COMPOSE_FILE and the port variables of the\n" +
+			"worktree as export lines, for a shell or an editor started outside wtm:\n" +
+			"a `docker compose` there then interpolates the worktree's ports too, not\n" +
+			"only the name and ports the generated compose.override.yaml carries.\n" +
+			"Typed from a worktree, the branch is its own.\n\n" +
+			"  eval \"$(wtm env)\"\n" +
+			"  echo 'eval \"$(wtm env)\"' > .envrc   # direnv",
+		Args:              needArgs(0, 2, ""),
+		ValidArgsFunction: a.completeTargets,
+		SilenceUsage:      true,
+		SilenceErrors:     true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			o, err := a.optionsFor(args)
+			if err != nil {
+				return err
+			}
+			// Evaluated by a shell, where any other line would run as a command.
+			o.Stack.Out = io.Discard
+			env, err := worktree.Env(cmd.Context(), o)
+			if err != nil {
+				return err
+			}
+			for _, kv := range env {
+				k, v, _ := strings.Cut(kv, "=")
+				fmt.Fprintf(a.out, "export %s=%s\n", k, execx.ShellQuote(v))
 			}
 			return nil
 		},

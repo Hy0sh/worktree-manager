@@ -16,8 +16,12 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 - `wtm list` shows each worktree's compose project, the name `docker compose -p`
   and `docker compose ls` go by, which wtm printed nowhere. The column comes
   before STATUS and PATH, which stay the last two.
-- Typed from a worktree, `wtm ports`, `path`, `exec` and `run` take its branch
-  when none is named: `wtm ports`, `wtm run -- claude`.
+- Typed from a worktree, `wtm ports`, `path`, `env`, `exec` and `run` take its
+  branch when none is named: `wtm ports`, `wtm run -- claude`.
+- `wtm env [branch]` prints what `wtm run` sets as `export` lines, for
+  `eval "$(wtm env)"` or a direnv `.envrc`. The generated override carries the
+  project name and the ports, but no compose file can set an interpolation
+  variable: a URL built from `${HTTP_PORT}` needs this.
 
 ### Fixed
 
@@ -29,7 +33,7 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   the worktree's project name and its rebased ports. A project that has an
   override of its own keeps it, and wtm says a bare compose is not covered
   there. Variables read in `environment:` still come from `.env` on a bare
-  call: only `wtm run` hands compose this worktree's values.
+  call: `wtm run` and `wtm env` hand compose this worktree's values.
 - `create --no-start` allocates the index and writes the compose files, as
   `adopt --no-start` already did. Until the first start, `wtm run` set neither
   `COMPOSE_PROJECT_NAME` nor `COMPOSE_FILE`, without a word, and a
