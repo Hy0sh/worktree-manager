@@ -154,7 +154,8 @@ wtm exec feat/my-branch -- bash
 wtm exec feat/my-branch --service db -- psql -U postgres
 
 # on your machine, from the worktree directory, with COMPOSE_PROJECT_NAME
-# and COMPOSE_FILE pointing at this worktree's stack
+# and COMPOSE_FILE pointing at this worktree's stack, and the port variables
+# (a generic PORT included) set to this worktree's ports
 wtm run feat/my-branch -- claude
 wtm run feat/my-branch -- git status
 wtm run feat/my-branch -- scripts/some-compose-script.sh

@@ -47,7 +47,9 @@ func newRunCmd(a *app) *cobra.Command {
 			"inside the running stack (that is what `wtm exec` is for).\n\n" +
 			"COMPOSE_PROJECT_NAME and COMPOSE_FILE are set, so a script of the project\n" +
 			"calling `docker compose` reaches this worktree's stack and not a stack\n" +
-			"named after the directory.\n\n" +
+			"named after the directory. The port variables are set too, with this\n" +
+			"worktree's ports: a dev server started here that reads a generic one\n" +
+			"such as PORT gets the port the stack already publishes.\n\n" +
 			"  wtm run feat/my-branch -- claude\n" +
 			"  wtm run feat/my-branch -- git status\n" +
 			"  wtm run feat/my-branch -- scripts/some-compose-script.sh",
