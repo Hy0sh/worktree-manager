@@ -123,7 +123,7 @@ func start(ctx context.Context, o Options, dest string) error {
 	if err != nil {
 		return err
 	}
-	if err := o.Stack.Up(ctx, o.projectName(wt), dest, files, services); err != nil {
+	if err := o.Stack.Up(ctx, o.projectName(wt), dest, files, portEnv(o, wt), services); err != nil {
 		return fmt.Errorf("starting the stack: %w", err)
 	}
 	if o.Profile != "" {

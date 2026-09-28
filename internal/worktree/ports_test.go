@@ -5,6 +5,7 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -185,6 +186,38 @@ func TestCreateLeavesATrackedEnvAloneAndSaysSo(t *testing.T) {
 		if strings.Contains(string(gen), unwanted) {
 			t.Fatalf("%s keeps the main stack's port: %q", portsOverride, gen)
 		}
+	}
+}
+
+// The generated file rebases what is published, but a port variable also feeds
+// `environment:` (a front told where its API is), and a versioned .env holds
+// none: compose reads it from wtm's environment instead, on up as on exec.
+func TestATrackedEnvStillGivesComposeThePortVariables(t *testing.T) {
+	f := newFixture(t)
+	f.envTracked = true
+	mustWrite(t, filepath.Join(f.root, ".env"), "ROOT=1")
+	o := f.opts("feat/x")
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	var up execx.Call
+	for _, c := range f.fake.Calls {
+		if strings.Contains(c.Line(), "up -d") {
+			up = c
+		}
+	}
+	for _, want := range []string{"BACKEND_PORT=28007", "DB_PORT=25439"} {
+		if !slices.Contains(up.Env, want) {
+			t.Errorf("up env = %v, want %q", up.Env, want)
+		}
+	}
+
+	o.Project.WorktreeIndices = map[string]int{"feat/x": 1}
+	if err := Run(context.Background(), o, []string{"docker", "compose", "exec", "backend", "env"}); err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if env := f.fake.Calls[len(f.fake.Calls)-1].Env; !slices.Contains(env, "BACKEND_PORT=28007") {
+		t.Errorf("run env = %v, want BACKEND_PORT=28007", env)
 	}
 }
 

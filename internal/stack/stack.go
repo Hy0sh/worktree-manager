@@ -23,10 +23,10 @@ type Client struct {
 	Managed map[string]bool
 }
 
-// Up brings a worktree's stack up, its ports read from the worktree's .env.
-// services narrows what starts, empty for all. Naming some is additive on a
-// stack already up, so taking a service away needs a stop first.
-func (c *Client) Up(ctx context.Context, project, worktreeDir string, files, services []string) error {
+// Up brings a worktree's stack up, env ("API_PORT=20087") interpolating ahead
+// of the worktree's .env. services narrows what starts, empty for all. Naming
+// some is additive on a stack already up, so taking a service away needs a stop first.
+func (c *Client) Up(ctx context.Context, project, worktreeDir string, files, env, services []string) error {
 	args := []string{"compose", "-p", project, "--project-directory", worktreeDir}
 	for _, f := range files {
 		args = append(args, "-f", f)
@@ -37,7 +37,7 @@ func (c *Client) Up(ctx context.Context, project, worktreeDir string, files, ser
 		Name: "docker",
 		Args: args,
 		Dir:  worktreeDir,
-		Env:  []string{"COMPOSE_PROJECT_NAME=" + project},
+		Env:  append([]string{"COMPOSE_PROJECT_NAME=" + project}, env...),
 		Live: true,
 	})
 	if err != nil {

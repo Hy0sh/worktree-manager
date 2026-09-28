@@ -127,8 +127,8 @@ func composeEnv(o Options, wt stack.Worktree) []string {
 	if err != nil {
 		return nil
 	}
-	return []string{
+	return append([]string{
 		"COMPOSE_PROJECT_NAME=" + o.projectName(wt),
 		"COMPOSE_FILE=" + strings.Join(files, string(os.PathListSeparator)),
-	}
+	}, portEnv(o, wt)...)
 }

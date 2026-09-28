@@ -154,7 +154,8 @@ wtm exec feat/my-branch -- bash
 wtm exec feat/my-branch --service db -- psql -U postgres
 
 # on your machine, from the worktree directory, with COMPOSE_PROJECT_NAME
-# and COMPOSE_FILE pointing at this worktree's stack
+# and COMPOSE_FILE pointing at this worktree's stack, and the port variables
+# (a generic PORT included) set to this worktree's ports
 wtm run feat/my-branch -- claude
 wtm run feat/my-branch -- git status
 wtm run feat/my-branch -- scripts/some-compose-script.sh
@@ -510,7 +511,10 @@ whose database listens on 5432 would land on the same host port; it is assigned
 at registration, and the first project keeps 0 so its existing worktrees are
 untouched. And a `.env` tracked by git is left alone, the generated compose
 file carrying the ports instead, so starting a stack never dirties the
-worktree.
+worktree. The port variables still reach compose through the environment of
+every call wtm makes, which compose reads ahead of `.env`: an
+`environment: API_URL: http://localhost:${API_PORT}` gets the worktree's port
+either way.
 
 ### Addresses behind a proxy
 

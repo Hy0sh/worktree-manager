@@ -67,6 +67,23 @@ func allocatePorts(ctx context.Context, o Options, wt stack.Worktree, dest strin
 	return stack.WriteEnvOverrides(dest, allocations)
 }
 
+// portEnv hands compose the port variables of this worktree, which it prefers
+// to the .env when interpolating: a versioned .env carries none of them, and
+// `environment: API_URL: http://localhost:${API_PORT}` then read the main port.
+func portEnv(o Options, wt stack.Worktree) []string {
+	allocations, err := allocations(o, wt)
+	if err != nil {
+		return nil
+	}
+	var env []string
+	for _, a := range allocations {
+		if a.Var != "" {
+			env = append(env, a.Var+"="+strconv.Itoa(a.Port))
+		}
+	}
+	return env
+}
+
 // portClash checks a candidate index against recorded worktrees only, since
 // those are the ones that can run at the same time as the new one. The stride
 // stays put: changing it would move every existing worktree's ports.
