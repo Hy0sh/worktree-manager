@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/Hy0sh/worktree-manager/internal/execx"
@@ -25,7 +26,7 @@ func newExecCmd(a *app) *cobra.Command {
 		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dash := cmd.ArgsLenAtDash()
-			if dash < 0 {
+			if dash < 0 || dash == len(args) {
 				return fmt.Errorf("separate the command with --, as in " +
 					"`wtm exec <branch> -- python manage.py seed_data`")
 			}
@@ -62,13 +63,15 @@ func newRunCmd(a *app) *cobra.Command {
 		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dash := cmd.ArgsLenAtDash()
-			if dash < 0 {
+			if dash < 0 || dash == len(args) {
 				return fmt.Errorf("separate the command with --, as in `wtm run <branch> -- claude`")
 			}
 			o, err := a.optionsFor(args[:dash])
 			if err != nil {
 				return err
 			}
+			// The command's own output owns stdout, piped or redirected.
+			o.Out, o.Stack.Out = os.Stderr, os.Stderr
 			return worktree.Run(cmd.Context(), o, args[dash:])
 		},
 	}

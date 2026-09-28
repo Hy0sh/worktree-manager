@@ -87,8 +87,11 @@ func writeSnapshotOverride(dest, dbService string) error {
 services:
   %s:
     volumes:
-      - ./.db-snapshot:/db-snapshot:ro
-      - ./.db-snapshot/%s:/docker-entrypoint-initdb.d/10-wtm-restore.sh:ro
-`, dbService, backup.RestoreScriptName)
+%s`, dbService, snapshotVolumes())
 	return safefile.Write(dest, filepath.Join(dest, snapshotOverride), []byte(body), 0o644)
+}
+
+func snapshotVolumes() string {
+	return "      - ./.db-snapshot:/db-snapshot:ro\n" +
+		"      - ./.db-snapshot/" + backup.RestoreScriptName + ":/docker-entrypoint-initdb.d/10-wtm-restore.sh:ro\n"
 }

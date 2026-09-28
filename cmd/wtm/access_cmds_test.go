@@ -5,9 +5,24 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 )
+
+// `wtm run feat/x --` names no command, and indexing an empty one panicked.
+func TestRunAndExecRefuseAnEmptyCommand(t *testing.T) {
+	cfg := &config.Config{Projects: map[string]config.Project{"myapp": {Dir: t.TempDir()}}}
+	for verb, build := range map[string]func(*app) *cobra.Command{"run": newRunCmd, "exec": newExecCmd} {
+		a, _, _ := newTestApp(t, cfg, "", func(execx.Cmd) (execx.Result, error) { return execx.Result{}, nil })
+		cmd := build(a)
+		cmd.SetArgs([]string{"feat/x", "--"})
+		if err := cmd.Execute(); err == nil {
+			t.Errorf("`wtm %s feat/x --` should be refused", verb)
+		}
+	}
+}
 
 // Typed from inside a worktree, the branch is the one checked out there:
 // making someone spell it out again only invites naming the wrong one.

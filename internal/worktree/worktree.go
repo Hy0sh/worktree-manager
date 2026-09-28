@@ -172,6 +172,9 @@ func provisionAndStart(ctx context.Context, o Options, dest string, mode provisi
 			// Nothing in a container can run, but a command working on the
 			// files is exactly what a worktree without a stack is good for.
 			o.NoStart = true
+			if _, err := prepareStack(ctx, o, dest); err != nil {
+				return err
+			}
 			runAfter(ctx, o)
 			return nil
 		}
@@ -306,6 +309,12 @@ func removeArtifacts(o Options, dest string) {
 func Start(ctx context.Context, o Options) error {
 	wt, err := o.Stack.FindByBranch(ctx, o.Branch)
 	if err != nil {
+		return err
+	}
+	// A worktree can have lost these since it was created, by an earlier wtm
+	// that did not write them or by a manual cleanup, and docker then fails on a
+	// raw mount error instead of a diagnosis.
+	if err := provision(ctx, o, wt.Path, keepWorktreeCopies); err != nil {
 		return err
 	}
 	// A declined start already said so on its own: the caller has nothing to add.

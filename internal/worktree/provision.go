@@ -191,10 +191,9 @@ func copyEnvFiles(root, dest string, mode provisionMode, logf func(string, ...an
 	})
 }
 
-// linkStaysInside says whether a symlink is worth following. Following a valid
-// one is the point (.env -> .env.local), but only inside the project: a cloned
-// branch controls these links, and a target outside the repository is content
-// the user never put there.
+// linkStaysInside follows a symlink (.env -> .env.local) only inside the
+// project: a cloned branch controls these links, and a target outside the
+// repository is content the user never put there.
 func linkStaysInside(rootReal, path, rel string, logf func(string, ...any)) bool {
 	target, err := filepath.EvalSymlinks(path)
 	if err != nil {
@@ -241,7 +240,13 @@ func copyListed(ctx context.Context, o Options, dest string, mode provisionMode)
 			if err != nil {
 				return err
 			}
+			// Glob walks through a directory symlink in the middle of the pattern,
+			// which the check on the leaf never sees.
+			dir, err := filepath.EvalSymlinks(filepath.Dir(path))
 			switch {
+			case err != nil || !safefile.Within(rootReal, dir):
+				o.logf("warning: %s lies behind a symlink leading out of the project, not copied", rel)
+				continue
 			case info.IsDir():
 				o.logf("warning: %s is a directory, not copied: name the files in it", rel)
 				continue

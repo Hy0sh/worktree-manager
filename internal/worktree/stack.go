@@ -132,14 +132,15 @@ func prepareStack(ctx context.Context, o Options, dest string) (stack.Worktree, 
 	if err := o.resolveIndex(ctx, &wt, index.MayAllocate); err != nil {
 		return wt, err
 	}
-	// A worktree can have lost these since it was created, by an earlier wtm
-	// that did not write them or by a manual cleanup, and docker then fails on a
-	// raw mount error instead of a diagnosis.
-	if err := provision(ctx, o, dest, keepWorktreeCopies); err != nil {
-		return wt, err
-	}
 	if err := ensureSnapshotAssets(o, dest); err != nil {
 		return wt, err
+	}
+	// Without docker the resolver hands out an index it does not record. A stack
+	// started on it is still named after it; files written for later are not.
+	if o.NoStart && o.Resolver.Recorded()[o.Branch] != wt.Index {
+		o.logf("note: docker did not answer, so no index is recorded yet: `wtm start %s` "+
+			"writes the ports and the compose override", o.Branch)
+		return wt, nil
 	}
 	if err := allocatePorts(ctx, o, wt, dest); err != nil {
 		return wt, err
@@ -147,10 +148,9 @@ func prepareStack(ctx context.Context, o Options, dest string) (stack.Worktree, 
 	return wt, writeNameOverride(o, wt, dest)
 }
 
-// writeNameOverride covers the `docker compose` wtm does not run: compose loads
-// this file by itself when COMPOSE_FILE is unset, and its `name:` beats the one
-// a versioned compose file reads from a versioned .env. The ports go along, so
-// a bare `up` does not fight the main stack either.
+// writeNameOverride covers the `docker compose` wtm does not run, which loads
+// this file when COMPOSE_FILE is unset: its `name:` beats the compose file's,
+// and the ports and the dump mount come along.
 func writeNameOverride(o Options, wt stack.Worktree, dest string) error {
 	own := filepath.Join(dest, compose.OverrideNames[0])
 	// Compose loads a single override, the project's own if it has one, and
@@ -172,13 +172,45 @@ func writeNameOverride(o Options, wt stack.Worktree, dest string) error {
 	body := fmt.Sprintf("%s Names the worktree's stack, so a bare\n"+
 		"# `docker compose` typed here does not reach the main one.\nname: %s\n",
 		generatedHeader, o.projectName(wt))
-	if ports, err := os.ReadFile(filepath.Join(dest, portsOverride)); err == nil {
-		body += string(ports)
-	}
+	ports, _ := os.ReadFile(filepath.Join(dest, portsOverride))
+	body += withSnapshotMount(o, string(ports))
 	if err := safefile.Write(dest, own, []byte(body), 0o644); err != nil {
 		return fmt.Errorf("writing %s: %w", compose.OverrideNames[0], err)
 	}
+	// Compose reads both from .env ahead of any compose file: the name then
+	// beats this one, and COMPOSE_FILE keeps this file from loading at all.
+	if env, err := os.ReadFile(filepath.Join(dest, ".env")); err == nil {
+		for _, line := range strings.Split(string(env), "\n") {
+			if key, _, ok := strings.Cut(strings.TrimSpace(line), "="); ok &&
+				(key == "COMPOSE_PROJECT_NAME" || key == "COMPOSE_FILE") {
+				o.logf("warning: .env sets %s, so a bare `docker compose` in the worktree ignores %s: "+
+					"go through `wtm run %s -- docker compose ...` or `eval \"$(wtm env)\"`",
+					key, compose.OverrideNames[0], o.Branch)
+			}
+		}
+	}
 	return nil
+}
+
+// withSnapshotMount adds the dump mount of .wtm-snapshot.yaml to the ports
+// override: a database first brought up without it initialises empty, and
+// initdb never runs again on a data directory that is not.
+func withSnapshotMount(o Options, ports string) string {
+	if !o.Project.Dump || dbengine.IsFileBased(o.Project.BackupConfig().DBEngine) {
+		return ports
+	}
+	db := o.Project.BackupConfig().DBService
+	mount := "    volumes:\n" + snapshotVolumes()
+	// ponytail: splices the text PortsOverride generates, one service per
+	// `  name:` line; a real YAML merge if that format ever grows nesting.
+	if at := strings.Index(ports, "\n  "+db+":\n"); at >= 0 {
+		at += len("\n  " + db + ":\n")
+		return ports[:at] + mount + ports[at:]
+	}
+	if ports == "" {
+		ports = "services:\n"
+	}
+	return ports + "  " + db + ":\n" + mount
 }
 
 // generatedHeader opens every compose file wtm writes, and is what tells one it

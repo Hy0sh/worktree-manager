@@ -30,9 +30,11 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   `name:` from a versioned `.env` gave the worktree the main stack's name, so a
   `docker compose down` there took the main stack down. wtm now writes a
   `compose.override.yaml` in the worktree, which compose loads by itself, with
-  the worktree's project name and its rebased ports. A project that has an
-  override of its own keeps it, and wtm says a bare compose is not covered
-  there. Variables read in `environment:` still come from `.env` on a bare
+  the worktree's project name, its rebased ports and the dump mount, so a bare
+  `up` before the first start still restores the snapshot. A project that has
+  an override of its own keeps it, and wtm says a bare compose is not covered
+  there, as it does when `.env` sets `COMPOSE_PROJECT_NAME` or `COMPOSE_FILE`,
+  which compose puts ahead of any compose file. Variables read in `environment:` still come from `.env` on a bare
   call: `wtm run` and `wtm env` hand compose this worktree's values.
 - `create --no-start` allocates the index and writes the compose files, as
   `adopt --no-start` already did. Until the first start, `wtm run` set neither

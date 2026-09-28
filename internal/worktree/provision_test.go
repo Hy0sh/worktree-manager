@@ -33,7 +33,19 @@ func TestCreateCopiesTheFilesTheProjectLists(t *testing.T) {
 			t.Errorf("%s should have been copied: %v", rel, err)
 		}
 	}
-	for _, rel := range []string{"config/shared.json", "config/leak.local.json"} {
+	secrets := t.TempDir()
+	mustWrite(t, filepath.Join(secrets, "key.local.json"), "{}")
+	if err := os.Symlink(secrets, filepath.Join(f.root, "linked")); err != nil {
+		t.Fatal(err)
+	}
+	o.Project.Copy = append(o.Project.Copy, "linked/*.local.json")
+	if err := os.RemoveAll(dest); err != nil {
+		t.Fatal(err)
+	}
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	for _, rel := range []string{"config/shared.json", "config/leak.local.json", "linked/key.local.json"} {
 		if _, err := os.Lstat(filepath.Join(dest, rel)); err == nil {
 			t.Errorf("%s should not have been copied", rel)
 		}
