@@ -36,3 +36,15 @@ func ValidateRelativePath(kind, path string) error {
 	}
 	return nil
 }
+
+// ValidateCopyPattern is ValidateRelativePath for a glob, whose syntax
+// filepath.Glob would otherwise only reject at the first create.
+func ValidateCopyPattern(pattern string) error {
+	if err := ValidateRelativePath("copy pattern", pattern); err != nil {
+		return err
+	}
+	if _, err := filepath.Match(pattern, ""); err != nil {
+		return fmt.Errorf("invalid copy pattern %q: %w", pattern, err)
+	}
+	return nil
+}

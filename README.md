@@ -159,7 +159,12 @@ wtm exec feat/my-branch --service db -- psql -U postgres
 wtm run feat/my-branch -- claude
 wtm run feat/my-branch -- git status
 wtm run feat/my-branch -- scripts/some-compose-script.sh
-cd $(wtm path feat/my-branch)
+cd $(wtm path feat/my-branch)       # a bare `docker compose` there reaches the worktree's
+                                     # stack too, through a generated compose.override.yaml,
+                                     # unless the project has an override of its own
+eval "$(wtm env feat/my-branch)"     # the same environment as run, for a shell or direnv:
+                                     # the only way a bare compose interpolates ${PORT}s right
+wtm ports                            # typed from a worktree, ports, path, env, exec and run take its branch
 wtm ports feat/my-branch             # the addresses `start` printed, one service per line
 
 # database backup
@@ -657,6 +662,16 @@ and a worktree that lost them, cut by an older wtm or cleaned up by hand, would
 otherwise fail deep inside docker on a raw mount error. What the worktree
 already holds is left as it is, an env file tweaked for the task at hand being
 its own state and not a stale copy.
+
+Other files git leaves out, a `.env.local` or an editor's local settings, only
+follow when the project lists them, as patterns relative to its root:
+
+```sh
+wtm project edit my-app --copy .env.local --copy 'config/*.local.json'
+```
+
+A match git tracks stays the branch's own, and a directory is not copied: name
+the files in it.
 
 None of it belongs in a commit, and a project's `.gitignore` knows nothing
 about names wtm invented, so wtm records them in the repository's

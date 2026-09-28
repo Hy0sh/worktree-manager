@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Hy0sh/worktree-manager/internal/compose"
 	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 	"github.com/Hy0sh/worktree-manager/internal/stack"
@@ -49,7 +50,9 @@ func TestCreateStartsStackUnlessNoStart(t *testing.T) {
 	}
 }
 
-func TestCreateNoStartSkipsWtcEntirely(t *testing.T) {
+// --no-start still allocates the index and writes the compose files: a
+// `docker compose up` typed in the worktree otherwise reached the main stack.
+func TestCreateNoStartPreparesTheStackWithoutStartingIt(t *testing.T) {
 	f := newFixture(t)
 	o := f.opts("feat/x")
 	o.NoStart = true
@@ -57,9 +60,111 @@ func TestCreateNoStartSkipsWtcEntirely(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 	for _, l := range f.fake.Lines() {
-		if strings.Contains(l, "docker") {
-			t.Fatalf("--no-start must not touch docker, got %q", l)
+		if strings.Contains(l, " up ") {
+			t.Fatalf("--no-start must not start the stack, got %q", l)
 		}
+	}
+	got, err := os.ReadFile(filepath.Join(f.root, ".worktrees", "feat", "x", compose.OverrideNames[0]))
+	if err != nil {
+		t.Fatalf("no name override in the worktree: %v", err)
+	}
+	if !strings.Contains(string(got), "name: 001-wt-1-feat-x") {
+		t.Fatalf("%s = %q, want the worktree's compose project named", compose.OverrideNames[0], got)
+	}
+}
+
+// A bare `up` before the first start initialises the database volume, and
+// initdb never runs again on it: without the dump mount it stays empty for good.
+func TestTheNameOverrideMountsTheDump(t *testing.T) {
+	for name, compose := range map[string]string{
+		"db publishes a literal port": "services:\n  db:\n    ports:\n      - \"5432:5432\"\n",
+		"db publishes nothing":        "services:\n  db:\n    image: postgres\n  backend:\n    ports:\n      - \"8000:8000\"\n",
+	} {
+		f := newFixture(t)
+		mustWrite(t, filepath.Join(f.root, "compose.yaml"), compose)
+		o := f.opts("feat/x")
+		o.Project.Dump = true
+		o.Project.Backup = &config.Backup{AppService: "backend"}
+		o.NoStart = true
+		if err := Create(context.Background(), o); err != nil {
+			t.Fatalf("%s: Create: %v", name, err)
+		}
+		got := mustRead(t, filepath.Join(f.root, ".worktrees", "feat", "x", "compose.override.yaml"))
+		if strings.Count(got, "  db:\n") != 1 || !strings.Contains(got, "  db:\n    volumes:\n      - ./.db-snapshot:/db-snapshot:ro\n") {
+			t.Errorf("%s: the db service should carry the dump mount once, got:\n%s", name, got)
+		}
+	}
+}
+
+// Compose reads COMPOSE_PROJECT_NAME from .env ahead of any `name:`, so the
+// override cannot win there, and saying nothing would promise it does.
+func TestTheNameOverrideWarnsWhenEnvNamesTheProject(t *testing.T) {
+	f := newFixture(t)
+	mustWrite(t, filepath.Join(f.root, ".env"), "COMPOSE_PROJECT_NAME=myapp\n")
+	var out strings.Builder
+	o := f.opts("feat/x")
+	o.Out = &out
+	o.NoStart = true
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if !strings.Contains(out.String(), ".env sets COMPOSE_PROJECT_NAME") {
+		t.Fatalf("the warning should name the variable:\n%s", out.String())
+	}
+}
+
+// Docker down, the resolver hands out an index it does not record: files baked
+// with it would name a stack and ports another worktree may get next.
+func TestNoStartWritesNoComposeFileOnAnUnrecordedIndex(t *testing.T) {
+	f := newFixture(t)
+	inner := f.fake.Handler
+	f.fake.Handler = func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(c.String(), "docker ps") {
+			return execx.Result{ExitCode: 1}, errors.New("Cannot connect to the Docker daemon")
+		}
+		return inner(c)
+	}
+	var out strings.Builder
+	o := f.opts("feat/x")
+	o.Out = &out
+	o.NoStart = true
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(f.root, ".worktrees", "feat", "x", "compose.override.yaml")); err == nil {
+		t.Fatal("no compose override should be written on an unrecorded index")
+	}
+	if !strings.Contains(out.String(), "no index is recorded yet") {
+		t.Fatalf("the note should say why:\n%s", out.String())
+	}
+}
+
+// Compose loads one override only: the project's own wins, and the one wtm
+// wrote before it existed must not stay around to shadow it.
+func TestAProjectOverrideTakesThePlaceOfTheNameOverride(t *testing.T) {
+	f := newFixture(t)
+	f.tracked = map[string]string{"docker-compose.override.yml": "services: {}\n"}
+	var out strings.Builder
+	o := f.opts("feat/x")
+	o.Out = &out
+	o.NoStart = true
+	dest := filepath.Join(f.root, ".worktrees", "feat", "x")
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if !strings.Contains(out.String(), "docker-compose.override.yml belongs to the project") {
+		t.Fatalf("the warning should name the project's override:\n%s", out.String())
+	}
+	if _, err := os.Stat(filepath.Join(dest, compose.OverrideNames[0])); err == nil {
+		t.Fatalf("%s should not have been written", compose.OverrideNames[0])
+	}
+
+	mustWrite(t, filepath.Join(dest, compose.OverrideNames[0]), generatedHeader+"\nname: stale\n")
+	if _, err := prepareStack(context.Background(), o, dest); err != nil {
+		t.Fatalf("prepareStack: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, compose.OverrideNames[0])); err == nil {
+		t.Fatalf("a stale %s would shadow the project's own", compose.OverrideNames[0])
 	}
 }
 

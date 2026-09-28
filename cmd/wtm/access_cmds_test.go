@@ -5,9 +5,80 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/spf13/cobra"
+
 	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 )
+
+// `wtm run feat/x --` names no command, and indexing an empty one panicked.
+func TestRunAndExecRefuseAnEmptyCommand(t *testing.T) {
+	cfg := &config.Config{Projects: map[string]config.Project{"myapp": {Dir: t.TempDir()}}}
+	for verb, build := range map[string]func(*app) *cobra.Command{"run": newRunCmd, "exec": newExecCmd} {
+		a, _, _ := newTestApp(t, cfg, "", func(execx.Cmd) (execx.Result, error) { return execx.Result{}, nil })
+		cmd := build(a)
+		cmd.SetArgs([]string{"feat/x", "--"})
+		if err := cmd.Execute(); err == nil {
+			t.Errorf("`wtm %s feat/x --` should be refused", verb)
+		}
+	}
+}
+
+// Typed from inside a worktree, the branch is the one checked out there:
+// making someone spell it out again only invites naming the wrong one.
+func TestPathTakesTheBranchOfTheWorktreeItIsTypedFrom(t *testing.T) {
+	dir := t.TempDir()
+	wt := filepath.Join(dir, ".worktrees", "feat", "x")
+	cfg := &config.Config{Projects: map[string]config.Project{"myapp": {Dir: dir}}}
+	a, _, out := newTestApp(t, cfg, "", func(c execx.Cmd) (execx.Result, error) {
+		line := c.String()
+		switch {
+		case strings.Contains(line, "--show-toplevel"):
+			return execx.Result{Stdout: strings.Join([]string{
+				wt, filepath.Join(dir, ".git", "worktrees", "x"), filepath.Join(dir, ".git"),
+			}, "\n") + "\n"}, nil
+		case strings.Contains(line, "--git-common-dir"):
+			return execx.Result{Stdout: filepath.Join(dir, ".git") + "\n"}, nil
+		case strings.Contains(line, "symbolic-ref"):
+			return execx.Result{Stdout: "feat/x\n"}, nil
+		case strings.Contains(line, "worktree list"):
+			return execx.Result{Stdout: porcelainOf(dir, "worktree "+wt+"\nHEAD abc\nbranch refs/heads/feat/x")}, nil
+		}
+		return execx.Result{}, nil
+	})
+
+	cmd := newPathCmd(a)
+	if err := cmd.RunE(cmd, nil); err != nil {
+		t.Fatalf("path: %v", err)
+	}
+	if out.String() != wt+"\n" {
+		t.Fatalf("output = %q, want %q", out.String(), wt+"\n")
+	}
+}
+
+// From the main checkout there is no branch to take, and the main one is not
+// a worktree wtm could answer about.
+func TestPathWithoutABranchRefusesTheMainCheckout(t *testing.T) {
+	dir := t.TempDir()
+	cfg := &config.Config{Projects: map[string]config.Project{"myapp": {Dir: dir}}}
+	a, _, _ := newTestApp(t, cfg, "", func(c execx.Cmd) (execx.Result, error) {
+		switch line := c.String(); {
+		case strings.Contains(line, "--show-toplevel"):
+			return execx.Result{Stdout: strings.Join([]string{
+				dir, filepath.Join(dir, ".git"), filepath.Join(dir, ".git"),
+			}, "\n") + "\n"}, nil
+		case strings.Contains(line, "--git-common-dir"):
+			return execx.Result{Stdout: filepath.Join(dir, ".git") + "\n"}, nil
+		}
+		return execx.Result{}, nil
+	})
+
+	cmd := newPathCmd(a)
+	err := cmd.RunE(cmd, nil)
+	if err == nil || !strings.Contains(err.Error(), "name the branch") {
+		t.Fatalf("err = %v, want to be told to name the branch", err)
+	}
+}
 
 // `wtm path` exists to be substituted: `cd $(wtm path feat/x)`. Whatever
 // diagnosis a detached worktree deserves elsewhere, a second line here lands in

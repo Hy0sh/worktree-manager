@@ -68,7 +68,29 @@ func Run(ctx context.Context, o Options, command []string) error {
 	if err != nil {
 		return err
 	}
+	if compose.Has(o.Project.Dir) && composeEnv(o, wt) == nil {
+		o.logf("warning: no stack index is recorded for %s, so COMPOSE_PROJECT_NAME and COMPOSE_FILE "+
+			"are not set: run `wtm start %s` first", o.Branch, o.Branch)
+	}
 	return runIn(ctx, o, wt, execx.Cmd{Name: command[0], Args: command[1:]})
+}
+
+// Env is the environment `wtm run` sets, for a shell or an editor to load once
+// (`eval "$(wtm env)"`, direnv). The generated compose.override.yaml covers the
+// project name and ports only: interpolated variables need this.
+func Env(ctx context.Context, o Options) ([]string, error) {
+	if !compose.Has(o.Project.Dir) {
+		return nil, fmt.Errorf("no compose file in %s: there is no stack environment to set", o.Project.Dir)
+	}
+	wt, err := o.Stack.FindByBranch(ctx, o.Branch)
+	if err != nil {
+		return nil, err
+	}
+	env := composeEnv(o, wt)
+	if env == nil {
+		return nil, fmt.Errorf("no stack index is recorded for %s: run `wtm start %s` first", o.Branch, o.Branch)
+	}
+	return env, nil
 }
 
 func runIn(ctx context.Context, o Options, wt stack.Worktree, c execx.Cmd) error {
@@ -91,10 +113,9 @@ func runAfter(ctx context.Context, o Options) {
 		o.logf("warning: --run was not played: %v", err)
 		return
 	}
-	// The index was allocated by the start that just happened, so it is in the
-	// registry but not in the copy of the project this call was given. Under
-	// --no-start nothing allocated one, and a host command needs no stack.
-	if !o.NoStart && compose.Has(o.Project.Dir) {
+	// The index was allocated by the create that just happened, so it is in the
+	// registry but not in the copy of the project this call was given.
+	if compose.Has(o.Project.Dir) {
 		if err := o.resolveIndex(ctx, &wt, index.MustExist); err != nil {
 			o.logf("warning: the compose environment is not set: %v", err)
 		}

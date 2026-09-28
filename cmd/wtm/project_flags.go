@@ -37,6 +37,7 @@ type projectFlags struct {
 	env           []string
 	profiles      []string
 	profileDescs  []string
+	copy          []string
 	noInput       bool
 }
 
@@ -60,6 +61,7 @@ func (f *projectFlags) bind(cmd *cobra.Command) {
 	cmd.Flags().StringArrayVar(&f.env, "env", nil, "variable passed to the migration container, repeatable, replaces the whole set (e.g. --env DB_NAME="+config.DatabasePlaceholder+"); a value given here shows in `ps` and the shell history, the stepper keeps it off both")
 	cmd.Flags().StringArrayVar(&f.profiles, "profile-set", nil, "subset of compose services `wtm start --profile` may bring up, repeatable, replaces the whole set (e.g. --profile-set light=db,backend)")
 	cmd.Flags().StringArrayVar(&f.profileDescs, "profile-description", nil, "when to pick a profile, shown by `wtm project profiles`, repeatable, replaces the whole set (e.g. --profile-description 'async=Celery tasks')")
+	cmd.Flags().StringArrayVar(&f.copy, "copy", nil, "file git does not track that each worktree gets a copy of, as a pattern relative to the project, repeatable, replaces the whole set, --copy '' clears it (e.g. --copy .env.local --copy 'config/*.local.json'); *.env files are copied anyway")
 	cmd.Flags().BoolVar(&f.noInput, "no-input", false, "fail instead of asking, for scripts and CI")
 }
 
@@ -131,6 +133,14 @@ func (f *projectFlags) update(cmd *cobra.Command) (config.ProjectUpdate, error) 
 		}
 		u.ProfileDescriptions = descs
 	}
+	if changed("copy") {
+		u.Copy = []string{}
+		for _, pattern := range f.copy {
+			if pattern != "" {
+				u.Copy = append(u.Copy, pattern)
+			}
+		}
+	}
 	return u, validateUpdate(u)
 }
 
@@ -153,6 +163,11 @@ func validateUpdate(u config.ProjectUpdate) error {
 	}
 	if u.DBPath != nil && *u.DBPath != "" {
 		if err := config.ValidateRelativePath("db_path", *u.DBPath); err != nil {
+			return err
+		}
+	}
+	for _, pattern := range u.Copy {
+		if err := config.ValidateCopyPattern(pattern); err != nil {
 			return err
 		}
 	}

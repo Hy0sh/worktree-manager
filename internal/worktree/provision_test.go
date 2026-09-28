@@ -9,6 +9,81 @@ import (
 	"testing"
 )
 
+// A .env.local or an IDE's local settings are git-ignored and each developer's
+// own, and only the *.env files followed a worktree until `copy` named them.
+func TestCreateCopiesTheFilesTheProjectLists(t *testing.T) {
+	f := newFixture(t)
+	mustWrite(t, filepath.Join(f.root, ".env.local"), "LOCAL=1")
+	mustWrite(t, filepath.Join(f.root, "config", "dev.local.json"), "{}")
+	mustWrite(t, filepath.Join(f.root, "config", "shared.json"), "{}")
+	outside := filepath.Join(t.TempDir(), "secret.local.json")
+	mustWrite(t, outside, "{}")
+	if err := os.Symlink(outside, filepath.Join(f.root, "config", "leak.local.json")); err != nil {
+		t.Fatal(err)
+	}
+	o := f.opts("feat/x")
+	o.Project.Copy = []string{".env.local", "config/*.local.json"}
+	o.NoStart = true
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	dest := filepath.Join(f.root, ".worktrees", "feat", "x")
+	for _, rel := range []string{".env.local", "config/dev.local.json"} {
+		if _, err := os.Stat(filepath.Join(dest, rel)); err != nil {
+			t.Errorf("%s should have been copied: %v", rel, err)
+		}
+	}
+	secrets := t.TempDir()
+	mustWrite(t, filepath.Join(secrets, "key.local.json"), "{}")
+	if err := os.Symlink(secrets, filepath.Join(f.root, "linked")); err != nil {
+		t.Fatal(err)
+	}
+	o.Project.Copy = append(o.Project.Copy, "linked/*.local.json")
+	if err := os.RemoveAll(dest); err != nil {
+		t.Fatal(err)
+	}
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	for _, rel := range []string{"config/shared.json", "config/leak.local.json", "linked/key.local.json"} {
+		if _, err := os.Lstat(filepath.Join(dest, rel)); err == nil {
+			t.Errorf("%s should not have been copied", rel)
+		}
+	}
+}
+
+// A tracked match is the branch's version of the file, never a stale copy.
+func TestCreateKeepsTheBranchCopyOfATrackedMatch(t *testing.T) {
+	f := newFixture(t)
+	f.envTracked = true // the fake then says git tracks every file it is asked about
+	f.tracked = map[string]string{"package.json": "from-the-branch"}
+	mustWrite(t, filepath.Join(f.root, "package.json"), "from-the-main-repo")
+	o := f.opts("feat/x")
+	o.Project.Copy = []string{"*.json"}
+	o.NoStart = true
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if got := mustRead(t, filepath.Join(f.root, ".worktrees", "feat", "x", "package.json")); got != "from-the-branch" {
+		t.Fatalf("package.json = %q, the branch's own must stay", got)
+	}
+}
+
+// A start keeps the worktree's own compose override, but the one wtm generated
+// is no edit of anyone's, and the project's own replaces it once it exists.
+func TestStartReplacesTheGeneratedOverrideWithTheProjectOne(t *testing.T) {
+	f := newFixture(t)
+	dest := filepath.Join(f.root, ".worktrees", "feat", "x")
+	mustWrite(t, filepath.Join(dest, "compose.override.yaml"), generatedHeader+"\nname: x\n")
+	mustWrite(t, filepath.Join(f.root, "compose.override.yaml"), "services: {}\n")
+	if err := provision(context.Background(), f.opts("feat/x"), dest, keepWorktreeCopies); err != nil {
+		t.Fatalf("provision: %v", err)
+	}
+	if got := mustRead(t, filepath.Join(dest, "compose.override.yaml")); got != "services: {}\n" {
+		t.Fatalf("compose.override.yaml = %q, want the project's own", got)
+	}
+}
+
 func TestCreateCopiesEnvFilesAndComposeOverride(t *testing.T) {
 	f := newFixture(t)
 	mustWrite(t, filepath.Join(f.root, ".env"), "ROOT=1")
@@ -359,7 +434,7 @@ func TestCreateOverwritesAnEnvFileTheCheckoutAlreadyCarries(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if string(got) != "ROOT=from-the-main-repo" {
+	if !strings.HasPrefix(string(got), "ROOT=from-the-main-repo") {
 		t.Fatalf(".env = %q, create should have carried the main repository's copy over", got)
 	}
 }

@@ -215,7 +215,7 @@ func TestRemoveTakesWtmFilesOutOfAnAdoptedWorktree(t *testing.T) {
 	if body := mustRead(t, filepath.Join(path, ".env")); strings.Contains(body, "wtc port overrides") {
 		t.Fatalf("the port block should be gone, got %q", body)
 	}
-	for _, name := range []string{".wtm-ports.yaml", ".wtm-snapshot.yaml", ".db-snapshot"} {
+	for _, name := range []string{".wtm-ports.yaml", ".wtm-snapshot.yaml", ".db-snapshot", "compose.override.yaml"} {
 		if _, err := os.Lstat(filepath.Join(path, name)); err == nil {
 			t.Fatalf("%s should have been removed", name)
 		}
