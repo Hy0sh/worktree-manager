@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	"github.com/Hy0sh/worktree-manager/internal/config"
+	"github.com/Hy0sh/worktree-manager/internal/execx"
+	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
 
 // A raw .env block ("BACKEND_PORT=28007 DB_PORT=25439") tells nobody where to
@@ -47,6 +49,75 @@ func TestCreateListsServiceEndpointsAfterStart(t *testing.T) {
 	// belongs in the list like any other.
 	if !strings.Contains(got, "legacy   localhost:29007") {
 		t.Fatalf("a rebased hardcoded port should be listed too:\n%s", got)
+	}
+}
+
+// A host routed through a proxy publishes no port of its own: the project
+// states the address, and only the port the proxy got is wtm's to fill in.
+func TestEndpointsListTheURLsStartedServicesDeclare(t *testing.T) {
+	f := newFixture(t)
+	mustWrite(t, filepath.Join(f.root, "compose.yaml"), `services:
+  proxy:
+    ports:
+      - "80:80"
+  front:
+    depends_on: [proxy]
+    labels:
+      - "wtm.url=http://front.${NAME}.localhost:{{port proxy:80}}"
+  admin:
+    labels:
+      - "wtm.url=http://admin.${NAME}.localhost:{{port proxy:80}}"
+`)
+	// compose's rendering, ${NAME} resolved, {{port}} left for wtm.
+	next := f.fake.Handler
+	f.fake.Handler = func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(c.String(), "config --format json") {
+			return execx.Result{Stdout: `{"services": {
+				"proxy": {},
+				"front": {"labels": {"wtm.url": "http://front.shop.localhost:{{port proxy:80}}"}},
+				"admin": {"labels": {"wtm.url": "http://admin.shop.localhost:{{port proxy:80}}"}}}}`}, nil
+		}
+		return next(c)
+	}
+	o := f.opts("feat/x")
+	o.Project.Profiles = map[string][]string{"light": {"front"}}
+	o.Profile = "light"
+	wt := stack.Worktree{Index: 1, Branch: "feat/x", Path: f.root}
+	got := strings.Join(endpoints(context.Background(), o, wt), "\n")
+
+	if !strings.Contains(got, "front/url  http://front.shop.localhost:20087") {
+		t.Errorf("the declared address should carry the proxy's worktree port:\n%s", got)
+	}
+	if strings.Contains(got, "admin") {
+		t.Errorf("admin was left down by the profile and must not be listed:\n%s", got)
+	}
+	for _, c := range f.fake.Calls {
+		if strings.Contains(c.Line(), "config --format json") && !c.Bounded {
+			t.Errorf("the compose config call must carry a deadline: %s", c.Line())
+		}
+	}
+}
+
+// Most projects set no wtm.url, and printing their ports must not cost them a
+// docker call.
+func TestEndpointsAskComposeNothingWithoutAURLLabel(t *testing.T) {
+	f := newFixture(t)
+	wt := stack.Worktree{Index: 1, Branch: "feat/x", Path: f.root}
+	endpoints(context.Background(), f.opts("feat/x"), wt)
+	for _, l := range f.fake.Lines() {
+		if strings.Contains(l, "config --format json") {
+			t.Errorf("no label, no call: got %q", l)
+		}
+	}
+}
+
+func TestExpandURLFillsOnlyPortsTheWorktreePublishes(t *testing.T) {
+	allocations := []stack.Allocation{{Service: "proxy", Container: "80", Port: 20087}}
+	if got, ok := expandURL("http://app.x.localhost:{{port proxy:80}}", allocations); !ok || got != "http://app.x.localhost:20087" {
+		t.Errorf("got %q, %v", got, ok)
+	}
+	if _, ok := expandURL("http://localhost:{{port proxy:8080}}", allocations); ok {
+		t.Error("a port nothing publishes must leave the address unresolved")
 	}
 }
 

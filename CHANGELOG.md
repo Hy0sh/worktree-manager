@@ -6,6 +6,15 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Added
+
+- A service can state the address it is reached through in a `wtm.url` label,
+  where `{{port SERVICE:PORT}}` stands for the worktree's host port: a host
+  name routed by a reverse proxy publishes no port, so the port list never
+  showed it. `start` and `wtm ports` print it as `<service>/url`, read from
+  `docker compose config` so the compose variables resolve as they do for the
+  stack. A project without the label costs no extra docker call.
+
 ## [0.19.0] - 2026-09-25
 
 ### Added

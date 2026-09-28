@@ -2,12 +2,16 @@ package worktree
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"maps"
 	"os"
 	"path/filepath"
+	"regexp"
 	"slices"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/Hy0sh/worktree-manager/internal/compose"
 	"github.com/Hy0sh/worktree-manager/internal/safefile"
@@ -103,16 +107,25 @@ func portClash(o Options) func(n int) string {
 	}
 }
 
-// startedBy keeps the ports of what the profile brought up, depends_on
-// included: listing a service left down hands out an address nothing answers.
-// Without a profile, or when the compose files cannot be read, all of them.
-func startedBy(o Options, allocations []stack.Allocation) []stack.Allocation {
+// startedServices names what the profile brought up, depends_on included, nil
+// for everything: without a profile, or when the compose files cannot be read.
+func startedServices(o Options) []string {
 	named, err := o.Project.ServicesFor(o.Profile)
 	if err != nil || named == nil {
-		return allocations
+		return nil
 	}
 	started, err := compose.WithDependencies(o.Project.Dir, named)
 	if err != nil {
+		return nil
+	}
+	return started
+}
+
+// startedBy keeps the ports of what the profile brought up: listing a service
+// left down hands out an address nothing answers.
+func startedBy(o Options, allocations []stack.Allocation) []stack.Allocation {
+	started := startedServices(o)
+	if started == nil {
 		return allocations
 	}
 	var kept []stack.Allocation
@@ -127,9 +140,9 @@ func startedBy(o Options, allocations []stack.Allocation) []stack.Allocation {
 // endpoints pairs each service with the port it actually listens on in this
 // worktree, so the output is a list of addresses to open rather than the raw
 // block of variables written into .env.
-func endpoints(o Options, wt stack.Worktree) []string {
+func endpoints(ctx context.Context, o Options, wt stack.Worktree) []string {
 	allocations, err := allocations(o, wt)
-	if err != nil || len(allocations) == 0 {
+	if err != nil {
 		return nil
 	}
 	allocations = startedBy(o, allocations)
@@ -159,9 +172,94 @@ func endpoints(o Options, wt stack.Worktree) []string {
 		}
 		entries = append(entries, entry{label, address})
 	}
+	urls := declaredURLs(ctx, o, wt)
+	for _, service := range slices.Sorted(maps.Keys(urls)) {
+		address, ok := expandURL(urls[service], allocations)
+		if !ok {
+			continue
+		}
+		// The service's own port line may carry the bare name already.
+		label := service + "/url"
+		width = max(width, len(label))
+		entries = append(entries, entry{label, address})
+	}
 	out := make([]string, 0, len(entries))
 	for _, e := range entries {
 		out = append(out, fmt.Sprintf("%-*s  %s", width, e.label, e.address))
 	}
 	return out
+}
+
+var portPlaceholder = regexp.MustCompile(`\{\{port ([^\s:}]+):(\d+)\}\}`)
+
+// urlLabel is how a service states the address it is reached through when no
+// published port shows it, a host name routed by a proxy typically.
+const urlLabel = "wtm.url"
+
+// composeConfigTimeout bounds the one docker call printing the addresses
+// costs, which must never hang a start that already succeeded.
+const composeConfigTimeout = 10 * time.Second
+
+// declaredURLs reads the wtm.url label of every started service, from compose's
+// own rendering: it resolves ${VAR} against the worktree's .env and leaves the
+// {{port}} placeholders, which it does not know, for expandURL.
+func declaredURLs(ctx context.Context, o Options, wt stack.Worktree) map[string]string {
+	if !declaresURLs(o, wt) {
+		return nil
+	}
+	ctx, cancel := context.WithTimeout(ctx, composeConfigTimeout)
+	defer cancel()
+	res, err := o.Runner.Run(ctx, o.composeCmd(wt, "config", "--format", "json"))
+	if err != nil {
+		return nil
+	}
+	var cfg struct {
+		Services map[string]struct {
+			Labels map[string]string `json:"labels"`
+		} `json:"services"`
+	}
+	if json.Unmarshal([]byte(res.Stdout), &cfg) != nil {
+		return nil
+	}
+	started := startedServices(o)
+	urls := map[string]string{}
+	for name, s := range cfg.Services {
+		if u, ok := s.Labels[urlLabel]; ok && (started == nil || slices.Contains(started, name)) {
+			urls[name] = u
+		}
+	}
+	return urls
+}
+
+// declaresURLs spares the docker call to every project that sets no wtm.url,
+// which is most of them: the label has to be spelled out in a compose file.
+func declaresURLs(o Options, wt stack.Worktree) bool {
+	files, err := composeFiles(o, wt.Path)
+	if err != nil {
+		return false
+	}
+	for _, f := range files {
+		if data, err := os.ReadFile(f); err == nil && strings.Contains(string(data), urlLabel) {
+			return true
+		}
+	}
+	return false
+}
+
+// expandURL fills a declared address from the ports this worktree publishes.
+// A port no started service publishes leaves it unresolved, and it is dropped
+// rather than printed with a placeholder nobody can open.
+func expandURL(template string, allocations []stack.Allocation) (string, bool) {
+	resolved := true
+	out := portPlaceholder.ReplaceAllStringFunc(template, func(m string) string {
+		sub := portPlaceholder.FindStringSubmatch(m)
+		for _, a := range allocations {
+			if a.Service == sub[1] && a.Container == sub[2] {
+				return strconv.Itoa(a.Port)
+			}
+		}
+		resolved = false
+		return m
+	})
+	return out, resolved && !strings.Contains(out, "{{")
 }

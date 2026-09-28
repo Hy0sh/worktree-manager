@@ -57,7 +57,7 @@ func Ports(ctx context.Context, o Options) ([]string, error) {
 	if err := o.resolveIndex(ctx, &wt, index.MustExist); err != nil {
 		return nil, err
 	}
-	return endpoints(o, wt), nil
+	return endpoints(ctx, o, wt), nil
 }
 
 // Run is the counterpart of Exec: it stays on the machine, with the worktree as

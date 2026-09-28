@@ -131,14 +131,14 @@ func start(ctx context.Context, o Options, dest string) error {
 	} else {
 		o.logf("stack started (worktree %d, %s)", wt.Index, o.Branch)
 	}
-	logEndpoints(o, wt)
+	logEndpoints(ctx, o, wt)
 	return nil
 }
 
 // logEndpoints lists the addresses of the stack. postCreate prints them a
 // second time, since a seed's output buries them.
-func logEndpoints(o Options, wt stack.Worktree) {
-	for _, line := range endpoints(o, wt) {
+func logEndpoints(ctx context.Context, o Options, wt stack.Worktree) {
+	for _, line := range endpoints(ctx, o, wt) {
 		o.logf("  %s", line)
 	}
 }
