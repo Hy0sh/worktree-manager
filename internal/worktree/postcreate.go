@@ -117,7 +117,7 @@ func afterCreate(ctx context.Context, o Options) {
 	// The commands' own output has scrolled the addresses out of sight, and
 	// they are what the developer opened the worktree for.
 	o.logf("stack ready (worktree %d, %s)", wt.Index, o.Branch)
-	logEndpoints(o, wt)
+	logEndpoints(ctx, o, wt)
 }
 
 // execInStack plays a shell line in the application container. post_create and

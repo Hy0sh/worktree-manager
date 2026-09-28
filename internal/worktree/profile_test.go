@@ -74,7 +74,7 @@ func TestEndpointsListOnlyWhatTheProfileStarted(t *testing.T) {
 	o := f.opts("feat/x")
 	o.Project.Profiles = map[string][]string{"light": {"backend"}}
 	o.Profile = "light"
-	got := strings.Join(endpoints(o, stack.Worktree{Index: 1, Branch: "feat/x"}), "\n")
+	got := strings.Join(endpoints(context.Background(), o, stack.Worktree{Index: 1, Branch: "feat/x"}), "\n")
 	for _, want := range []string{"db ", "mail ", "backend "} {
 		if !strings.Contains(got, want) {
 			t.Errorf("missing %q in:\n%s", want, got)
@@ -85,7 +85,7 @@ func TestEndpointsListOnlyWhatTheProfileStarted(t *testing.T) {
 	}
 
 	o.Profile = ""
-	if got := strings.Join(endpoints(o, stack.Worktree{Index: 1, Branch: "feat/x"}), "\n"); !strings.Contains(got, "admin") {
+	if got := strings.Join(endpoints(context.Background(), o, stack.Worktree{Index: 1, Branch: "feat/x"}), "\n"); !strings.Contains(got, "admin") {
 		t.Errorf("without a profile every service is listed:\n%s", got)
 	}
 }

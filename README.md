@@ -512,6 +512,29 @@ untouched. And a `.env` tracked by git is left alone, the generated compose
 file carrying the ports instead, so starting a stack never dirties the
 worktree.
 
+### Addresses behind a proxy
+
+A service reached through a reverse proxy publishes no port of its own, so
+nothing in the port list says where to open it. The service states it in a
+`wtm.url` label, and `{{port SERVICE:PORT}}` stands for the host port this
+worktree got for that container port:
+
+```yaml
+services:
+  proxy:
+    image: traefik:v3
+    ports: ["80:80"]
+  front:
+    labels:
+      - "traefik.http.routers.front.rule=Host(`front.${APP_NAME}.localhost`)"
+      - "wtm.url=http://front.${APP_NAME}.localhost:{{port proxy:80}}"
+```
+
+`start` and `wtm ports` then print `front/url  http://front.myapp.localhost:20081`.
+The label is read from `docker compose config`, so `${APP_NAME}` resolves as it
+does for the stack itself; wtm only fills in `{{port}}`. A service the profile
+left down, or a port nothing publishes, prints no address.
+
 ## Diagnostics
 
 ```sh
