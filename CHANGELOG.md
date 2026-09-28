@@ -6,6 +6,17 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+## [0.20.0] - 2026-09-28
+
+### Added
+
+- A service can state the address it is reached through in a `wtm.url` label,
+  where `{{port SERVICE:PORT}}` stands for the worktree's host port: a host
+  name routed by a reverse proxy publishes no port, so the port list never
+  showed it. `start` and `wtm ports` print it as `<service>/url`, read from
+  `docker compose config` so the compose variables resolve as they do for the
+  stack. A project without the label costs no extra docker call.
+
 ### Fixed
 
 - A worktree whose `.env` is versioned gets its port variables everywhere
@@ -16,15 +27,6 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   environment of `up`, `exec`, `run` and every compose call it makes, which
   compose prefers to `.env` when interpolating. Commands started by `wtm run`
   see them too.
-
-### Added
-
-- A service can state the address it is reached through in a `wtm.url` label,
-  where `{{port SERVICE:PORT}}` stands for the worktree's host port: a host
-  name routed by a reverse proxy publishes no port, so the port list never
-  showed it. `start` and `wtm ports` print it as `<service>/url`, read from
-  `docker compose config` so the compose variables resolve as they do for the
-  stack. A project without the label costs no extra docker call.
 
 ## [0.19.0] - 2026-09-25
 
@@ -1069,7 +1071,8 @@ First tagged release. The whole worktree lifecycle behind one binary:
   identical so worktrees created with it keep working.
 - A project without a compose file is not an error, there is simply no stack.
 
-[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.20.0...HEAD
+[0.20.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.19.0...v0.20.0
 [0.19.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.18.0...v0.19.0
 [0.18.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.17.1...v0.18.0
 [0.17.1]: https://github.com/Hy0sh/worktree-manager/compare/v0.17.0...v0.17.1
