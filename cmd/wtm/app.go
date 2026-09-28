@@ -84,7 +84,27 @@ func (a *app) resolveOne(args []string) (string, config.Project, string, error) 
 	if len(rest) > 1 {
 		return "", config.Project{}, "", fmt.Errorf("one branch expected, got %q", rest)
 	}
+	if len(rest) == 0 {
+		branch, err := a.currentBranch()
+		return name, p, branch, err
+	}
 	return name, p, rest[0], nil
+}
+
+// currentBranch is the branch of the worktree the command was typed from, for
+// the commands that let it go unnamed there.
+func (a *app) currentBranch() (string, error) {
+	cur, err := gitx.CurrentWorktree(context.Background(), a.runner)
+	if err != nil {
+		return "", err
+	}
+	switch {
+	case !cur.Linked:
+		return "", fmt.Errorf("%s is the repository itself and not a worktree: name the branch", cur.Path)
+	case cur.Branch == "":
+		return "", fmt.Errorf("%s is on a detached HEAD, and wtm keys a worktree by its branch: name it", cur.Path)
+	}
+	return cur.Branch, nil
 }
 
 // optionsFor is what the commands naming a single branch run on, resolve

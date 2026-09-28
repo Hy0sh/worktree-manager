@@ -227,7 +227,9 @@ func TestCreateRunsTheHostCommandWithoutAStack(t *testing.T) {
 	if last.Line() != `sh -c claude` {
 		t.Fatalf("last call = %q, want the command played all the same", last.Line())
 	}
-	if len(last.Env) != 0 {
-		t.Fatalf("env = %v, want none: no stack was started", last.Env)
+	// No stack runs, but the one a `docker compose up` would bring up is the
+	// worktree's own, and not the main one.
+	if !slices.Contains(last.Env, "COMPOSE_PROJECT_NAME=001-wt-1-feat-x") {
+		t.Fatalf("env = %v, want the worktree's compose project", last.Env)
 	}
 }

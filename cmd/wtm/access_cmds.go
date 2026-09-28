@@ -11,19 +11,19 @@ import (
 func newExecCmd(a *app) *cobra.Command {
 	var service string
 	cmd := &cobra.Command{
-		Use:   "exec [project] <branch> -- <command>...",
+		Use:   "exec [project] [branch] -- <command>...",
 		Short: "Runs a command in the worktree's application container",
 		Long: "Runs a command inside the container of a worktree's stack, resolving the\n" +
-			"compose project name for you.\n\n" +
+			"compose project name for you. Typed from a worktree, the branch is its own.\n\n" +
 			"  wtm exec feat/my-branch -- python manage.py seed_data\n" +
 			"  wtm exec feat/my-branch -- bash",
-		Args:              needArgs(2, -1, "name the branch and the command, as in `wtm exec feat/my-branch -- python manage.py shell`"),
+		Args:              needArgs(1, -1, "name the command, as in `wtm exec feat/my-branch -- python manage.py shell`"),
 		ValidArgsFunction: a.completeTargets,
 		SilenceUsage:      true,
 		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dash := cmd.ArgsLenAtDash()
-			if dash < 1 {
+			if dash < 0 {
 				return fmt.Errorf("separate the command with --, as in " +
 					"`wtm exec <branch> -- python manage.py seed_data`")
 			}
@@ -40,7 +40,7 @@ func newExecCmd(a *app) *cobra.Command {
 
 func newRunCmd(a *app) *cobra.Command {
 	return &cobra.Command{
-		Use:   "run [project] <branch> -- <command>...",
+		Use:   "run [project] [branch] -- <command>...",
 		Short: "Runs a command on the host, from the worktree directory",
 		Long: "Runs a command on your machine with the worktree as working directory,\n" +
 			"for editors, agents and anything else working on the files rather than\n" +
@@ -49,17 +49,18 @@ func newRunCmd(a *app) *cobra.Command {
 			"calling `docker compose` reaches this worktree's stack and not a stack\n" +
 			"named after the directory. The port variables are set too, with this\n" +
 			"worktree's ports: a dev server started here that reads a generic one\n" +
-			"such as PORT gets the port the stack already publishes.\n\n" +
+			"such as PORT gets the port the stack already publishes. Typed from a\n" +
+			"worktree, the branch is its own.\n\n" +
 			"  wtm run feat/my-branch -- claude\n" +
 			"  wtm run feat/my-branch -- git status\n" +
 			"  wtm run feat/my-branch -- scripts/some-compose-script.sh",
-		Args:              needArgs(2, -1, "name the branch and the command, as in `wtm run feat/my-branch -- claude`"),
+		Args:              needArgs(1, -1, "name the command, as in `wtm run feat/my-branch -- claude`"),
 		ValidArgsFunction: a.completeTargets,
 		SilenceUsage:      true,
 		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dash := cmd.ArgsLenAtDash()
-			if dash < 1 {
+			if dash < 0 {
 				return fmt.Errorf("separate the command with --, as in `wtm run <branch> -- claude`")
 			}
 			o, err := a.optionsFor(args[:dash])
@@ -73,11 +74,12 @@ func newRunCmd(a *app) *cobra.Command {
 
 func newPortsCmd(a *app) *cobra.Command {
 	return &cobra.Command{
-		Use:   "ports [project] <branch>",
+		Use:   "ports [project] [branch]",
 		Short: "Prints the addresses of the worktree's stack",
 		Long: "Prints one line per published port, service then address, the same\n" +
-			"lines `wtm start` prints, for whoever works on a stack it did not start.",
-		Args:              needArgs(1, 2, "name the branch, as in `wtm ports feat/my-branch`"),
+			"lines `wtm start` prints, for whoever works on a stack it did not start.\n" +
+			"Typed from a worktree, the branch is its own.",
+		Args:              needArgs(0, 2, ""),
 		ValidArgsFunction: a.completeTargets,
 		SilenceUsage:      true,
 		SilenceErrors:     true,
@@ -102,10 +104,10 @@ func newPortsCmd(a *app) *cobra.Command {
 
 func newPathCmd(a *app) *cobra.Command {
 	return &cobra.Command{
-		Use:               "path [project] <branch>",
+		Use:               "path [project] [branch]",
 		Short:             "Prints the worktree directory",
 		Long:              "Prints the path so a shell can compose with it: `cd $(wtm path feat/my-branch)`.",
-		Args:              needArgs(1, 2, "name the branch, as in `wtm path feat/my-branch`"),
+		Args:              needArgs(0, 2, ""),
 		ValidArgsFunction: a.completeTargets,
 		SilenceUsage:      true,
 		SilenceErrors:     true,

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"maps"
 	"slices"
+	"strings"
 )
 
 // ProjectUpdate carries the fields an edit actually names. A nil pointer means
@@ -22,6 +23,8 @@ type ProjectUpdate struct {
 	// merging name by name would leave no way to drop a profile.
 	Profiles            map[string][]string
 	ProfileDescriptions map[string]string
+	// Copy replaces the whole list when given, an empty one included.
+	Copy []string
 
 	DBService         *string
 	DBUser            *string
@@ -43,7 +46,7 @@ func (u ProjectUpdate) IsEmpty() bool {
 	return u.Dir == nil && u.BaseBranch == nil && u.Dump == nil &&
 		u.GitContainer == nil && u.PostCreate == nil && u.ReadyTimeout == nil &&
 		u.ReadyInterval == nil && u.Profiles == nil && u.ProfileDescriptions == nil &&
-		!u.touchesBackup()
+		u.Copy == nil && !u.touchesBackup()
 }
 
 type FieldChange struct {
@@ -86,6 +89,10 @@ func (u ProjectUpdate) Apply(p Project) (Project, []FieldChange) {
 		changes = append(changes, FieldChange{"profile_descriptions",
 			fmt.Sprint(p.ProfileDescriptions), fmt.Sprint(u.ProfileDescriptions)})
 		p.ProfileDescriptions = u.ProfileDescriptions
+	}
+	if u.Copy != nil && !slices.Equal(p.Copy, u.Copy) {
+		changes = append(changes, FieldChange{"copy", strings.Join(p.Copy, ", "), strings.Join(u.Copy, ", ")})
+		p.Copy = u.Copy
 	}
 
 	if !u.touchesBackup() {

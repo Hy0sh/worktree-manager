@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Hy0sh/worktree-manager/internal/compose"
 	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 	"github.com/Hy0sh/worktree-manager/internal/stack"
@@ -49,7 +50,9 @@ func TestCreateStartsStackUnlessNoStart(t *testing.T) {
 	}
 }
 
-func TestCreateNoStartSkipsWtcEntirely(t *testing.T) {
+// --no-start still allocates the index and writes the compose files: a
+// `docker compose up` typed in the worktree otherwise reached the main stack.
+func TestCreateNoStartPreparesTheStackWithoutStartingIt(t *testing.T) {
 	f := newFixture(t)
 	o := f.opts("feat/x")
 	o.NoStart = true
@@ -57,9 +60,45 @@ func TestCreateNoStartSkipsWtcEntirely(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 	for _, l := range f.fake.Lines() {
-		if strings.Contains(l, "docker") {
-			t.Fatalf("--no-start must not touch docker, got %q", l)
+		if strings.Contains(l, " up ") {
+			t.Fatalf("--no-start must not start the stack, got %q", l)
 		}
+	}
+	got, err := os.ReadFile(filepath.Join(f.root, ".worktrees", "feat", "x", compose.OverrideNames[0]))
+	if err != nil {
+		t.Fatalf("no name override in the worktree: %v", err)
+	}
+	if !strings.Contains(string(got), "name: 001-wt-1-feat-x") {
+		t.Fatalf("%s = %q, want the worktree's compose project named", compose.OverrideNames[0], got)
+	}
+}
+
+// Compose loads one override only: the project's own wins, and the one wtm
+// wrote before it existed must not stay around to shadow it.
+func TestAProjectOverrideTakesThePlaceOfTheNameOverride(t *testing.T) {
+	f := newFixture(t)
+	f.tracked = map[string]string{"docker-compose.override.yml": "services: {}\n"}
+	var out strings.Builder
+	o := f.opts("feat/x")
+	o.Out = &out
+	o.NoStart = true
+	dest := filepath.Join(f.root, ".worktrees", "feat", "x")
+	if err := Create(context.Background(), o); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if !strings.Contains(out.String(), "docker-compose.override.yml belongs to the project") {
+		t.Fatalf("the warning should name the project's override:\n%s", out.String())
+	}
+	if _, err := os.Stat(filepath.Join(dest, compose.OverrideNames[0])); err == nil {
+		t.Fatalf("%s should not have been written", compose.OverrideNames[0])
+	}
+
+	mustWrite(t, filepath.Join(dest, compose.OverrideNames[0]), generatedHeader+"\nname: stale\n")
+	if _, err := prepareStack(context.Background(), o, dest); err != nil {
+		t.Fatalf("prepareStack: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dest, compose.OverrideNames[0])); err == nil {
+		t.Fatalf("a stale %s would shadow the project's own", compose.OverrideNames[0])
 	}
 }
 

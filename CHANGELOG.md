@@ -6,6 +6,36 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Added
+
+- A project can list the files git leaves out that each worktree still needs,
+  in `copy` (`wtm project create|edit --copy <pattern>`, repeatable): a
+  `.env.local`, an editor's local settings. Only the `*.env` files followed a
+  worktree before. A match git tracks keeps the branch's version, and a
+  symlink leading out of the project is not followed.
+- `wtm list` shows each worktree's compose project, the name `docker compose -p`
+  and `docker compose ls` go by, which wtm printed nowhere. The column comes
+  before STATUS and PATH, which stay the last two.
+- Typed from a worktree, `wtm ports`, `path`, `exec` and `run` take its branch
+  when none is named: `wtm ports`, `wtm run -- claude`.
+
+### Fixed
+
+- A bare `docker compose` typed in a worktree, from a shell or an IDE, reaches
+  the worktree's stack and no longer the main one. A compose file reading its
+  `name:` from a versioned `.env` gave the worktree the main stack's name, so a
+  `docker compose down` there took the main stack down. wtm now writes a
+  `compose.override.yaml` in the worktree, which compose loads by itself, with
+  the worktree's project name and its rebased ports. A project that has an
+  override of its own keeps it, and wtm says a bare compose is not covered
+  there. Variables read in `environment:` still come from `.env` on a bare
+  call: only `wtm run` hands compose this worktree's values.
+- `create --no-start` allocates the index and writes the compose files, as
+  `adopt --no-start` already did. Until the first start, `wtm run` set neither
+  `COMPOSE_PROJECT_NAME` nor `COMPOSE_FILE`, without a word, and a
+  `wtm run <branch> -- docker compose up -d` went for the main stack. `wtm run`
+  now warns when no index is recorded.
+
 ## [0.20.0] - 2026-09-28
 
 ### Added

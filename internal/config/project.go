@@ -41,9 +41,13 @@ type Project struct {
 	// ReadyTimeout is how long a new worktree waits for a service before
 	// post_create runs, ReadyInterval how often it asks, both as durations
 	// ("2m", "10s"). Empty takes the built-in ones: a database is not an app.
-	ReadyTimeout  string  `json:"ready_timeout,omitempty"`
-	ReadyInterval string  `json:"ready_interval,omitempty"`
-	Backup        *Backup `json:"backup,omitempty"`
+	ReadyTimeout  string `json:"ready_timeout,omitempty"`
+	ReadyInterval string `json:"ready_interval,omitempty"`
+	// Copy lists the files git leaves out that a worktree still needs, as
+	// patterns relative to the project root (".env.local", "config/*.local.json").
+	// The *.env files are copied without being named here.
+	Copy   []string `json:"copy,omitempty"`
+	Backup *Backup  `json:"backup,omitempty"`
 }
 
 // Defaults for the most common docker compose layout.

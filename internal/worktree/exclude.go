@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/Hy0sh/worktree-manager/internal/compose"
 	"github.com/Hy0sh/worktree-manager/internal/mark"
 )
 
@@ -18,7 +19,8 @@ var artifactBlock = mark.Block{
 // excluded lists what wtm drops in a checkout: its artifacts in a worktree, and
 // .worktrees in the main one, which `git add -A` adds as an embedded repository.
 // No project's .gitignore knows them, so a commit would take them along.
-var excluded = []string{".worktrees/", gitContainerLink, snapshotLink, snapshotOverride, portsOverride}
+var excluded = []string{".worktrees/", gitContainerLink, snapshotLink, snapshotOverride, portsOverride,
+	compose.OverrideNames[0]}
 
 // excludeArtifacts writes to info/exclude rather than .gitignore, which is
 // versioned and belongs to the project. git reads it from the common git-dir,

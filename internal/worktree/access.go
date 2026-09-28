@@ -68,6 +68,10 @@ func Run(ctx context.Context, o Options, command []string) error {
 	if err != nil {
 		return err
 	}
+	if compose.Has(o.Project.Dir) && composeEnv(o, wt) == nil {
+		o.logf("warning: no stack index is recorded for %s, so COMPOSE_PROJECT_NAME and COMPOSE_FILE "+
+			"are not set: run `wtm start %s` first", o.Branch, o.Branch)
+	}
 	return runIn(ctx, o, wt, execx.Cmd{Name: command[0], Args: command[1:]})
 }
 
@@ -91,10 +95,9 @@ func runAfter(ctx context.Context, o Options) {
 		o.logf("warning: --run was not played: %v", err)
 		return
 	}
-	// The index was allocated by the start that just happened, so it is in the
-	// registry but not in the copy of the project this call was given. Under
-	// --no-start nothing allocated one, and a host command needs no stack.
-	if !o.NoStart && compose.Has(o.Project.Dir) {
+	// The index was allocated by the create that just happened, so it is in the
+	// registry but not in the copy of the project this call was given.
+	if compose.Has(o.Project.Dir) {
 		if err := o.resolveIndex(ctx, &wt, index.MustExist); err != nil {
 			o.logf("warning: the compose environment is not set: %v", err)
 		}

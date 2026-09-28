@@ -34,6 +34,31 @@ func TestListNamesTheBranchAndTheDetachedHead(t *testing.T) {
 	}
 }
 
+// The compose project is what `docker compose -p` and `docker compose ls` take,
+// and nothing else in wtm named it.
+func TestListNamesTheComposeProjectOfAnIndexedWorktree(t *testing.T) {
+	dir := filepath.Join(t.TempDir(), "myapp")
+	cfg := &config.Config{Projects: map[string]config.Project{"myapp": {Dir: dir,
+		WorktreeIndices: map[string]int{"feat/x": 2}}}}
+	a, _, out := newTestApp(t, cfg, "", func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(c.String(), "worktree list") {
+			return execx.Result{Stdout: porcelainOf(dir,
+				"worktree "+filepath.Join(dir, ".worktrees", "feat", "x")+"\nHEAD abc\nbranch refs/heads/feat/x")}, nil
+		}
+		return execx.Result{}, nil
+	})
+
+	cmd := newListCmd(a)
+	if err := cmd.RunE(cmd, []string{"myapp"}); err != nil {
+		t.Fatalf("list: %v", err)
+	}
+
+	row := regexp.MustCompile(`(?m)^2\s+feat/x\s+myapp-wt-2-feat-x\s+`)
+	if !row.MatchString(out.String()) {
+		t.Fatalf("the compose project should follow the branch:\n%s", out.String())
+	}
+}
+
 // porcelainOf builds the answer of `git worktree list --porcelain` for a
 // repository and the linked worktrees given as path -> ref lines.
 func porcelainOf(dir string, linked ...string) string {
@@ -112,7 +137,7 @@ func TestListNamesADetachedWorktreeLeftToAdopt(t *testing.T) {
 		t.Fatalf("list: %v", err)
 	}
 
-	row := regexp.MustCompile(`(?m)^-\s+\(detached 37a276b4\)\s+adoptable`)
+	row := regexp.MustCompile(`(?m)^-\s+\(detached 37a276b4\)\s+-\s+adoptable`)
 	if !row.MatchString(out.String()) {
 		t.Fatalf("where HEAD sits is all there is to name, and it opens the BRANCH column:\n%s", out.String())
 	}

@@ -10,6 +10,7 @@ import (
 
 	"github.com/Hy0sh/worktree-manager/internal/backup"
 	"github.com/Hy0sh/worktree-manager/internal/compose"
+	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/dbengine"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 	"github.com/Hy0sh/worktree-manager/internal/safefile"
@@ -58,6 +59,9 @@ func provision(ctx context.Context, o Options, dest string, mode provisionMode) 
 	}
 	if err := copyEnvFiles(o.Project.Dir, dest, mode, o.logf); err != nil {
 		return fmt.Errorf("copying .env files: %w", err)
+	}
+	if err := copyListed(ctx, o, dest, mode); err != nil {
+		return fmt.Errorf("copying the files listed in copy: %w", err)
 	}
 	if err := copyComposeOverrides(o.Project.Dir, dest, mode); err != nil {
 		return fmt.Errorf("copying compose overrides: %w", err)
@@ -180,26 +184,79 @@ func copyEnvFiles(root, dest string, mode provisionMode, logf func(string, ...an
 		if !strings.HasSuffix(d.Name(), ".env") {
 			return nil
 		}
-		// Following a valid symlink is the point (.env -> .env.local), but only
-		// inside the project: a cloned branch controls these links, and a
-		// target outside the repository is content the user never put there.
-		if d.Type()&fs.ModeSymlink != 0 {
-			target, err := filepath.EvalSymlinks(path)
-			if err != nil {
-				logf("warning: %s is a symlink whose target is missing, not copied", rel)
-				return nil
-			}
-			if !safefile.Within(rootReal, target) {
-				logf("warning: %s links outside the project (%s), not copied", rel, target)
-				return nil
-			}
-			if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
-				logf("warning: %s does not resolve to a regular file, not copied", rel)
-				return nil
-			}
+		if d.Type()&fs.ModeSymlink != 0 && !linkStaysInside(rootReal, path, rel, logf) {
+			return nil
 		}
 		return copyFile(path, dest, filepath.Join(dest, rel), mode)
 	})
+}
+
+// linkStaysInside says whether a symlink is worth following. Following a valid
+// one is the point (.env -> .env.local), but only inside the project: a cloned
+// branch controls these links, and a target outside the repository is content
+// the user never put there.
+func linkStaysInside(rootReal, path, rel string, logf func(string, ...any)) bool {
+	target, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		logf("warning: %s is a symlink whose target is missing, not copied", rel)
+		return false
+	}
+	if !safefile.Within(rootReal, target) {
+		logf("warning: %s links outside the project (%s), not copied", rel, target)
+		return false
+	}
+	if info, err := os.Stat(path); err != nil || !info.Mode().IsRegular() {
+		logf("warning: %s does not resolve to a regular file, not copied", rel)
+		return false
+	}
+	return true
+}
+
+// copyListed copies the files the project names in `copy`. A tracked match is
+// the branch's own and stays: `*.json` would otherwise swap package.json for
+// the main checkout's.
+func copyListed(ctx context.Context, o Options, dest string, mode provisionMode) error {
+	if len(o.Project.Copy) == 0 {
+		return nil
+	}
+	root := o.Project.Dir
+	rootReal, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return err
+	}
+	for _, pattern := range o.Project.Copy {
+		// Checked here too: config.json can be hand-edited, and the pattern
+		// is joined under the project root.
+		if err := config.ValidateCopyPattern(pattern); err != nil {
+			o.logf("warning: %v, skipped", err)
+			continue
+		}
+		matches, _ := filepath.Glob(filepath.Join(root, pattern))
+		for _, path := range matches {
+			rel, err := filepath.Rel(root, path)
+			if err != nil {
+				return err
+			}
+			info, err := os.Lstat(path)
+			if err != nil {
+				return err
+			}
+			switch {
+			case info.IsDir():
+				o.logf("warning: %s is a directory, not copied: name the files in it", rel)
+				continue
+			case info.Mode()&fs.ModeSymlink != 0 && !linkStaysInside(rootReal, path, rel, o.logf):
+				continue
+			case tracked(ctx, o, dest, rel):
+				o.logf("warning: %s is tracked by git, the branch's own copy is kept", rel)
+				continue
+			}
+			if err := copyFile(path, dest, filepath.Join(dest, rel), mode); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }
 
 func copyComposeOverrides(root, dest string, mode provisionMode) error {
@@ -208,7 +265,12 @@ func copyComposeOverrides(root, dest string, mode provisionMode) error {
 		if _, err := os.Stat(src); err != nil {
 			continue
 		}
-		if err := copyFile(src, dest, filepath.Join(dest, name), mode); err != nil {
+		// The one wtm wrote before the project had its own is no local edit.
+		m := mode
+		if generatedByWtm(filepath.Join(dest, name)) {
+			m = overwriteCopies
+		}
+		if err := copyFile(src, dest, filepath.Join(dest, name), m); err != nil {
 			return err
 		}
 	}

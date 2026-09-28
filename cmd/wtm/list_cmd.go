@@ -2,9 +2,11 @@ package main
 
 import (
 	"fmt"
+	"path/filepath"
 	"strconv"
 	"text/tabwriter"
 
+	"github.com/Hy0sh/worktree-manager/internal/stack"
 	"github.com/Hy0sh/worktree-manager/internal/worktree"
 	"github.com/spf13/cobra"
 )
@@ -31,12 +33,17 @@ func newListCmd(a *app) *cobra.Command {
 				return nil
 			}
 			w := tabwriter.NewWriter(a.out, 0, 0, 2, ' ', 0)
-			fmt.Fprintln(w, "INDEX\tBRANCH\tSTATUS\tPATH")
+			// Status and path stay the last two columns: the plugin's hook reads
+			// them as $(NF-1) and $NF.
+			fmt.Fprintln(w, "INDEX\tBRANCH\tCOMPOSE PROJECT\tSTATUS\tPATH")
 			adoptable := 0
 			for _, e := range entries {
-				idx := "-"
+				idx, project := "-", "-"
 				if e.Index > 0 {
 					idx = strconv.Itoa(e.Index)
+				}
+				if e.Index > 0 && e.Branch != "" {
+					project = stack.ProjectName(filepath.Base(p.Dir), e.Index, e.Branch)
 				}
 				branch := e.Branch
 				switch {
@@ -50,7 +57,7 @@ func newListCmd(a *app) *cobra.Command {
 				if e.Adoptable() {
 					adoptable++
 				}
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\n", idx, branch, e.Status, e.Path)
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", idx, branch, project, e.Status, e.Path)
 			}
 			if err := w.Flush(); err != nil {
 				return err
