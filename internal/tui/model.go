@@ -22,6 +22,8 @@ type Source struct {
 	// rather than called in-process: docker streams straight to stdout, and a
 	// start may ask about memory.
 	Wtm func(args ...string) *exec.Cmd
+	// Open hands a URL to the desktop's browser.
+	Open func(url string) error
 }
 
 // refreshEvery is also the floor between two listings: a docker slower than
@@ -61,6 +63,11 @@ type Model struct {
 	ports    []string
 	portsFor string
 	portsErr error
+
+	// picking moves the cursor from the rows to the selected row's URLs, pick
+	// being the one it is on.
+	picking bool
+	pick    int
 
 	width, height int
 }
@@ -119,6 +126,9 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.confirm != nil {
 			return m, m.answer(msg.String())
 		}
+		if m.picking {
+			return m, m.choose(msg.String())
+		}
 		switch msg.String() {
 		case "q", "esc", "ctrl+c":
 			return m, tea.Quit
@@ -130,6 +140,12 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, m.move(1)
 		case "r":
 			return m, m.refresh()
+		case "o":
+			if len(m.urls()) == 0 {
+				m.tell(false, "no url to open for this worktree")
+				return m, nil
+			}
+			m.picking, m.pick = true, 0
 		}
 	case tickMsg:
 		return m, tea.Batch(m.refresh(), tick())
@@ -163,6 +179,16 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		m.ports, m.portsErr, m.portsFor = msg.lines, msg.err, msg.path
+		// A refresh can take URLs away from under the cursor.
+		n := len(m.urls())
+		m.picking = m.picking && n > 0
+		m.pick = min(m.pick, max(n-1, 0))
+	case openedMsg:
+		if msg.err != nil {
+			m.tell(true, "open %s: %v", msg.url, msg.err)
+		} else {
+			m.tell(false, "opened %s", msg.url)
+		}
 	}
 	return m, nil
 }
@@ -213,6 +239,7 @@ func (m *Model) loadPorts() tea.Cmd {
 	e := m.entries[i]
 	if m.portsFor != e.Path {
 		m.ports, m.portsErr, m.portsFor = nil, nil, ""
+		m.picking = false
 	}
 	if e.ComposeProject == "" {
 		m.portsFor = e.Path

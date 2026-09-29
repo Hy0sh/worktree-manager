@@ -82,6 +82,10 @@ func (m Model) render() string {
 	// dozen addresses, more than a split terminal has rows for.
 	if m.height > 0 {
 		room := m.height - strings.Count(b.String(), "\n") - strings.Count(tail.String(), "\n") - 1
+		// The URL under the cursor stays above the cut, the top giving way.
+		if r := m.pickRow(); room > 1 && r >= room-1 {
+			detail = detail[r-room+2:]
+		}
 		detail = m.fit(detail, room)
 	}
 	for _, l := range detail {
@@ -175,10 +179,33 @@ func (m Model) detail() []string {
 	case len(m.ports) == 0:
 		return append(lines, faint.Render("no published port"))
 	}
-	for _, l := range m.ports {
-		lines = append(lines, "  "+l)
+	urls := m.urls()
+	at := map[int]string{}
+	for _, u := range urls {
+		at[u.line] = u.url
+	}
+	for i, l := range m.ports {
+		prefix := "  "
+		if m.picking && urls[m.pick].line == i {
+			prefix = bold.Render("› ")
+		}
+		// OSC 8 makes the address clickable where the terminal knows it, and
+		// changes nothing on screen where it does not.
+		if url, ok := at[i]; ok {
+			l = strings.TrimSuffix(l, url) + lipgloss.NewStyle().Hyperlink(url).Render(url)
+		}
+		lines = append(lines, prefix+l)
 	}
 	return lines
+}
+
+// pickRow is where the URL under the cursor stands in the detail, which opens
+// on a blank row and the worktree's path; -1 while the cursor is on the rows.
+func (m Model) pickRow() int {
+	if !m.picking {
+		return -1
+	}
+	return 2 + m.urls()[m.pick].line
 }
 
 // confirmation says what y is about to take, from the plan Remove itself acts
@@ -218,13 +245,19 @@ func lockReason(reason string) string {
 // worktree left to adopt or a stack that is down, a key would only be refused.
 func (m Model) keys() string {
 	e, ok := m.target()
+	open := ""
+	if len(m.urls()) > 0 {
+		open = " · o open a url"
+	}
 	switch {
+	case m.picking:
+		return "↑/↓ choose · enter open in the browser · esc back to the worktrees"
 	case !ok:
 		return "r refresh · q quit"
 	case e.Adoptable() || e.Branch == "":
 		return "↑/↓ move · r refresh · q quit"
 	case e.Status != "up" || e.ComposeProject == "":
-		return "↑/↓ move · s start · x stop · d remove · enter shell · r refresh · q quit"
+		return "↑/↓ move · s start · x stop · d remove · enter shell" + open + " · r refresh · q quit"
 	}
-	return "↑/↓ move · s start · x stop · d remove · enter shell · l logs · r refresh · q quit"
+	return "↑/↓ move · s start · x stop · d remove · enter shell · l logs" + open + " · r refresh · q quit"
 }
