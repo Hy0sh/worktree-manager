@@ -31,16 +31,19 @@ func Mentioned(composeText string) bool {
 }
 
 // URLs maps each service to the addresses a known proxy routes to it, in
-// router order. A service no router names is absent.
-func URLs(services map[string]Service) map[string][]string {
+// router order, and names that proxy. A service no router names is absent.
+func URLs(services map[string]Service) (map[string][]string, string) {
 	out := map[string][]string{}
 	for _, name := range slices.Sorted(maps.Keys(services)) {
 		if s := services[name]; imageBase(s.Image) == "traefik" {
-			traefik(s, services, out)
-			break // ponytail: first Traefik only, a project running two is yet to be seen
+			// ponytail: first Traefik only, a project running two is yet to be seen
+			if traefik(s, services, out); len(out) > 0 {
+				return out, "traefik"
+			}
+			break
 		}
 	}
-	return out
+	return out, ""
 }
 
 // imageBase is the image's last path segment without tag or digest:

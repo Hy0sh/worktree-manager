@@ -89,6 +89,10 @@ func TestEndpointsListTheURLsStartedServicesDeclare(t *testing.T) {
 	if !strings.Contains(got, "front/url  http://front.shop.localhost:20087") {
 		t.Errorf("the declared address should carry the proxy's worktree port:\n%s", got)
 	}
+	// What people open first, then the ports, each block under its title.
+	if !strings.HasPrefix(got, "urls\n  front/url") || !strings.Contains(got, "\n\nports\n  proxy") {
+		t.Errorf("urls then ports, each under its title:\n%s", got)
+	}
 	if strings.Contains(got, "admin") {
 		t.Errorf("admin was left down by the profile and must not be listed:\n%s", got)
 	}

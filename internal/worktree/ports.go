@@ -218,7 +218,8 @@ func endpoints(ctx context.Context, o Options, wt stack.Worktree) []string {
 		}
 		entries = append(entries, entry{label, address})
 	}
-	urls := declaredURLs(ctx, o, wt)
+	urls, via := declaredURLs(ctx, o, wt)
+	var urlEntries []entry
 	for _, service := range slices.Sorted(maps.Keys(urls)) {
 		for _, u := range urls[service] {
 			address, ok := expandURL(u, allocations)
@@ -228,12 +229,28 @@ func endpoints(ctx context.Context, o Options, wt stack.Worktree) []string {
 			// The service's own port line may carry the bare name already.
 			label := service + "/url"
 			width = max(width, len(label))
-			entries = append(entries, entry{label, address})
+			urlEntries = append(urlEntries, entry{label, address})
 		}
 	}
-	out := make([]string, 0, len(entries))
-	for _, e := range entries {
-		out = append(out, fmt.Sprintf("%-*s  %s", width, e.label, e.address))
+	format := func(indent string, es []entry) []string {
+		out := make([]string, 0, len(es))
+		for _, e := range es {
+			out = append(out, fmt.Sprintf("%s%-*s  %s", indent, width, e.label, e.address))
+		}
+		return out
+	}
+	if len(urlEntries) == 0 {
+		return format("", entries)
+	}
+	// What people open comes first. The titles and the blank line keep
+	// `awk '$1 == "api/url"'` working, since no service is named after them.
+	title := "urls"
+	if via != "" {
+		title += ", through " + via
+	}
+	out := append([]string{title}, format("  ", urlEntries)...)
+	if len(entries) > 0 {
+		out = append(append(out, "", "ports"), format("  ", entries)...)
 	}
 	return out
 }
@@ -251,25 +268,26 @@ const composeConfigTimeout = 10 * time.Second
 // declaredURLs reads the addresses of every started service, from compose's
 // own rendering: it resolves ${VAR} against the worktree's .env and leaves the
 // {{port}} placeholders, which it does not know, for expandURL. A wtm.url label
-// states them outright and wins over what a known proxy routes there.
-func declaredURLs(ctx context.Context, o Options, wt stack.Worktree) map[string][]string {
+// states them outright and wins over what a known proxy routes there. via names
+// that proxy, "" when none was recognised.
+func declaredURLs(ctx context.Context, o Options, wt stack.Worktree) (urls map[string][]string, via string) {
 	if !declaresURLs(o, wt) {
-		return nil
+		return nil, ""
 	}
 	ctx, cancel := context.WithTimeout(ctx, composeConfigTimeout)
 	defer cancel()
 	res, err := o.Runner.Run(ctx, o.composeCmd(wt, "config", "--format", "json"))
 	if err != nil {
-		return nil
+		return nil, ""
 	}
 	var cfg struct {
 		Services map[string]proxy.Service `json:"services"`
 	}
 	if json.Unmarshal([]byte(res.Stdout), &cfg) != nil {
-		return nil
+		return nil, ""
 	}
 	started := startedServices(o)
-	urls := proxy.URLs(cfg.Services)
+	urls, via = proxy.URLs(cfg.Services)
 	for name, s := range cfg.Services {
 		if u, ok := s.Labels[urlLabel]; ok {
 			urls[name] = []string{u}
@@ -278,7 +296,7 @@ func declaredURLs(ctx context.Context, o Options, wt stack.Worktree) map[string]
 			delete(urls, name)
 		}
 	}
-	return urls
+	return urls, via
 }
 
 // declaresURLs spares the docker call to every project that neither sets

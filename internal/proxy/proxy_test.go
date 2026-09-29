@@ -34,8 +34,8 @@ func TestTraefikRoutesThroughTheRoutersEntrypoint(t *testing.T) {
 		"api":   {"http://api.my-app.localhost:25082"},
 		"front": {"http://a.localhost:25082", "http://b.localhost:25082"},
 	}
-	if got := URLs(services); !reflect.DeepEqual(got, want) {
-		t.Fatalf("got %v, want %v", got, want)
+	if got, via := URLs(services); !reflect.DeepEqual(got, want) || via != "traefik" {
+		t.Fatalf("got %v via %q, want %v via traefik", got, via, want)
 	}
 }
 
@@ -59,7 +59,7 @@ func TestTraefikFallsBackToConventionalPorts(t *testing.T) {
 		"web":    {"http://web.localhost"},
 		"secure": {"https://secure.localhost:28443"},
 	}
-	if got := URLs(services); !reflect.DeepEqual(got, want) {
+	if got, _ := URLs(services); !reflect.DeepEqual(got, want) {
 		t.Fatalf("got %v, want %v", got, want)
 	}
 }
@@ -71,7 +71,7 @@ func TestNoKnownProxyNoURL(t *testing.T) {
 			"traefik.http.routers.web.rule": "Host(`web.localhost`)",
 		}},
 	}
-	if got := URLs(services); len(got) != 0 {
-		t.Fatalf("no Traefik runs, got %v", got)
+	if got, via := URLs(services); len(got) != 0 || via != "" {
+		t.Fatalf("no Traefik runs, got %v via %q", got, via)
 	}
 }
