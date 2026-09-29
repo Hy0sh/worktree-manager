@@ -17,6 +17,9 @@ type Entry struct {
 	// Status is "up", "down", "adoptable" for a worktree wtm has not adopted,
 	// or "-" when docker could not be reached.
 	Status string
+	// ComposeProject is what `docker compose -p` takes, empty until an index
+	// is recorded: before that, docker holds the only name there is.
+	ComposeProject string
 }
 
 // StatusUnknown is shown when docker did not answer in time. A listing is a
@@ -73,7 +76,11 @@ func List(ctx context.Context, o Options) ([]Entry, error) {
 				}
 			}
 		}
-		entries = append(entries, Entry{Worktree: wt, Status: status})
+		e := Entry{Worktree: wt, Status: status}
+		if wt.Index > 0 && wt.Branch != "" {
+			e.ComposeProject = o.projectName(wt)
+		}
+		entries = append(entries, e)
 	}
 	return entries, nil
 }

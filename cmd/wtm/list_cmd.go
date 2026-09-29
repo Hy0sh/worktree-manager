@@ -2,11 +2,9 @@ package main
 
 import (
 	"fmt"
-	"path/filepath"
 	"strconv"
 	"text/tabwriter"
 
-	"github.com/Hy0sh/worktree-manager/internal/stack"
 	"github.com/Hy0sh/worktree-manager/internal/worktree"
 	"github.com/spf13/cobra"
 )
@@ -42,8 +40,8 @@ func newListCmd(a *app) *cobra.Command {
 				if e.Index > 0 {
 					idx = strconv.Itoa(e.Index)
 				}
-				if e.Index > 0 && e.Branch != "" {
-					project = stack.ProjectName(filepath.Base(p.Dir), e.Index, e.Branch)
+				if e.ComposeProject != "" {
+					project = e.ComposeProject
 				}
 				branch := e.Branch
 				switch {
