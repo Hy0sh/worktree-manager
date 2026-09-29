@@ -6,6 +6,8 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+## [0.24.0] - 2026-09-29
+
 ### Added
 
 - In `wtm tui`, `o` moves the cursor onto the selected worktree's urls and
@@ -1162,7 +1164,8 @@ First tagged release. The whole worktree lifecycle behind one binary:
   identical so worktrees created with it keep working.
 - A project without a compose file is not an error, there is simply no stack.
 
-[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.23.0...HEAD
+[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.24.0...HEAD
+[0.24.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.22.0...v0.23.0
 [0.22.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.21.0...v0.22.0
 [0.21.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.20.0...v0.21.0
