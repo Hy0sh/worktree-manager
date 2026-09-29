@@ -554,21 +554,10 @@ The proxy is told by its image, whatever registry it comes from:
 | caddy-docker-proxy | `caddy-docker-proxy` | the `caddy`, `caddy_0`… labels | 443 in https, as Caddy serves a bare name; 80 for `http://` or under `auto_https off` |
 
 A proxy configured from a mounted file, a stock `caddy` with its Caddyfile
-say, shows wtm nothing to read.
-
-Any other proxy, or an address wtm cannot work out, is stated in a `wtm.url`
-label, which wins over what Traefik routes; `{{port SERVICE:PORT}}` stands for
-the host port this worktree got for that container port:
-
-```yaml
-  front:
-    labels:
-      - "wtm.url=http://front.${APP_NAME}.localhost:{{port proxy:80}}"
-```
-
-Both are read from `docker compose config`, so `${APP_NAME}` resolves as it
-does for the stack itself; wtm only fills in `{{port}}`. A service the profile
-left down, or a port nothing publishes, prints no address.
+say, shows wtm nothing to read: its services are listed by port only. Routes
+are read from `docker compose config`, so `${APP_NAME}` resolves as it does
+for the stack itself. A service the profile left down, or a proxy it left
+down, prints no address.
 
 ## Diagnostics
 

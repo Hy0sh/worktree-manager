@@ -7,10 +7,8 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/Hy0sh/worktree-manager/internal/compose"
@@ -218,14 +216,10 @@ func endpoints(ctx context.Context, o Options, wt stack.Worktree) []string {
 		}
 		entries = append(entries, entry{label, address})
 	}
-	urls, via := declaredURLs(ctx, o, wt)
+	urls, via := routedURLs(ctx, o, wt)
 	var urlEntries []entry
 	for _, service := range slices.Sorted(maps.Keys(urls)) {
-		for _, u := range urls[service] {
-			address, ok := expandURL(u, allocations)
-			if !ok {
-				continue
-			}
+		for _, address := range urls[service] {
 			// The service's own port line may carry the bare name already.
 			label := service + "/url"
 			width = max(width, len(label))
@@ -255,23 +249,15 @@ func endpoints(ctx context.Context, o Options, wt stack.Worktree) []string {
 	return out
 }
 
-var portPlaceholder = regexp.MustCompile(`\{\{port ([^\s:}]+):(\d+)\}\}`)
-
-// urlLabel is how a service states the address it is reached through when no
-// published port shows it, a host name routed by a proxy typically.
-const urlLabel = "wtm.url"
-
 // composeConfigTimeout bounds the one docker call printing the addresses
 // costs, which must never hang a start that already succeeded.
 const composeConfigTimeout = 10 * time.Second
 
-// declaredURLs reads the addresses of every started service, from compose's
-// own rendering: it resolves ${VAR} against the worktree's .env and leaves the
-// {{port}} placeholders, which it does not know, for expandURL. A wtm.url label
-// states them outright and wins over what a known proxy routes there. via names
-// that proxy, "" when none was recognised.
-func declaredURLs(ctx context.Context, o Options, wt stack.Worktree) (urls map[string][]string, via string) {
-	if !declaresURLs(o, wt) {
+// routedURLs reads what a known proxy routes to each started service, from
+// compose's own rendering: host names resolve ${VAR} against the worktree's
+// .env, and ports are the worktree's. via names the proxy, "" for none.
+func routedURLs(ctx context.Context, o Options, wt stack.Worktree) (urls map[string][]string, via string) {
+	if !mentionsProxy(o, wt) {
 		return nil, ""
 	}
 	ctx, cancel := context.WithTimeout(ctx, composeConfigTimeout)
@@ -286,48 +272,25 @@ func declaredURLs(ctx context.Context, o Options, wt stack.Worktree) (urls map[s
 	if json.Unmarshal([]byte(res.Stdout), &cfg) != nil {
 		return nil, ""
 	}
-	started := startedServices(o)
-	urls, via = proxy.URLs(cfg.Services)
-	for name, s := range cfg.Services {
-		if u, ok := s.Labels[urlLabel]; ok {
-			urls[name] = []string{u}
-		}
-		if started != nil && !slices.Contains(started, name) {
-			delete(urls, name)
-		}
+	// A proxy the profile left down routes nothing, and neither does a
+	// service left down behind a running one.
+	if started := startedServices(o); started != nil {
+		maps.DeleteFunc(cfg.Services, func(name string, _ proxy.Service) bool { return !slices.Contains(started, name) })
 	}
-	return urls, via
+	return proxy.URLs(cfg.Services)
 }
 
-// declaresURLs spares the docker call to every project that neither sets
-// wtm.url nor runs a proxy wtm knows, which is most of them.
-func declaresURLs(o Options, wt stack.Worktree) bool {
+// mentionsProxy spares the docker call to every project that runs no proxy
+// wtm knows, which is most of them.
+func mentionsProxy(o Options, wt stack.Worktree) bool {
 	files, err := composeFiles(o, wt.Path)
 	if err != nil {
 		return false
 	}
 	for _, f := range files {
-		if data, err := os.ReadFile(f); err == nil && (strings.Contains(string(data), urlLabel) || proxy.Mentioned(string(data))) {
+		if data, err := os.ReadFile(f); err == nil && proxy.Mentioned(string(data)) {
 			return true
 		}
 	}
 	return false
-}
-
-// expandURL fills a declared address from the ports this worktree publishes.
-// A port no started service publishes leaves it unresolved, and it is dropped
-// rather than printed with a placeholder nobody can open.
-func expandURL(template string, allocations []stack.Allocation) (string, bool) {
-	resolved := true
-	out := portPlaceholder.ReplaceAllStringFunc(template, func(m string) string {
-		sub := portPlaceholder.FindStringSubmatch(m)
-		for _, a := range allocations {
-			if a.Service == sub[1] && a.Container == sub[2] {
-				return strconv.Itoa(a.Port)
-			}
-		}
-		resolved = false
-		return m
-	})
-	return out, resolved && !strings.Contains(out, "{{")
 }
