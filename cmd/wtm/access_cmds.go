@@ -77,6 +77,28 @@ func newRunCmd(a *app) *cobra.Command {
 	}
 }
 
+func newLogsCmd(a *app) *cobra.Command {
+	return &cobra.Command{
+		Use:   "logs [project] [branch]",
+		Short: "Follows the logs of the worktree's stack",
+		Long: "Follows the logs of every service of the worktree's stack, from the last\n" +
+			"200 lines, until ctrl+c. It is `wtm run <branch> -- docker compose logs\n" +
+			"--follow --tail 200`. Typed from a worktree, the branch is its own.",
+		Args:              needArgs(0, 2, ""),
+		ValidArgsFunction: a.completeTargets,
+		SilenceUsage:      true,
+		SilenceErrors:     true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			o, err := a.optionsFor(args)
+			if err != nil {
+				return err
+			}
+			o.Out, o.Stack.Out = os.Stderr, os.Stderr
+			return worktree.Run(cmd.Context(), o, []string{"docker", "compose", "logs", "--follow", "--tail", "200"})
+		},
+	}
+}
+
 func newPortsCmd(a *app) *cobra.Command {
 	return &cobra.Command{
 		Use:   "ports [project] [branch]",

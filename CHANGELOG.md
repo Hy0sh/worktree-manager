@@ -18,6 +18,8 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   holds its output until enter. A listing slower than the interval delays the
   next one instead of piling up, and the last answer stays on screen when
   docker does not reply.
+- `wtm logs [project] [branch]` follows the logs of the worktree's stack from
+  its last 200 lines, which is what `l` runs in the dashboard.
 
 ### Fixed
 

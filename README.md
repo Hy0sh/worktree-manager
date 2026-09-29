@@ -161,6 +161,7 @@ wtm exec feat/my-branch --service db -- psql -U postgres
 wtm run feat/my-branch -- claude
 wtm run feat/my-branch -- git status
 wtm run feat/my-branch -- scripts/some-compose-script.sh
+wtm logs feat/my-branch              # follows the stack's logs, from the last 200 lines
 cd $(wtm path feat/my-branch)       # a bare `docker compose` there reaches the worktree's
                                      # stack too, through a generated compose.override.yaml,
                                      # unless the project has an override of its own
