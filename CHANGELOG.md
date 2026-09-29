@@ -6,6 +6,13 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Fixed
+
+- A new worktree no longer takes an index whose ports another project's
+  worktree already publishes. Offsets step by 1000, less than the spread of
+  default ports, so a 3000 at offset 5000 met an 8000 at offset 0 and docker
+  refused the bind; the index is now skipped, naming the other worktree.
+
 ## [0.21.0] - 2026-09-28
 
 ### Added

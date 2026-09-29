@@ -312,6 +312,33 @@ func TestPortClashNamesTheSameNeighbourEveryRun(t *testing.T) {
 	}
 }
 
+// Offsets step by 1000 while default ports spread wider: another project's
+// 8000 at offset 0 meets this one's 3000 at offset 5000, and docker refused
+// the bind with no word on why the index was handed out.
+func TestPortClashSeesAnotherProjectsWorktree(t *testing.T) {
+	f := twoDBFixture(t)
+	other := t.TempDir()
+	mustWrite(t, filepath.Join(other, "compose.yaml"), `services:
+  web:
+    ports:
+      - "${WEB_PORT:-6435}:80"
+`)
+	if err := config.WithLock(f.cfgPath, func(c *config.Config) error {
+		c.Projects["other"] = config.Project{Dir: other, WorktreeIndices: map[string]int{"feat/z": 1}}
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	o := f.opts("feat/y")
+	o.Project.PortOffset = 1000
+	why := portClash(o)(3)
+	for _, want := range []string{"26436", "other", "feat/z", "port_offset"} {
+		if !strings.Contains(why, want) {
+			t.Fatalf("reason should carry %q, got %q", want, why)
+		}
+	}
+}
+
 func TestPortClashIsSilentOnAFreeIndex(t *testing.T) {
 	f := twoDBFixture(t)
 	o := f.opts("feat/y")
