@@ -21,6 +21,10 @@ type Client struct {
 	// makes a worktree outside .worktrees visible to Worktrees. Nothing in such
 	// a worktree's path tells it apart from a stranger's.
 	Managed map[string]bool
+	// Paths is the registry's worktree_paths, branch to path. It names the
+	// branch of an adopted worktree on a detached HEAD, a rebase stopped on a
+	// conflict for one, which git lists with no branch at all.
+	Paths map[string]string
 }
 
 // Up brings a worktree's stack up, env ("API_PORT=20087") interpolating ahead
