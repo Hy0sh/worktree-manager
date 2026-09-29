@@ -25,8 +25,9 @@ type Worktree struct {
 	Locked     bool
 	LockReason string
 	// Detached says HEAD points straight at Head instead of at a branch. git
-	// then names no branch, so Branch is derived from the path, which only
-	// works under WorktreesRoot: wtm always creates <root>/<branch>.
+	// then names no branch, so Branch is derived from the path: under
+	// WorktreesRoot wtm always creates <root>/<branch>, and elsewhere only the
+	// registry's recorded path can say which branch stood there.
 	Detached bool
 	Head     string
 	// UnderRoot says the worktree sits where wtm creates its own. An adopted
@@ -107,6 +108,8 @@ func (c *Client) All(ctx context.Context) ([]Worktree, error) {
 				}
 				pos++
 				wt.Pos = pos
+			} else if det {
+				wt.Branch = BranchAt(c.Paths, path)
 			}
 			out = append(out, wt)
 		}
@@ -131,6 +134,17 @@ func (c *Client) All(ctx context.Context) ([]Worktree, error) {
 	}
 	flush()
 	return out, nil
+}
+
+// BranchAt is the branch recorded at path in paths (branch to path), empty
+// when none is.
+func BranchAt(paths map[string]string, path string) string {
+	for branch, at := range paths {
+		if filepath.Clean(at) == filepath.Clean(path) {
+			return branch
+		}
+	}
+	return ""
 }
 
 func (c *Client) FindByBranch(ctx context.Context, branch string) (Worktree, error) {

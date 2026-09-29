@@ -6,6 +6,13 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Fixed
+
+- An adopted worktree on a detached HEAD, a rebase stopped on a conflict for
+  one, keeps its branch: `exec`, `env` and `run` reach it, and `doctor` no
+  longer reads it as stale. It did, and a `clean -y` from another session's
+  SessionEnd hook took its stack and database down.
+
 ## [0.22.0] - 2026-09-29
 
 ### Added

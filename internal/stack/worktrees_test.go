@@ -212,6 +212,33 @@ func TestWorktreesKeepsAnAdoptedWorktree(t *testing.T) {
 	}
 }
 
+// A rebase stopped on a conflict detaches HEAD, and git then lists the adopted
+// worktree with no branch: dropped from the listing, it read as stale, and a
+// `clean` run by another session took its stack and database down.
+func TestWorktreesKeepsAnAdoptedWorktreeOnADetachedHead(t *testing.T) {
+	f := &execx.Fake{Handler: func(c execx.Cmd) (execx.Result, error) {
+		return execx.Result{Stdout: "worktree /repo\nbranch refs/heads/main\n\n" +
+			"worktree /repo/.claude/worktrees/curry\nHEAD 0123456789abcdef\ndetached\n\n" +
+			"worktree /elsewhere/manual\nHEAD 0123456789abcdef\ndetached\n"}, nil
+	}}
+	c := &Client{Runner: f, Dir: "/repo", Managed: map[string]bool{"worktree-curry": true},
+		Paths: map[string]string{"worktree-curry": "/repo/.claude/worktrees/curry/"}}
+	wt, err := c.FindByBranch(context.Background(), "worktree-curry")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if wt.Path != "/repo/.claude/worktrees/curry" || !wt.Detached {
+		t.Fatalf("expected the detached adopted worktree, got %+v", wt)
+	}
+	wts, err := c.Worktrees(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(wts) != 1 {
+		t.Fatalf("a detached worktree nothing recorded stays a stranger's, got %+v", wts)
+	}
+}
+
 // Pos is internal/index's fallback for worktrees older than the recorded
 // indices, so it must keep meaning "nth under .worktrees": numbering adopted
 // ones would hand such a worktree an index its .env never carried.

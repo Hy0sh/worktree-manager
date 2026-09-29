@@ -155,7 +155,8 @@ func (a *app) worktreeBranches(name string) []string {
 	if err != nil {
 		return nil
 	}
-	client := &stack.Client{Runner: a.runner, Dir: p.Dir, Out: io.Discard, Managed: managed(p)}
+	client := &stack.Client{Runner: a.runner, Dir: p.Dir, Out: io.Discard, Managed: managed(p),
+		Paths: p.WorktreePaths}
 	worktrees, err := client.Worktrees(context.Background())
 	if err != nil {
 		return nil
