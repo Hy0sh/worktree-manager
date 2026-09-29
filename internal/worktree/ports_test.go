@@ -53,30 +53,31 @@ func TestCreateListsServiceEndpointsAfterStart(t *testing.T) {
 	}
 }
 
-// A host routed through a proxy publishes no port of its own: the project
-// states the address, and only the port the proxy got is wtm's to fill in.
-func TestEndpointsListTheURLsStartedServicesDeclare(t *testing.T) {
+// A host routed through a proxy publishes no port of its own: the proxy's
+// routes say where to open it, on the port the proxy got in this worktree.
+func TestEndpointsListTheURLsTheProxyRoutes(t *testing.T) {
 	f := newFixture(t)
 	mustWrite(t, filepath.Join(f.root, "compose.yaml"), `services:
   proxy:
+    image: traefik:v3
     ports:
       - "80:80"
   front:
     depends_on: [proxy]
     labels:
-      - "wtm.url=http://front.${NAME}.localhost:{{port proxy:80}}"
+      - "traefik.http.routers.front.rule=Host(`+"`front.${NAME}.localhost`"+`)"
   admin:
     labels:
-      - "wtm.url=http://admin.${NAME}.localhost:{{port proxy:80}}"
+      - "traefik.http.routers.admin.rule=Host(`+"`admin.${NAME}.localhost`"+`)"
 `)
-	// compose's rendering, ${NAME} resolved, {{port}} left for wtm.
+	// compose's rendering: ${NAME} resolved, the worktree's port published.
 	next := f.fake.Handler
 	f.fake.Handler = func(c execx.Cmd) (execx.Result, error) {
 		if strings.Contains(c.String(), "config --format json") {
 			return execx.Result{Stdout: `{"services": {
-				"proxy": {},
-				"front": {"labels": {"wtm.url": "http://front.shop.localhost:{{port proxy:80}}"}},
-				"admin": {"labels": {"wtm.url": "http://admin.shop.localhost:{{port proxy:80}}"}}}}`}, nil
+				"proxy": {"image": "traefik:v3", "ports": [{"target": 80, "published": "20087"}]},
+				"front": {"labels": {"traefik.http.routers.front.rule": "Host(` + "`front.shop.localhost`" + `)"}},
+				"admin": {"labels": {"traefik.http.routers.admin.rule": "Host(` + "`admin.shop.localhost`" + `)"}}}}`}, nil
 		}
 		return next(c)
 	}
@@ -87,10 +88,20 @@ func TestEndpointsListTheURLsStartedServicesDeclare(t *testing.T) {
 	got := strings.Join(endpoints(context.Background(), o, wt), "\n")
 
 	if !strings.Contains(got, "front/url  http://front.shop.localhost:20087") {
-		t.Errorf("the declared address should carry the proxy's worktree port:\n%s", got)
+		t.Errorf("the routed address should carry the proxy's worktree port:\n%s", got)
+	}
+	// What people open first, then the ports, each block under its title.
+	if !strings.HasPrefix(got, "urls, through traefik\n  front/url") || !strings.Contains(got, "\n\nports\n  proxy") {
+		t.Errorf("urls then ports, each under its title:\n%s", got)
 	}
 	if strings.Contains(got, "admin") {
 		t.Errorf("admin was left down by the profile and must not be listed:\n%s", got)
+	}
+	// admin alone leaves the proxy down: nothing routes to it then.
+	o.Project.Profiles["solo"] = []string{"admin"}
+	o.Profile = "solo"
+	if got := strings.Join(endpoints(context.Background(), o, wt), "\n"); strings.Contains(got, "/url") {
+		t.Errorf("the proxy is down, no address can open:\n%s", got)
 	}
 	for _, c := range f.fake.Calls {
 		if strings.Contains(c.Line(), "config --format json") && !c.Bounded {
@@ -99,26 +110,16 @@ func TestEndpointsListTheURLsStartedServicesDeclare(t *testing.T) {
 	}
 }
 
-// Most projects set no wtm.url, and printing their ports must not cost them a
+// Most projects run no proxy, and printing their ports must not cost them a
 // docker call.
-func TestEndpointsAskComposeNothingWithoutAURLLabel(t *testing.T) {
+func TestEndpointsAskComposeNothingWithoutAProxy(t *testing.T) {
 	f := newFixture(t)
 	wt := stack.Worktree{Index: 1, Branch: "feat/x", Path: f.root}
 	endpoints(context.Background(), f.opts("feat/x"), wt)
 	for _, l := range f.fake.Lines() {
 		if strings.Contains(l, "config --format json") {
-			t.Errorf("no label, no call: got %q", l)
+			t.Errorf("no proxy, no call: got %q", l)
 		}
-	}
-}
-
-func TestExpandURLFillsOnlyPortsTheWorktreePublishes(t *testing.T) {
-	allocations := []stack.Allocation{{Service: "proxy", Container: "80", Port: 20087}}
-	if got, ok := expandURL("http://app.x.localhost:{{port proxy:80}}", allocations); !ok || got != "http://app.x.localhost:20087" {
-		t.Errorf("got %q, %v", got, ok)
-	}
-	if _, ok := expandURL("http://localhost:{{port proxy:8080}}", allocations); ok {
-		t.Error("a port nothing publishes must leave the address unresolved")
 	}
 }
 

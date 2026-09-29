@@ -6,6 +6,19 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Added
+
+- `start` and `wtm ports` print the addresses a reverse proxy routes to each
+  service, in a `urls` block ahead of the ports: Traefik's router rules and
+  entrypoints, nginx-proxy's `VIRTUAL_HOST`, caddy-docker-proxy's `caddy`
+  labels. The proxy is told by its image: nothing to declare in the project.
+
+### Removed
+
+- The `wtm.url` label, added in 0.20.0. It asked every project for a line of
+  wtm in its compose file, and anyone to know it existed, where the proxy's own
+  routes now say the same.
+
 ### Fixed
 
 - A new worktree no longer takes an index whose ports another project's

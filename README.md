@@ -524,25 +524,40 @@ either way.
 ### Addresses behind a proxy
 
 A service reached through a reverse proxy publishes no port of its own, so
-nothing in the port list says where to open it. The service states it in a
-`wtm.url` label, and `{{port SERVICE:PORT}}` stands for the host port this
-worktree got for that container port:
+nothing in the port list says where to open it. Behind Traefik, wtm reads it
+from the routers: each `Host()` of a router, on the host port the proxy
+publishes for that router's entrypoint, `https` when the router or the
+entrypoint sets tls. Nothing to declare:
 
 ```yaml
 services:
   proxy:
     image: traefik:v3
+    command: ["--entrypoints.web.address=:80"]
     ports: ["80:80"]
   front:
     labels:
       - "traefik.http.routers.front.rule=Host(`front.${APP_NAME}.localhost`)"
-      - "wtm.url=http://front.${APP_NAME}.localhost:{{port proxy:80}}"
 ```
 
-`start` and `wtm ports` then print `front/url  http://front.myapp.localhost:20081`.
-The label is read from `docker compose config`, so `${APP_NAME}` resolves as it
-does for the stack itself; wtm only fills in `{{port}}`. A service the profile
-left down, or a port nothing publishes, prints no address.
+`start` and `wtm ports` then print `front/url  http://front.myapp.localhost:20081`,
+in a `urls` block ahead of the ports. Entrypoints defined in a mounted
+`traefik.yml` are out of sight, so the proxy's published 80, or 443 for tls,
+stands in.
+
+The proxy is told by its image, whatever registry it comes from:
+
+| Proxy | Image | Host names from | Port |
+|---|---|---|---|
+| Traefik | `traefik` | each router's `Host()` | the router's entrypoint |
+| nginx-proxy | `nginx-proxy`, or `nginx` next to `docker-gen` | `VIRTUAL_HOST` | 80, or the proxy's `HTTP_PORT`; 443 when only https is published |
+| caddy-docker-proxy | `caddy-docker-proxy` | the `caddy`, `caddy_0`… labels | 443 in https, as Caddy serves a bare name; 80 for `http://` or under `auto_https off` |
+
+A proxy configured from a mounted file, a stock `caddy` with its Caddyfile
+say, shows wtm nothing to read: its services are listed by port only. Routes
+are read from `docker compose config`, so `${APP_NAME}` resolves as it does
+for the stack itself. A service the profile left down, or a proxy it left
+down, prints no address.
 
 ## Diagnostics
 
