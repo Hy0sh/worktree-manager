@@ -6,6 +6,15 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Added
+
+- `wtm tui [project]` opens a dashboard of the project's worktrees for a
+  terminal left open beside the agents: what `wtm list` prints, refreshed every
+  five seconds and on `r`, with the addresses of the selected worktree. It only
+  looks for now: starting, stopping and removing stay with the CLI. A listing
+  slower than the interval delays the next one instead of piling up, and the
+  last answer stays on screen when docker does not reply.
+
 ### Fixed
 
 - An adopted worktree on a detached HEAD, a rebase stopped on a conflict for

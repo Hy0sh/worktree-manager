@@ -43,19 +43,10 @@ func newListCmd(a *app) *cobra.Command {
 				if e.ComposeProject != "" {
 					project = e.ComposeProject
 				}
-				branch := e.Branch
-				switch {
-				// Outside wtm's own root, nothing names a detached worktree:
-				// git gives no branch and the path is not one.
-				case e.Detached && branch == "":
-					branch = fmt.Sprintf("(detached %s)", e.ShortHead())
-				case e.Detached:
-					branch = fmt.Sprintf("%s (detached %s)", branch, e.ShortHead())
-				}
 				if e.Adoptable() {
 					adoptable++
 				}
-				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", idx, branch, project, e.Status, e.Path)
+				fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", idx, e.BranchLabel(), project, e.Status, e.Path)
 			}
 			if err := w.Flush(); err != nil {
 				return err
