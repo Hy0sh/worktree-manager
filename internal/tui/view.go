@@ -49,6 +49,9 @@ func (m Model) render() string {
 	default:
 		m.table(&b)
 		detail = m.detail()
+		if m.confirm != nil {
+			detail = m.confirmation()
+		}
 	}
 
 	var tail strings.Builder
@@ -59,7 +62,21 @@ func (m Model) render() string {
 		}
 		tail.WriteString("\n")
 	}
-	tail.WriteString("\n" + faint.Render("↑/↓ move · r refresh · q quit"))
+	if m.note != "" {
+		note := faint
+		if m.failed {
+			note = failure
+		}
+		tail.WriteString("\n" + note.Render(m.note) + "\n")
+	}
+	keys := m.keys()
+	if m.confirm != nil {
+		keys = "y remove · n keep it"
+		if m.confirm.plan.RequiresForce() {
+			keys = "y remove with --force · n keep it"
+		}
+	}
+	tail.WriteString("\n" + faint.Render(keys))
 
 	// The detail gives way, never the keys: a stack behind a proxy lists two
 	// dozen addresses, more than a split terminal has rows for.
@@ -87,7 +104,7 @@ func (m Model) fit(lines []string, room int) []string {
 	}
 	cut := len(lines) - room + 1
 	more := fmt.Sprintf("… %d more", cut)
-	if e := m.entries[m.cursor()]; e.ComposeProject != "" {
+	if e, ok := m.target(); ok && e.ComposeProject != "" && m.confirm == nil {
 		more += ", see `wtm ports " + e.Branch + "`"
 	}
 	return append(lines[:room-1:room-1], faint.Render(more))
@@ -162,4 +179,52 @@ func (m Model) detail() []string {
 		lines = append(lines, "  "+l)
 	}
 	return lines
+}
+
+// confirmation says what y is about to take, from the plan Remove itself acts
+// on: what calls for --force is never decided here.
+func (m Model) confirmation() []string {
+	r := m.confirm
+	lines := []string{"", bold.Render("remove " + r.entry.BranchLabel() + "?")}
+	switch r.plan.Kind {
+	case worktree.RemoveCreated:
+		lines = append(lines, "the directory goes, with the stack, its volumes and built images (branch kept)")
+	case worktree.RemoveAdopted:
+		lines = append(lines, "the stack goes with its volumes, and wtm's own files: the checkout stays (branch kept)")
+	}
+	if r.entry.Status == "up" {
+		lines = append(lines, "its stack is up, and comes down first")
+	}
+	if r.plan.Locked {
+		lines = append(lines, failure.Render("locked"+lockReason(r.plan.LockReason)))
+	}
+	if r.plan.Changes != "" {
+		lines = append(lines, failure.Render("uncommitted changes, lost with the directory:"))
+		for _, c := range strings.Split(r.plan.Changes, "\n") {
+			lines = append(lines, "  "+c)
+		}
+	}
+	return lines
+}
+
+func lockReason(reason string) string {
+	if reason == "" {
+		return ""
+	}
+	return " (" + reason + ")"
+}
+
+// keys offers only what the selected row can take: on an empty project, a
+// worktree left to adopt or a stack that is down, a key would only be refused.
+func (m Model) keys() string {
+	e, ok := m.target()
+	switch {
+	case !ok:
+		return "r refresh · q quit"
+	case e.Adoptable() || e.Branch == "":
+		return "↑/↓ move · r refresh · q quit"
+	case e.Status != "up" || e.ComposeProject == "":
+		return "↑/↓ move · s start · x stop · d remove · enter shell · r refresh · q quit"
+	}
+	return "↑/↓ move · s start · x stop · d remove · enter shell · l logs · r refresh · q quit"
 }

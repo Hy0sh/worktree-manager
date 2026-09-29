@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os/exec"
 	"strings"
 	"testing"
 	"time"
@@ -28,6 +29,8 @@ type source struct {
 	lists   int
 	ports   []string
 	askedOn []string
+	plan    worktree.RemovalPlan
+	ran     [][]string
 }
 
 func (s *source) Source() Source {
@@ -39,6 +42,13 @@ func (s *source) Source() Source {
 		Ports: func(_ context.Context, branch string) ([]string, error) {
 			s.askedOn = append(s.askedOn, branch)
 			return s.ports, nil
+		},
+		InspectRemoval: func(context.Context, string) (worktree.RemovalPlan, error) {
+			return s.plan, nil
+		},
+		Wtm: func(args ...string) *exec.Cmd {
+			s.ran = append(s.ran, args)
+			return exec.Command("true")
 		},
 	}
 }

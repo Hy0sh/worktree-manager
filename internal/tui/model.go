@@ -4,6 +4,7 @@ package tui
 
 import (
 	"context"
+	"os/exec"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
@@ -14,13 +15,21 @@ import (
 // Source is what the dashboard asks, the same questions `wtm list` and
 // `wtm ports` answer.
 type Source struct {
-	List  func(ctx context.Context) ([]worktree.Entry, error)
-	Ports func(ctx context.Context, branch string) ([]string, error)
+	List           func(ctx context.Context) ([]worktree.Entry, error)
+	Ports          func(ctx context.Context, branch string) ([]string, error)
+	InspectRemoval func(ctx context.Context, branch string) (worktree.RemovalPlan, error)
+	// Wtm runs this very binary. The lifecycle verbs are handed the terminal
+	// rather than called in-process: docker streams straight to stdout, and a
+	// start may ask about memory.
+	Wtm func(args ...string) *exec.Cmd
 }
 
 // refreshEvery is also the floor between two listings: a docker slower than
 // this delays the next one instead of stacking them up.
 const refreshEvery = 5 * time.Second
+
+// settleFor outlasts the replay of keys typed while a verb had the terminal.
+const settleFor = 300 * time.Millisecond
 
 type Model struct {
 	ctx     context.Context
@@ -32,8 +41,22 @@ type Model struct {
 	// worktree is where it stands.
 	selected string
 	loading  bool
-	err      error
-	at       time.Time
+	// again asks for one more listing once the running one answers: it may
+	// have started before the action it would otherwise be taken to reflect.
+	again bool
+	err   error
+	at    time.Time
+
+	// away is set while a verb has the terminal, and settle is when keys count
+	// again once it is back: what was typed at docker's output meanwhile is
+	// replayed on return, and an enter there would open a shell.
+	away   bool
+	settle time.Time
+
+	// note is the outcome of the last action, until the next one.
+	note    string
+	failed  bool
+	confirm *removal
 
 	ports    []string
 	portsFor string
@@ -90,9 +113,17 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		m.width, m.height = msg.Width, msg.Height
 	case tea.KeyPressMsg:
+		if m.away || time.Now().Before(m.settle) {
+			return m, nil
+		}
+		if m.confirm != nil {
+			return m, m.answer(msg.String())
+		}
 		switch msg.String() {
 		case "q", "esc", "ctrl+c":
 			return m, tea.Quit
+		case "s", "x", "d", "enter", "l":
+			return m, m.act(msg.String())
 		case "up", "k":
 			return m, m.move(-1)
 		case "down", "j":
@@ -102,17 +133,30 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case tickMsg:
 		return m, tea.Batch(m.refresh(), tick())
+	case actionMsg:
+		m.away, m.settle = false, time.Now().Add(settleFor)
+		m.done(msg)
+		cmd := m.refresh()
+		m.again = cmd == nil
+		return m, cmd
+	case removalMsg:
+		m.ask(msg)
 	case snapshotMsg:
 		m.loading, m.at = false, msg.at
+		var next tea.Cmd
+		if m.again {
+			m.again = false
+			next = m.refresh()
+		}
 		// The last good answer stays on screen: a daemon that blinks out for
 		// one poll is no reason to empty the dashboard.
 		if msg.err != nil {
 			m.err = msg.err
-			return m, nil
+			return m, next
 		}
 		m.err = nil
 		m.keepSelection(msg.entries)
-		return m, m.loadPorts()
+		return m, tea.Batch(m.loadPorts(), next)
 	case portsMsg:
 		// Answered for a row the cursor has since left.
 		if msg.path != m.selected {
