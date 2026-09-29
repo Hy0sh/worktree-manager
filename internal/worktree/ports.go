@@ -7,13 +7,13 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
-	"regexp"
 	"slices"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/Hy0sh/worktree-manager/internal/compose"
+	"github.com/Hy0sh/worktree-manager/internal/config"
+	"github.com/Hy0sh/worktree-manager/internal/proxy"
 	"github.com/Hy0sh/worktree-manager/internal/safefile"
 	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
@@ -85,37 +85,64 @@ func portEnv(o Options, wt stack.Worktree) []string {
 }
 
 // portClash checks a candidate index against recorded worktrees only, since
-// those are the ones that can run at the same time as the new one. The stride
-// stays put: changing it would move every existing worktree's ports.
+// those are the ones that can run at the same time as the new one, in every
+// project: offsets step by 1000, less than the spread of the ports they shift.
+// The stride and offsets stay put: changing either moves existing ports.
 func portClash(o Options) func(n int) string {
 	services, stride, err := projectPorts(o)
 	if err != nil {
 		return func(int) string { return "" }
 	}
-	recorded := o.Resolver.Recorded()
-	// Two recorded branches can clash with the same candidate: map order would
-	// name a different one each run, for what is one and the same clash.
-	branches := slices.Sorted(maps.Keys(recorded))
+	cfg, err := config.Load(o.Resolver.ConfigPath)
+	if err != nil {
+		return func(int) string { return "" }
+	}
+	type neighbour struct {
+		who, remedy string
+		sameProject bool
+		index       int
+		ports       []stack.Allocation
+	}
+	var neighbours []neighbour
+	// Sorted twice over: map order would name a different neighbour each run,
+	// for what is one and the same clash.
+	for _, name := range cfg.Names() {
+		p := cfg.Projects[name]
+		theirServices, theirStride := services, stride
+		prefix, remedy := "", "raise portStride in .wtcrc.json to spread the indices further apart"
+		if name != o.Name {
+			if theirServices, err = compose.MergedServicePorts(p.Dir); err != nil {
+				continue
+			}
+			theirStride = stack.Stride(p.Dir)
+			prefix, remedy = name+"/", "raise port_offset for one of the two projects in config.json"
+		}
+		for _, branch := range slices.Sorted(maps.Keys(p.WorktreeIndices)) {
+			if name == o.Name && branch == o.Branch {
+				continue
+			}
+			idx := p.WorktreeIndices[branch]
+			theirs, err := stack.Allocate(theirServices, idx, theirStride, p.PortOffset)
+			if err != nil {
+				continue
+			}
+			neighbours = append(neighbours, neighbour{prefix + branch, remedy, name == o.Name, idx, theirs})
+		}
+	}
 	return func(n int) string {
 		mine, err := stack.Allocate(services, n, stride, o.Project.PortOffset)
 		if err != nil {
 			return ""
 		}
-		for _, branch := range branches {
-			idx := recorded[branch]
-			if branch == o.Branch || idx == n {
-				continue
-			}
-			theirs, err := stack.Allocate(services, idx, stride, o.Project.PortOffset)
-			if err != nil {
+		for _, nb := range neighbours {
+			if nb.sameProject && nb.index == n {
 				continue
 			}
 			for _, a := range mine {
-				for _, b := range theirs {
+				for _, b := range nb.ports {
 					if a.Port == b.Port {
-						return fmt.Sprintf("%s would publish %d, which %s already publishes for %s "+
-							"(raise portStride in .wtcrc.json to spread the indices further apart)",
-							a.Service, a.Port, branch, b.Service)
+						return fmt.Sprintf("%s would publish %d, which %s already publishes for %s (%s)",
+							a.Service, a.Port, nb.who, b.Service, nb.remedy)
 					}
 				}
 			}
@@ -189,94 +216,81 @@ func endpoints(ctx context.Context, o Options, wt stack.Worktree) []string {
 		}
 		entries = append(entries, entry{label, address})
 	}
-	urls := declaredURLs(ctx, o, wt)
+	urls, via := routedURLs(ctx, o, wt)
+	var urlEntries []entry
 	for _, service := range slices.Sorted(maps.Keys(urls)) {
-		address, ok := expandURL(urls[service], allocations)
-		if !ok {
-			continue
+		for _, address := range urls[service] {
+			// The service's own port line may carry the bare name already.
+			label := service + "/url"
+			width = max(width, len(label))
+			urlEntries = append(urlEntries, entry{label, address})
 		}
-		// The service's own port line may carry the bare name already.
-		label := service + "/url"
-		width = max(width, len(label))
-		entries = append(entries, entry{label, address})
 	}
-	out := make([]string, 0, len(entries))
-	for _, e := range entries {
-		out = append(out, fmt.Sprintf("%-*s  %s", width, e.label, e.address))
+	format := func(indent string, es []entry) []string {
+		out := make([]string, 0, len(es))
+		for _, e := range es {
+			out = append(out, fmt.Sprintf("%s%-*s  %s", indent, width, e.label, e.address))
+		}
+		return out
+	}
+	if len(urlEntries) == 0 {
+		return format("", entries)
+	}
+	// What people open comes first. The titles and the blank line keep
+	// `awk '$1 == "api/url"'` working, since no service is named after them.
+	title := "urls"
+	if via != "" {
+		title += ", through " + via
+	}
+	out := append([]string{title}, format("  ", urlEntries)...)
+	if len(entries) > 0 {
+		out = append(append(out, "", "ports"), format("  ", entries)...)
 	}
 	return out
 }
-
-var portPlaceholder = regexp.MustCompile(`\{\{port ([^\s:}]+):(\d+)\}\}`)
-
-// urlLabel is how a service states the address it is reached through when no
-// published port shows it, a host name routed by a proxy typically.
-const urlLabel = "wtm.url"
 
 // composeConfigTimeout bounds the one docker call printing the addresses
 // costs, which must never hang a start that already succeeded.
 const composeConfigTimeout = 10 * time.Second
 
-// declaredURLs reads the wtm.url label of every started service, from compose's
-// own rendering: it resolves ${VAR} against the worktree's .env and leaves the
-// {{port}} placeholders, which it does not know, for expandURL.
-func declaredURLs(ctx context.Context, o Options, wt stack.Worktree) map[string]string {
-	if !declaresURLs(o, wt) {
-		return nil
+// routedURLs reads what a known proxy routes to each started service, from
+// compose's own rendering: host names resolve ${VAR} against the worktree's
+// .env, and ports are the worktree's. via names the proxy, "" for none.
+func routedURLs(ctx context.Context, o Options, wt stack.Worktree) (urls map[string][]string, via string) {
+	if !mentionsProxy(o, wt) {
+		return nil, ""
 	}
 	ctx, cancel := context.WithTimeout(ctx, composeConfigTimeout)
 	defer cancel()
 	res, err := o.Runner.Run(ctx, o.composeCmd(wt, "config", "--format", "json"))
 	if err != nil {
-		return nil
+		return nil, ""
 	}
 	var cfg struct {
-		Services map[string]struct {
-			Labels map[string]string `json:"labels"`
-		} `json:"services"`
+		Services map[string]proxy.Service `json:"services"`
 	}
 	if json.Unmarshal([]byte(res.Stdout), &cfg) != nil {
-		return nil
+		return nil, ""
 	}
-	started := startedServices(o)
-	urls := map[string]string{}
-	for name, s := range cfg.Services {
-		if u, ok := s.Labels[urlLabel]; ok && (started == nil || slices.Contains(started, name)) {
-			urls[name] = u
-		}
+	// A proxy the profile left down routes nothing, and neither does a
+	// service left down behind a running one.
+	if started := startedServices(o); started != nil {
+		maps.DeleteFunc(cfg.Services, func(name string, _ proxy.Service) bool { return !slices.Contains(started, name) })
 	}
-	return urls
+	return proxy.URLs(cfg.Services)
 }
 
-// declaresURLs spares the docker call to every project that sets no wtm.url,
-// which is most of them: the label has to be spelled out in a compose file.
-func declaresURLs(o Options, wt stack.Worktree) bool {
+// mentionsProxy spares the docker call to every project that runs no proxy
+// wtm knows, which is most of them.
+func mentionsProxy(o Options, wt stack.Worktree) bool {
 	files, err := composeFiles(o, wt.Path)
 	if err != nil {
 		return false
 	}
 	for _, f := range files {
-		if data, err := os.ReadFile(f); err == nil && strings.Contains(string(data), urlLabel) {
+		if data, err := os.ReadFile(f); err == nil && proxy.Mentioned(string(data)) {
 			return true
 		}
 	}
 	return false
-}
-
-// expandURL fills a declared address from the ports this worktree publishes.
-// A port no started service publishes leaves it unresolved, and it is dropped
-// rather than printed with a placeholder nobody can open.
-func expandURL(template string, allocations []stack.Allocation) (string, bool) {
-	resolved := true
-	out := portPlaceholder.ReplaceAllStringFunc(template, func(m string) string {
-		sub := portPlaceholder.FindStringSubmatch(m)
-		for _, a := range allocations {
-			if a.Service == sub[1] && a.Container == sub[2] {
-				return strconv.Itoa(a.Port)
-			}
-		}
-		resolved = false
-		return m
-	})
-	return out, resolved && !strings.Contains(out, "{{")
 }
