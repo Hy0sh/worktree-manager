@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
+	"os"
+	"os/exec"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
@@ -19,7 +22,10 @@ func newTUICmd(a *app) *cobra.Command {
 		Short: "Opens a live dashboard of the project's worktrees",
 		Long: "Shows what `wtm list` prints, refreshed every five seconds, with the\n" +
 			"addresses of the selected worktree: a terminal to leave open beside the\n" +
-			"agents. r refreshes at once, q quits.",
+			"agents.\n\n" +
+			"s, x and d start, stop and remove the selected worktree, enter opens a\n" +
+			"shell in it and l follows its logs: each runs the wtm verb itself, which\n" +
+			"takes the terminal until it is done. r refreshes at once, q quits.",
 		Args:              cobra.RangeArgs(0, 1),
 		ValidArgsFunction: a.completeProjects,
 		SilenceUsage:      true,
@@ -32,7 +38,13 @@ func newTUICmd(a *app) *cobra.Command {
 			if !isTerminal(a.in) || !isTerminal(a.out) {
 				return errors.New("wtm tui needs a terminal: `wtm list` answers the same question for a script")
 			}
-			m := tui.New(cmd.Context(), name, a.dashboardSource(name))
+			src := a.dashboardSource(name)
+			exe, err := os.Executable()
+			if err != nil {
+				return fmt.Errorf("locating the wtm binary the dashboard runs its verbs with: %w", err)
+			}
+			src.Wtm = func(args ...string) *exec.Cmd { return exec.Command(exe, args...) }
+			m := tui.New(cmd.Context(), name, src)
 			_, err = tea.NewProgram(m, tea.WithContext(cmd.Context())).Run()
 			return err
 		},
@@ -70,6 +82,13 @@ func (a *app) dashboardSource(name string) tui.Source {
 				return nil, err
 			}
 			return worktree.Ports(ctx, o)
+		},
+		InspectRemoval: func(ctx context.Context, branch string) (worktree.RemovalPlan, error) {
+			o, err := options(branch)
+			if err != nil {
+				return worktree.RemovalPlan{}, err
+			}
+			return worktree.InspectRemoval(ctx, o)
 		},
 	}
 }
