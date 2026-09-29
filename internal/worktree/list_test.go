@@ -137,3 +137,22 @@ func TestListKeepsTheStackStatusOfAnAdoptedWorktree(t *testing.T) {
 		t.Fatalf("status = %q, an adopted worktree has a stack and is not offered for adoption", entries[1].Status)
 	}
 }
+
+func TestListNamesTheComposeProjectOnceAnIndexIsRecorded(t *testing.T) {
+	f := newFixture(t)
+	entries, err := List(context.Background(), f.opts(""))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := entries[0].ComposeProject; got != "" {
+		t.Fatalf("no index recorded yet, so no name wtm can vouch for, got %q", got)
+	}
+
+	recordIndex(t, f, "feat/x", 2)
+	if entries, err = List(context.Background(), f.opts("")); err != nil {
+		t.Fatal(err)
+	}
+	if got, want := entries[0].ComposeProject, stack.ProjectName(filepath.Base(f.root), 2, "feat/x"); got != want {
+		t.Fatalf("ComposeProject = %q, want %q", got, want)
+	}
+}
