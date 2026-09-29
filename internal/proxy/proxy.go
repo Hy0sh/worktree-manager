@@ -1,14 +1,12 @@
 // Package proxy reads the host names a reverse proxy routes to the services of
-// a compose project, and the host port each one is reached through. Only
-// Traefik is known so far; the input is `docker compose config --format json`.
+// a compose project, and the host port each one is reached through. The input
+// is `docker compose config --format json`; the proxy is told by its image.
 package proxy
 
 import (
 	"maps"
 	"path"
-	"regexp"
 	"slices"
-	"strconv"
 	"strings"
 )
 
@@ -22,26 +20,54 @@ type Service struct {
 	Command []string          `json:"command"`
 	Labels  map[string]string `json:"labels"`
 	Ports   []Port            `json:"ports"`
+	// A bare `- NAME` passes the host's value through: compose renders null.
+	Environment map[string]*string `json:"environment"`
+}
+
+// reader fills out from the proxy service p, reading how the other services
+// ask to be routed.
+type reader func(p Service, services map[string]Service, out map[string][]string)
+
+// readers are keyed by image base name, see imageBase.
+var readers = map[string]struct {
+	name string
+	read reader
+}{
+	"traefik":            {"traefik", traefik},
+	"nginx-proxy":        {"nginx-proxy", nginxProxy},
+	"caddy-docker-proxy": {"caddy", caddy},
 }
 
 // Mentioned spares the docker call to a project whose compose files name no
 // proxy wtm knows: a false positive costs one `compose config`, nothing more.
 func Mentioned(composeText string) bool {
-	return strings.Contains(strings.ToLower(composeText), "traefik")
+	text := strings.ToLower(composeText)
+	return strings.Contains(text, "traefik") || strings.Contains(text, "virtual_host") ||
+		strings.Contains(text, "caddy")
 }
 
-// URLs maps each service to the addresses a known proxy routes to it, in
-// router order, and names that proxy. A service no router names is absent.
+// URLs maps each service to the addresses a known proxy routes to it, and
+// names that proxy. A service no route names is absent.
 func URLs(services map[string]Service) (map[string][]string, string) {
+	names := slices.Sorted(maps.Keys(services))
+	// nginx-proxy split in two: docker-gen watches docker and writes the
+	// configuration a stock nginx serves, so that nginx is the proxy.
+	splitNginx := slices.ContainsFunc(names, func(n string) bool { return imageBase(services[n].Image) == "docker-gen" })
 	out := map[string][]string{}
-	for _, name := range slices.Sorted(maps.Keys(services)) {
-		if s := services[name]; imageBase(s.Image) == "traefik" {
-			// ponytail: first Traefik only, a project running two is yet to be seen
-			if traefik(s, services, out); len(out) > 0 {
-				return out, "traefik"
-			}
-			break
+	for _, name := range names {
+		base := imageBase(services[name].Image)
+		if base == "nginx" && splitNginx {
+			base = "nginx-proxy"
 		}
+		r, ok := readers[base]
+		if !ok {
+			continue
+		}
+		// ponytail: the first proxy only, a project running two is yet to be seen
+		if r.read(services[name], services, out); len(out) > 0 {
+			return out, r.name
+		}
+		break
 	}
 	return out, ""
 }
@@ -59,73 +85,22 @@ func imageBase(image string) string {
 	return path.Base(image)
 }
 
-var (
-	hostRule   = regexp.MustCompile(`Host\(([^)]*)\)`)
-	quotedName = regexp.MustCompile("[`\"]([^`\"]+)[`\"]")
-)
-
-// entrypoint is one `--entrypoints.<name>.address=:<port>` of the Traefik
-// command, and whether `--entrypoints.<name>.http.tls` makes it https.
-type entrypoint struct {
-	port int
-	tls  bool
-}
-
-func traefik(p Service, services map[string]Service, out map[string][]string) {
-	entrypoints := map[string]*entrypoint{}
-	exposedByDefault := true
-	for _, arg := range p.Command {
-		key, value, _ := strings.Cut(strings.TrimLeft(strings.ToLower(arg), "-"), "=")
-		if key == "providers.docker.exposedbydefault" {
-			exposedByDefault = value != "false"
-			continue
-		}
-		name, field, ok := strings.Cut(strings.TrimPrefix(key, "entrypoints."), ".")
-		if !ok || !strings.HasPrefix(key, "entrypoints.") {
-			continue
-		}
-		ep := entrypoints[name]
-		if ep == nil {
-			ep = &entrypoint{}
-			entrypoints[name] = ep
-		}
-		switch {
-		case field == "address":
-			// ":80", "0.0.0.0:80" or ":80/tcp"
-			addr, _, _ := strings.Cut(value, "/")
-			ep.port, _ = strconv.Atoi(addr[strings.LastIndex(addr, ":")+1:])
-		case strings.HasPrefix(field, "http.tls") && value != "false":
-			ep.tls = true
-		}
-	}
-	published := map[int]string{}
+// published maps each container port of p to the host port it is published on.
+func published(p Service) map[int]string {
+	out := map[int]string{}
 	for _, port := range p.Ports {
 		if port.Published != "" {
-			published[port.Target] = port.Published
+			out[port.Target] = port.Published
 		}
 	}
+	return out
+}
 
-	for _, name := range slices.Sorted(maps.Keys(services)) {
-		labels := lowerKeys(services[name].Labels)
-		if enable, set := labels["traefik.enable"]; enable == "false" || (!exposedByDefault && !set) {
-			continue
-		}
-		for _, router := range routers(labels) {
-			prefix := "traefik.http.routers." + router + "."
-			hosts := hostsOf(labels[prefix+"rule"])
-			if len(hosts) == 0 {
-				continue // PathPrefix or HostRegexp: no address to print
-			}
-			tls := labels[prefix+"tls"] == "true" || labels[prefix+"tls.certresolver"] != ""
-			port, ok := routerPort(labels[prefix+"entrypoints"], entrypoints, published, &tls)
-			if !ok {
-				continue
-			}
-			for _, host := range hosts {
-				out[name] = append(out[name], address(host, port, tls))
-			}
-		}
+func env(s Service, name string) string {
+	if v := s.Environment[name]; v != nil {
+		return *v
 	}
+	return ""
 }
 
 func lowerKeys(labels map[string]string) map[string]string {
@@ -134,70 +109,6 @@ func lowerKeys(labels map[string]string) map[string]string {
 		out[strings.ToLower(k)] = v
 	}
 	return out
-}
-
-func routers(labels map[string]string) []string {
-	var out []string
-	for k := range labels {
-		if rest, ok := strings.CutPrefix(k, "traefik.http.routers."); ok {
-			if router, field, ok := strings.Cut(rest, "."); ok && field == "rule" {
-				out = append(out, router)
-			}
-		}
-	}
-	slices.Sort(out)
-	return out
-}
-
-func hostsOf(rule string) []string {
-	var out []string
-	for _, m := range hostRule.FindAllStringSubmatch(rule, -1) {
-		for _, q := range quotedName.FindAllStringSubmatch(m[1], -1) {
-			out = append(out, q[1])
-		}
-	}
-	return out
-}
-
-// routerPort is the host port of the first entrypoint the router listens on
-// that the proxy publishes. A router naming none listens on all of them. An
-// entrypoint defined in a mounted traefik.yml is invisible here, so without any
-// from the command the conventional 80, or 443 for tls, stands in.
-func routerPort(named string, entrypoints map[string]*entrypoint, published map[int]string, tls *bool) (string, bool) {
-	if len(entrypoints) == 0 {
-		target := 80
-		if *tls {
-			target = 443
-		}
-		port, ok := published[target]
-		return port, ok
-	}
-	// Any of them works; the one on the web port is the address people expect.
-	names := slices.SortedFunc(maps.Keys(entrypoints), func(a, b string) int {
-		web := func(p int) bool { return p == 80 || p == 443 }
-		wa, wb := web(entrypoints[a].port), web(entrypoints[b].port)
-		if wa != wb {
-			if wa {
-				return -1
-			}
-			return 1
-		}
-		return strings.Compare(a, b)
-	})
-	if named != "" {
-		names = strings.Split(strings.ToLower(named), ",")
-	}
-	for _, n := range names {
-		ep := entrypoints[strings.TrimSpace(n)]
-		if ep == nil {
-			continue
-		}
-		if port, ok := published[ep.port]; ok {
-			*tls = *tls || ep.tls
-			return port, true
-		}
-	}
-	return "", false
 }
 
 func address(host, port string, tls bool) string {

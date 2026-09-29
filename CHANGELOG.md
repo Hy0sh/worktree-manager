@@ -8,8 +8,10 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ### Added
 
-- `start` and `wtm ports` print the addresses Traefik routes to each service,
-  read from its router labels and entrypoints: a project behind Traefik no
+- `start` and `wtm ports` print the addresses a reverse proxy routes to each
+  service, in a `urls` block ahead of the ports: Traefik's router rules and
+  entrypoints, nginx-proxy's `VIRTUAL_HOST`, caddy-docker-proxy's `caddy`
+  labels. The proxy is told by its image, so a project behind one of them no
   longer needs a `wtm.url` label, which still wins where one is set.
 
 ### Fixed

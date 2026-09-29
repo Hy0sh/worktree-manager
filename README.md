@@ -540,9 +540,21 @@ services:
       - "traefik.http.routers.front.rule=Host(`front.${APP_NAME}.localhost`)"
 ```
 
-`start` and `wtm ports` then print `front/url  http://front.myapp.localhost:20081`.
-Entrypoints defined in a mounted `traefik.yml` are out of sight, so the
-proxy's published 80, or 443 for tls, stands in.
+`start` and `wtm ports` then print `front/url  http://front.myapp.localhost:20081`,
+in a `urls` block ahead of the ports. Entrypoints defined in a mounted
+`traefik.yml` are out of sight, so the proxy's published 80, or 443 for tls,
+stands in.
+
+The proxy is told by its image, whatever registry it comes from:
+
+| Proxy | Image | Host names from | Port |
+|---|---|---|---|
+| Traefik | `traefik` | each router's `Host()` | the router's entrypoint |
+| nginx-proxy | `nginx-proxy`, or `nginx` next to `docker-gen` | `VIRTUAL_HOST` | 80, or the proxy's `HTTP_PORT`; 443 when only https is published |
+| caddy-docker-proxy | `caddy-docker-proxy` | the `caddy`, `caddy_0`… labels | 443 in https, as Caddy serves a bare name; 80 for `http://` or under `auto_https off` |
+
+A proxy configured from a mounted file, a stock `caddy` with its Caddyfile
+say, shows wtm nothing to read.
 
 Any other proxy, or an address wtm cannot work out, is stated in a `wtm.url`
 label, which wins over what Traefik routes; `{{port SERVICE:PORT}}` stands for

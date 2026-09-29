@@ -64,6 +64,63 @@ func TestTraefikFallsBackToConventionalPorts(t *testing.T) {
 	}
 }
 
+func ptr(s string) *string { return &s }
+
+func TestNginxProxyReadsVirtualHost(t *testing.T) {
+	services := map[string]Service{
+		"proxy": {Image: "nginxproxy/nginx-proxy:1.6", Ports: []Port{{Target: 80, Published: "20080"}, {Target: 443, Published: "20443"}}},
+		"front": {Environment: map[string]*string{"VIRTUAL_HOST": ptr("front.localhost, admin.localhost,~^api\\..*,*.example")}},
+		"bare":  {Environment: map[string]*string{"VIRTUAL_HOST": nil}},
+	}
+	want := map[string][]string{"front": {"http://front.localhost:20080", "http://admin.localhost:20080"}}
+	if got, via := URLs(services); !reflect.DeepEqual(got, want) || via != "nginx-proxy" {
+		t.Fatalf("got %v via %q, want %v via nginx-proxy", got, via, want)
+	}
+}
+
+// docker-gen writes the configuration, a stock nginx serves it on a port its
+// HTTP_PORT moved, and only https is published on the other.
+func TestNginxProxySplitWithDockerGen(t *testing.T) {
+	services := map[string]Service{
+		"gen":   {Image: "nginxproxy/docker-gen"},
+		"nginx": {Image: "nginx:1", Environment: map[string]*string{"HTTP_PORT": ptr("8080")}, Ports: []Port{{Target: 8080, Published: "28080"}}},
+		"front": {Environment: map[string]*string{"VIRTUAL_HOST": ptr("front.localhost")}},
+	}
+	want := map[string][]string{"front": {"http://front.localhost:28080"}}
+	if got, _ := URLs(services); !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
+func TestCaddyReadsSiteLabels(t *testing.T) {
+	services := map[string]Service{
+		"caddy": {Image: "lucaslorentz/caddy-docker-proxy:2.9", Ports: []Port{
+			{Target: 80, Published: "20080"}, {Target: 443, Published: "20443"}, {Target: 8443, Published: "28443"}}},
+		"front": {Labels: map[string]string{
+			"caddy":               "front.localhost",
+			"caddy.reverse_proxy": "{{upstreams 3000}}",
+			"caddy_1":             "http://plain.localhost, alt.localhost:8443",
+		}},
+	}
+	want := map[string][]string{"front": {
+		"https://front.localhost:20443", "http://plain.localhost:20080", "https://alt.localhost:28443"}}
+	if got, via := URLs(services); !reflect.DeepEqual(got, want) || via != "caddy" {
+		t.Fatalf("got %v via %q, want %v via caddy", got, via, want)
+	}
+}
+
+func TestCaddyAutoHTTPSOff(t *testing.T) {
+	services := map[string]Service{
+		"caddy": {Image: "lucaslorentz/caddy-docker-proxy", Labels: map[string]string{"caddy.auto_https": "off"},
+			Ports: []Port{{Target: 80, Published: "20080"}}},
+		"front": {Labels: map[string]string{"caddy": "front.localhost"}},
+	}
+	want := map[string][]string{"front": {"http://front.localhost:20080"}}
+	if got, _ := URLs(services); !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+}
+
 func TestNoKnownProxyNoURL(t *testing.T) {
 	services := map[string]Service{
 		"nginx": {Image: "nginx:1", Ports: []Port{{Target: 80, Published: "8080"}}},
