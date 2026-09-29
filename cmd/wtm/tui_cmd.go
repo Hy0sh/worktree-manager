@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"runtime"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
@@ -25,7 +26,9 @@ func newTUICmd(a *app) *cobra.Command {
 			"agents.\n\n" +
 			"s, x and d start, stop and remove the selected worktree, enter opens a\n" +
 			"shell in it and l follows its logs: each runs the wtm verb itself, which\n" +
-			"takes the terminal until it is done. r refreshes at once, q quits.",
+			"takes the terminal until it is done. o moves the cursor onto the\n" +
+			"worktree's urls, and enter opens the one it is on in the browser.\n" +
+			"r refreshes at once, q quits.",
 		Args:              cobra.RangeArgs(0, 1),
 		ValidArgsFunction: a.completeProjects,
 		SilenceUsage:      true,
@@ -44,6 +47,15 @@ func newTUICmd(a *app) *cobra.Command {
 				return fmt.Errorf("locating the wtm binary the dashboard runs its verbs with: %w", err)
 			}
 			src.Wtm = func(args ...string) *exec.Cmd { return exec.Command(exe, args...) }
+			// Its output would land across the dashboard: exec discards what it
+			// is given no writer for.
+			src.Open = func(url string) error {
+				opener := "xdg-open"
+				if runtime.GOOS == "darwin" {
+					opener = "open"
+				}
+				return exec.Command(opener, url).Run()
+			}
 			m := tui.New(cmd.Context(), name, src)
 			_, err = tea.NewProgram(m, tea.WithContext(cmd.Context())).Run()
 			return err

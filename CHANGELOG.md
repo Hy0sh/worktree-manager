@@ -6,6 +6,13 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Added
+
+- In `wtm tui`, `o` moves the cursor onto the selected worktree's urls and
+  `enter` opens the one it is on in the browser, through `open` on macOS and
+  `xdg-open` elsewhere. The urls are also terminal hyperlinks, which a
+  cmd+click opens where the terminal supports them.
+
 ## [0.23.0] - 2026-09-29
 
 ### Added

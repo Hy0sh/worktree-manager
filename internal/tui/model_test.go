@@ -31,6 +31,7 @@ type source struct {
 	askedOn []string
 	plan    worktree.RemovalPlan
 	ran     [][]string
+	opened  []string
 }
 
 func (s *source) Source() Source {
@@ -49,6 +50,10 @@ func (s *source) Source() Source {
 		Wtm: func(args ...string) *exec.Cmd {
 			s.ran = append(s.ran, args)
 			return exec.Command("true")
+		},
+		Open: func(url string) error {
+			s.opened = append(s.opened, url)
+			return nil
 		},
 	}
 }

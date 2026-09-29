@@ -90,6 +90,52 @@ func (m *Model) act(key string) tea.Cmd {
 	return nil
 }
 
+type openedMsg struct {
+	url string
+	err error
+}
+
+// link is a URL `wtm ports` printed, and the port line it sits on.
+type link struct {
+	line int
+	url  string
+}
+
+// urls are the selected row's addresses a browser takes: the address ends
+// each port line, and one without a scheme is a database or a queue.
+func (m Model) urls() []link {
+	if m.portsFor == "" || m.portsFor != m.selected {
+		return nil
+	}
+	var out []link
+	for i, l := range m.ports {
+		f := strings.Fields(l)
+		if len(f) > 0 && (strings.HasPrefix(f[len(f)-1], "http://") || strings.HasPrefix(f[len(f)-1], "https://")) {
+			out = append(out, link{i, f[len(f)-1]})
+		}
+	}
+	return out
+}
+
+// choose answers the keys while the cursor is on the URLs.
+func (m *Model) choose(key string) tea.Cmd {
+	urls := m.urls()
+	switch key {
+	case "up", "k":
+		m.pick = max(m.pick-1, 0)
+	case "down", "j":
+		m.pick = min(m.pick+1, len(urls)-1)
+	case "enter":
+		url, open := urls[m.pick].url, m.src.Open
+		return func() tea.Msg { return openedMsg{url: url, err: open(url)} }
+	case "o", "esc":
+		m.picking = false
+	case "ctrl+c":
+		return tea.Quit
+	}
+	return nil
+}
+
 func (m *Model) ask(msg removalMsg) {
 	if msg.err != nil {
 		m.tell(true, "remove %s: %v", msg.entry.Branch, msg.err)

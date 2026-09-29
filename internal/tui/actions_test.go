@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os/exec"
 	"reflect"
 	"strings"
@@ -275,5 +276,84 @@ func TestTheKeyLineOffersWhatTheSelectedRowTakes(t *testing.T) {
 		if !strings.Contains(view, c.want) || c.not != "" && strings.Contains(view, c.not) {
 			t.Fatalf("%s: want %q and not %q in:\n%s", c.name, c.want, c.not, view)
 		}
+	}
+}
+
+var proxied = []string{
+	"urls, through traefik",
+	"  api/url   http://api.repo.localhost:26085",
+	"  app/url   http://app.repo.localhost:26085",
+	"",
+	"ports",
+	"  postgres  localhost:31437",
+	"  pgadmin   http://localhost:31055",
+}
+
+func TestOPicksAmongTheURLsAndEnterOpensOne(t *testing.T) {
+	s := &source{ports: proxied}
+	m, cmd := loaded(t, s, entry("feat/a", "up", 1), entry("feat/b", "up", 2))
+	m, _ = step(t, m, cmd())
+	m, _ = step(t, m, key("o"))
+	// The rows stay put while the cursor is on the URLs, and postgres is no stop.
+	for range 3 {
+		m, _ = step(t, m, key("down"))
+	}
+	if m.selected != entry("feat/a", "up", 1).Path {
+		t.Fatalf("selected %q: down while picking must not move to another worktree", m.selected)
+	}
+	if !strings.Contains(m.render(), bold.Render("› ")+"  pgadmin") {
+		t.Fatalf("the cursor should stop on the last url, pgadmin:\n%s", m.render())
+	}
+	m, cmd = step(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	m, _ = step(t, m, cmd())
+	if len(s.opened) != 1 || s.opened[0] != "http://localhost:31055" {
+		t.Fatalf("opened %v, want pgadmin's url", s.opened)
+	}
+	if len(s.ran) != 0 {
+		t.Fatalf("ran %v: enter on a url must not open a shell", s.ran)
+	}
+	m, _ = step(t, m, tea.KeyPressMsg{Code: tea.KeyEscape})
+	if m.picking {
+		t.Fatal("esc should hand the cursor back to the worktrees")
+	}
+}
+
+func TestOWithoutAURLSaysSo(t *testing.T) {
+	s := &source{ports: []string{"postgres  localhost:31437"}}
+	m, cmd := loaded(t, s, entry("feat/a", "up", 1))
+	m, _ = step(t, m, cmd())
+	m, _ = step(t, m, key("o"))
+	if m.picking || !strings.Contains(m.render(), "no url to open") {
+		t.Fatalf("no url, no picking:\n%s", m.render())
+	}
+}
+
+func TestURLsAreTerminalHyperlinks(t *testing.T) {
+	s := &source{ports: proxied}
+	m, cmd := loaded(t, s, entry("feat/a", "up", 1))
+	m, _ = step(t, m, cmd())
+	if !strings.Contains(m.render(), "\x1b]8;;http://api.repo.localhost:26085") {
+		t.Fatalf("the url should carry an OSC 8 link:\n%q", m.render())
+	}
+}
+
+func TestTheURLUnderTheCursorStaysOnScreen(t *testing.T) {
+	s := &source{}
+	for i := range 24 {
+		s.ports = append(s.ports, fmt.Sprintf("svc%d  http://localhost:%d", i, 28000+i))
+	}
+	m, cmd := loaded(t, s, entry("feat/a", "up", 1))
+	m, _ = step(t, m, cmd())
+	m, _ = step(t, m, tea.WindowSizeMsg{Width: 100, Height: 15})
+	m, _ = step(t, m, key("o"))
+	for range 20 {
+		m, _ = step(t, m, key("down"))
+	}
+	view := m.render()
+	if got := strings.Count(view, "\n") + 1; got != 15 {
+		t.Fatalf("the view takes %d rows, want 15:\n%s", got, view)
+	}
+	if !strings.Contains(view, bold.Render("› ")+"svc20") {
+		t.Fatalf("svc20 is under the cursor and must show:\n%s", view)
 	}
 }
