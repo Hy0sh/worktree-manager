@@ -156,11 +156,15 @@ func managed(p config.Project) map[string]bool {
 // agents, and a `create` must never hang on a question nobody read. IsTerminal
 // asks the kernel, where a file mode cannot: /dev/null is a character device too.
 func (a *app) confirmer() func(string) bool {
-	f, ok := a.in.(*os.File)
-	if !ok || !term.IsTerminal(int(f.Fd())) {
+	if !isTerminal(a.in) {
 		return nil
 	}
 	return func(question string) bool { return confirm(a.in, a.out, question) }
+}
+
+func isTerminal(stream any) bool {
+	f, ok := stream.(*os.File)
+	return ok && term.IsTerminal(int(f.Fd()))
 }
 
 // warnf is the logf detectEngineIfUnset and warnPinnedContainers take: it adds
