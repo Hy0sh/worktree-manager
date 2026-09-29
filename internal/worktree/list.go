@@ -2,6 +2,7 @@ package worktree
 
 import (
 	"context"
+	"fmt"
 	"path/filepath"
 	"strings"
 	"time"
@@ -37,6 +38,20 @@ const dockerStatusTimeout = 5 * time.Second
 // Adoptable says the entry is there to be seen and named, not to be addressed:
 // with no index, `adopt` is the only verb that has anything to say to it.
 func (e Entry) Adoptable() bool { return e.Status == StatusAdoptable }
+
+// BranchLabel is the branch as a listing shows it, with where HEAD sits when
+// it is detached: a blank there reads as a bug in wtm rather than as that.
+func (e Entry) BranchLabel() string {
+	switch {
+	// Outside wtm's own root, nothing names a detached worktree: git gives no
+	// branch and the path is not one.
+	case e.Detached && e.Branch == "":
+		return fmt.Sprintf("(detached %s)", e.ShortHead())
+	case e.Detached:
+		return fmt.Sprintf("%s (detached %s)", e.Branch, e.ShortHead())
+	}
+	return e.Branch
+}
 
 // List answers about every linked worktree, adopted or not: a worktree wtm has
 // not adopted is precisely the one somebody has to name to adopt it, and it
