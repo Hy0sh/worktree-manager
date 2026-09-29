@@ -94,8 +94,10 @@ func (a *app) liveProjects(ctx context.Context, names []string) []repoWorktrees 
 	for _, name := range names {
 		p := a.cfg.Projects[name]
 		// Managed is what lets an adopted worktree count as present: without
-		// it every adopted branch would read as stale.
-		client := &stack.Client{Runner: a.runner, Dir: p.Dir, Managed: managed(p)}
+		// it every adopted branch would read as stale, and without Paths every
+		// adopted one mid-rebase would, which is what `clean` then released.
+		client := &stack.Client{Runner: a.runner, Dir: p.Dir, Managed: managed(p),
+			Paths: p.WorktreePaths}
 		worktrees, err := client.Worktrees(ctx)
 		if err != nil {
 			continue

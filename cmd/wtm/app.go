@@ -85,7 +85,7 @@ func (a *app) resolveOne(args []string) (string, config.Project, string, error) 
 		return "", config.Project{}, "", fmt.Errorf("one branch expected, got %q", rest)
 	}
 	if len(rest) == 0 {
-		branch, err := a.currentBranch()
+		branch, err := a.currentBranch(p)
 		return name, p, branch, err
 	}
 	return name, p, rest[0], nil
@@ -93,10 +93,13 @@ func (a *app) resolveOne(args []string) (string, config.Project, string, error) 
 
 // currentBranch is the branch of the worktree the command was typed from, for
 // the commands that let it go unnamed there.
-func (a *app) currentBranch() (string, error) {
+func (a *app) currentBranch(p config.Project) (string, error) {
 	cur, err := gitx.CurrentWorktree(context.Background(), a.runner)
 	if err != nil {
 		return "", err
+	}
+	if cur.Branch == "" {
+		cur.Branch = stack.BranchAt(p.WorktreePaths, cur.Path)
 	}
 	switch {
 	case !cur.Linked:
@@ -126,7 +129,7 @@ func (a *app) options(name string, p config.Project, branch string) worktree.Opt
 		Runner:     a.runner,
 		Out:        a.out,
 		Stack: &stack.Client{Runner: a.runner, Dir: p.Dir, Out: a.out,
-			Managed: managed(p)},
+			Managed: managed(p), Paths: p.WorktreePaths},
 		Resolver: &index.Resolver{
 			ConfigPath: a.cfgPath,
 			Runner:     a.runner,
