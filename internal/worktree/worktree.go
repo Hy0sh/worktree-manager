@@ -9,7 +9,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/Hy0sh/worktree-manager/internal/compose"
@@ -350,34 +349,24 @@ func Stop(ctx context.Context, o Options) error {
 
 // Remove stops the stack then removes the worktree, keeping the local branch.
 func Remove(ctx context.Context, o Options) error {
-	wt, err := o.Stack.FindByBranch(ctx, o.Branch)
+	plan, err := InspectRemoval(ctx, o)
 	if err != nil {
-		// The worktree left without its index: a removal made outside wtm, or
-		// before remove released indices. Forgetting it is still this verb's
-		// job, and a stack left at that index goes with it.
-		if n := o.Resolver.Recorded()[o.Branch]; n > 0 {
-			return releaseStale(ctx, o, n)
-		}
-		return removeAbandoned(ctx, o, err)
+		return err
 	}
 	// Checked before anything is taken down: a refusal must leave the worktree
-	// as it was, stack included. An adopted worktree is spared, its checkout
-	// stays; the removal below forces past the untracked files wtm laid down.
-	if !o.Force && wt.UnderRoot {
-		if wt.Locked {
-			return fmt.Errorf("worktree %s is locked%s: unlock it (`git -C %s worktree unlock %s`), "+
-				"or rerun with --force (the stack is still running)",
-				wt.Path, lockReason(wt), o.Project.Dir, wt.Path)
-		}
-		changes, err := trackedChanges(ctx, o, wt.Path)
-		if err != nil {
-			return err
-		}
-		if changes != "" {
-			return fmt.Errorf("worktree %s has uncommitted changes:\n%s\ncommit them, or rerun with --force "+
-				"(the stack is still running)", wt.Path, changes)
-		}
+	// as it was, stack included.
+	if err := plan.refusal(o); err != nil {
+		return err
 	}
+	switch plan.Kind {
+	case RemoveStale:
+		// The worktree left without its index, removed outside wtm: forgetting
+		// it is still this verb's job, and a stack left at that index goes too.
+		return releaseStale(ctx, o, plan.Index)
+	case RemoveAbandoned:
+		return removeAbandoned(o, plan.Path)
+	}
+	wt := plan.wt
 
 	stackKnown := false
 	if compose.Has(o.Project.Dir) {
@@ -434,25 +423,8 @@ func forgetPath(o Options) {
 }
 
 // removeAbandoned deletes a directory git forgot, which `wtm create` would refuse
-// the branch over forever. Stack.Abandoned tells it from a live worktree git now
-// lists under a renamed branch; for anything else, git's own listErr stands.
-func removeAbandoned(ctx context.Context, o Options, listErr error) error {
-	dest, err := o.dest()
-	if err != nil {
-		return listErr
-	}
-	abandoned, err := o.Stack.Abandoned(ctx)
-	if err != nil || !slices.Contains(abandoned, dest) {
-		return listErr
-	}
-	// git's metadata is what `git status` reads, so no check can say whether
-	// the directory holds uncommitted work. Hence a flag, where a live worktree
-	// gets the check.
-	if !o.Force {
-		return fmt.Errorf("%s is a directory git no longer lists as a worktree: its administrative "+
-			"directory is gone, so nothing can say whether it holds uncommitted work.\n"+
-			"rerun with --force to delete it", dest)
-	}
+// the branch over forever.
+func removeAbandoned(o Options, dest string) error {
 	if err := os.RemoveAll(dest); err != nil {
 		return fmt.Errorf("deleting %s: %w", dest, err)
 	}
