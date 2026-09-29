@@ -85,8 +85,7 @@ func (m *Model) act(key string) tea.Cmd {
 			return nil
 		}
 		return m.run("logs", e.Branch, "logs of "+e.Branch+" · ctrl+c returns to the dashboard", true,
-			"run", m.project, e.Branch, "--",
-			"docker", "compose", "logs", "--follow", "--tail", "200")
+			"logs", m.project, e.Branch)
 	}
 	return nil
 }

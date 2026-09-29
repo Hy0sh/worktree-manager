@@ -88,7 +88,7 @@ func TestLogsWaitForAnUpStack(t *testing.T) {
 		m, _ = step(t, m, key("j"))
 	}
 	step(t, m, key("l"))
-	ran(t, s, []string{"run", "repo", "feat/a", "--", "docker", "compose", "logs", "--follow", "--tail", "200"})
+	ran(t, s, []string{"logs", "repo", "feat/a"})
 }
 
 func TestNothingRunsOnAWorktreeLeftToAdopt(t *testing.T) {
