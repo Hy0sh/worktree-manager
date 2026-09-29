@@ -15,6 +15,7 @@ import (
 
 	"github.com/Hy0sh/worktree-manager/internal/compose"
 	"github.com/Hy0sh/worktree-manager/internal/config"
+	"github.com/Hy0sh/worktree-manager/internal/proxy"
 	"github.com/Hy0sh/worktree-manager/internal/safefile"
 	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
@@ -219,14 +220,16 @@ func endpoints(ctx context.Context, o Options, wt stack.Worktree) []string {
 	}
 	urls := declaredURLs(ctx, o, wt)
 	for _, service := range slices.Sorted(maps.Keys(urls)) {
-		address, ok := expandURL(urls[service], allocations)
-		if !ok {
-			continue
+		for _, u := range urls[service] {
+			address, ok := expandURL(u, allocations)
+			if !ok {
+				continue
+			}
+			// The service's own port line may carry the bare name already.
+			label := service + "/url"
+			width = max(width, len(label))
+			entries = append(entries, entry{label, address})
 		}
-		// The service's own port line may carry the bare name already.
-		label := service + "/url"
-		width = max(width, len(label))
-		entries = append(entries, entry{label, address})
 	}
 	out := make([]string, 0, len(entries))
 	for _, e := range entries {
@@ -245,10 +248,11 @@ const urlLabel = "wtm.url"
 // costs, which must never hang a start that already succeeded.
 const composeConfigTimeout = 10 * time.Second
 
-// declaredURLs reads the wtm.url label of every started service, from compose's
+// declaredURLs reads the addresses of every started service, from compose's
 // own rendering: it resolves ${VAR} against the worktree's .env and leaves the
-// {{port}} placeholders, which it does not know, for expandURL.
-func declaredURLs(ctx context.Context, o Options, wt stack.Worktree) map[string]string {
+// {{port}} placeholders, which it does not know, for expandURL. A wtm.url label
+// states them outright and wins over what a known proxy routes there.
+func declaredURLs(ctx context.Context, o Options, wt stack.Worktree) map[string][]string {
 	if !declaresURLs(o, wt) {
 		return nil
 	}
@@ -259,32 +263,33 @@ func declaredURLs(ctx context.Context, o Options, wt stack.Worktree) map[string]
 		return nil
 	}
 	var cfg struct {
-		Services map[string]struct {
-			Labels map[string]string `json:"labels"`
-		} `json:"services"`
+		Services map[string]proxy.Service `json:"services"`
 	}
 	if json.Unmarshal([]byte(res.Stdout), &cfg) != nil {
 		return nil
 	}
 	started := startedServices(o)
-	urls := map[string]string{}
+	urls := proxy.URLs(cfg.Services)
 	for name, s := range cfg.Services {
-		if u, ok := s.Labels[urlLabel]; ok && (started == nil || slices.Contains(started, name)) {
-			urls[name] = u
+		if u, ok := s.Labels[urlLabel]; ok {
+			urls[name] = []string{u}
+		}
+		if started != nil && !slices.Contains(started, name) {
+			delete(urls, name)
 		}
 	}
 	return urls
 }
 
-// declaresURLs spares the docker call to every project that sets no wtm.url,
-// which is most of them: the label has to be spelled out in a compose file.
+// declaresURLs spares the docker call to every project that neither sets
+// wtm.url nor runs a proxy wtm knows, which is most of them.
 func declaresURLs(o Options, wt stack.Worktree) bool {
 	files, err := composeFiles(o, wt.Path)
 	if err != nil {
 		return false
 	}
 	for _, f := range files {
-		if data, err := os.ReadFile(f); err == nil && strings.Contains(string(data), urlLabel) {
+		if data, err := os.ReadFile(f); err == nil && (strings.Contains(string(data), urlLabel) || proxy.Mentioned(string(data))) {
 			return true
 		}
 	}

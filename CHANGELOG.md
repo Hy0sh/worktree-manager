@@ -6,6 +6,12 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Added
+
+- `start` and `wtm ports` print the addresses Traefik routes to each service,
+  read from its router labels and entrypoints: a project behind Traefik no
+  longer needs a `wtm.url` label, which still wins where one is set.
+
 ### Fixed
 
 - A new worktree no longer takes an index whose ports another project's

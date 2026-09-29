@@ -524,23 +524,37 @@ either way.
 ### Addresses behind a proxy
 
 A service reached through a reverse proxy publishes no port of its own, so
-nothing in the port list says where to open it. The service states it in a
-`wtm.url` label, and `{{port SERVICE:PORT}}` stands for the host port this
-worktree got for that container port:
+nothing in the port list says where to open it. Behind Traefik, wtm reads it
+from the routers: each `Host()` of a router, on the host port the proxy
+publishes for that router's entrypoint, `https` when the router or the
+entrypoint sets tls. Nothing to declare:
 
 ```yaml
 services:
   proxy:
     image: traefik:v3
+    command: ["--entrypoints.web.address=:80"]
     ports: ["80:80"]
   front:
     labels:
       - "traefik.http.routers.front.rule=Host(`front.${APP_NAME}.localhost`)"
-      - "wtm.url=http://front.${APP_NAME}.localhost:{{port proxy:80}}"
 ```
 
 `start` and `wtm ports` then print `front/url  http://front.myapp.localhost:20081`.
-The label is read from `docker compose config`, so `${APP_NAME}` resolves as it
+Entrypoints defined in a mounted `traefik.yml` are out of sight, so the
+proxy's published 80, or 443 for tls, stands in.
+
+Any other proxy, or an address wtm cannot work out, is stated in a `wtm.url`
+label, which wins over what Traefik routes; `{{port SERVICE:PORT}}` stands for
+the host port this worktree got for that container port:
+
+```yaml
+  front:
+    labels:
+      - "wtm.url=http://front.${APP_NAME}.localhost:{{port proxy:80}}"
+```
+
+Both are read from `docker compose config`, so `${APP_NAME}` resolves as it
 does for the stack itself; wtm only fills in `{{port}}`. A service the profile
 left down, or a port nothing publishes, prints no address.
 
