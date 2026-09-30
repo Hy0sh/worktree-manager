@@ -32,6 +32,9 @@ type source struct {
 	plan    worktree.RemovalPlan
 	ran     [][]string
 	opened  []string
+	// memory is the warning a start meets, script what each wtm verb runs.
+	memory string
+	script string
 }
 
 func (s *source) Source() Source {
@@ -49,8 +52,12 @@ func (s *source) Source() Source {
 		},
 		Wtm: func(args ...string) *exec.Cmd {
 			s.ran = append(s.ran, args)
-			return exec.Command("true")
+			if s.script == "" {
+				return exec.Command("true")
+			}
+			return exec.Command("sh", "-c", s.script)
 		},
+		Memory: func(context.Context) (string, error) { return s.memory, nil },
 		Open: func(url string) error {
 			s.opened = append(s.opened, url)
 			return nil

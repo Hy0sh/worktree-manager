@@ -6,6 +6,17 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Changed
+
+- In `wtm tui`, `s`, `x` and `d` no longer leave the dashboard: the verb's
+  output runs in a panel under the table, which keeps refreshing, so a row
+  turns `up` while the start is still printing. The memory question `wtm start`
+  asks at a terminal is asked by the dashboard before it starts, `y` then
+  passing `--ignore-memory`. While a verb runs, the other verbs and quitting
+  are held, ctrl+c interrupts it and a second one kills it, and the output
+  stays until `esc` or the next verb. The shell and the logs still take the
+  terminal.
+
 ## [0.24.0] - 2026-09-29
 
 ### Added

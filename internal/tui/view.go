@@ -49,8 +49,13 @@ func (m Model) render() string {
 	default:
 		m.table(&b)
 		detail = m.detail()
-		if m.confirm != nil {
+		switch {
+		case m.confirm != nil:
 			detail = m.confirmation()
+		case m.memo != nil:
+			detail = m.memoryQuestion()
+		case m.job != nil && !m.job.hidden:
+			detail = m.panel()
 		}
 	}
 
@@ -62,6 +67,9 @@ func (m Model) render() string {
 		}
 		tail.WriteString("\n")
 	}
+	if m.job != nil && m.job.hidden {
+		tail.WriteString("\n" + faint.Render("wtm "+m.job.verb+" "+m.job.branch+" running…") + "\n")
+	}
 	if m.note != "" {
 		note := faint
 		if m.failed {
@@ -70,23 +78,34 @@ func (m Model) render() string {
 		tail.WriteString("\n" + note.Render(m.note) + "\n")
 	}
 	keys := m.keys()
-	if m.confirm != nil {
+	switch {
+	case m.confirm != nil:
 		keys = "y remove · n keep it"
 		if m.confirm.plan.RequiresForce() {
 			keys = "y remove with --force · n keep it"
 		}
+	case m.memo != nil:
+		keys = "y start anyway · n leave it down"
 	}
-	tail.WriteString("\n" + faint.Render(keys))
+	for _, l := range wrapKeys(keys, m.width) {
+		tail.WriteString("\n" + faint.Render(l))
+	}
 
 	// The detail gives way, never the keys: a stack behind a proxy lists two
 	// dozen addresses, more than a split terminal has rows for.
 	if m.height > 0 {
 		room := m.height - strings.Count(b.String(), "\n") - strings.Count(tail.String(), "\n") - 1
-		// The URL under the cursor stays above the cut, the top giving way.
-		if r := m.pickRow(); room > 1 && r >= room-1 {
-			detail = detail[r-room+2:]
+		switch {
+		// Output reads from the bottom: the last lines are the ones to keep.
+		case m.job != nil && !m.job.hidden && m.confirm == nil && m.memo == nil:
+			detail = lastLines(detail, room)
+		default:
+			// The URL under the cursor stays above the cut, the top giving way.
+			if r := m.pickRow(); room > 1 && r >= room-1 {
+				detail = detail[r-room+2:]
+			}
+			detail = m.fit(detail, room)
 		}
-		detail = m.fit(detail, room)
 	}
 	for _, l := range detail {
 		b.WriteString(l + "\n")
@@ -249,15 +268,85 @@ func (m Model) keys() string {
 	if len(m.urls()) > 0 {
 		open = " · o open a url"
 	}
+	closing := ""
+	if m.job != nil {
+		closing = " · esc close the output"
+	}
 	switch {
 	case m.picking:
 		return "↑/↓ choose · enter open in the browser · esc back to the worktrees"
+	case m.job != nil && m.job.hidden:
+		return "↑/↓ move · p show the output · ctrl+c interrupt " + m.job.verb + open + " · r refresh"
+	case m.job != nil && m.job.running:
+		return "↑/↓ move · esc hide the output · ctrl+c interrupt " + m.job.verb + open + " · r refresh"
 	case !ok:
-		return "r refresh · q quit"
+		return "r refresh · q quit" + closing
 	case e.Adoptable() || e.Branch == "":
-		return "↑/↓ move · r refresh · q quit"
+		return "↑/↓ move · r refresh · q quit" + closing
 	case e.Status != "up" || e.ComposeProject == "":
-		return "↑/↓ move · s start · x stop · d remove · enter shell" + open + " · r refresh · q quit"
+		return "↑/↓ move · s start · x stop · d remove · enter shell" + open + " · r refresh · q quit" + closing
 	}
-	return "↑/↓ move · s start · x stop · d remove · enter shell · l logs" + open + " · r refresh · q quit"
+	return "↑/↓ move · s start · x stop · d remove · enter shell · l logs" + open + " · r refresh · q quit" + closing
+}
+
+// panel is the job's output under a header saying where it stands.
+func (m Model) panel() []string {
+	j := m.job
+	state := faint.Render("running…")
+	switch {
+	case j.running:
+	case j.interrupted:
+		state = failure.Render("interrupted")
+	case j.err != nil:
+		state = failure.Render("failed: " + j.err.Error())
+	default:
+		state = statuses["up"].Render("done")
+	}
+	lines := []string{"", bold.Render("wtm "+j.verb+" "+j.branch) + "  " + state}
+	for _, l := range j.lines {
+		lines = append(lines, "  "+l)
+	}
+	return lines
+}
+
+// lastLines keeps the blank row and the header, then the latest output room
+// allows.
+func lastLines(lines []string, room int) []string {
+	const head = 2
+	if len(lines) <= room {
+		return lines
+	}
+	if room <= head {
+		return lines[:max(room, 0)]
+	}
+	return append(lines[:head:head], lines[len(lines)-(room-head):]...)
+}
+
+// memoryQuestion is what `wtm start` would have asked at a terminal.
+func (m Model) memoryQuestion() []string {
+	return []string{"", bold.Render("start " + m.memo.entry.BranchLabel() + "?"),
+		m.memo.warning,
+		faint.Render("y starts it anyway, as `wtm start --ignore-memory` does")}
+}
+
+// wrapKeys breaks the key line between two keys, never inside one: cut at the
+// edge, the last keys, quit among them, were the ones a narrow split lost.
+func wrapKeys(keys string, width int) []string {
+	if width <= 0 || lipgloss.Width(keys) <= width {
+		return []string{keys}
+	}
+	var lines []string
+	line := ""
+	for _, k := range strings.Split(keys, " · ") {
+		switch {
+		case line == "":
+			line = k
+		case lipgloss.Width(line+" · "+k) <= width:
+			line += " · " + k
+		default:
+			lines = append(lines, line)
+			line = k
+		}
+	}
+	return append(lines, line)
 }

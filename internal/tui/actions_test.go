@@ -30,42 +30,40 @@ func ran(t *testing.T, s *source, want ...[]string) {
 func TestStartAndStopRunTheWtmVerbs(t *testing.T) {
 	s := &source{}
 	m, _ := loaded(t, s, entry("feat/a", "down", 1))
-	m, start := step(t, m, key("s"))
-	m = back(t, m, "start")
-	_, stop := step(t, m, key("x"))
-	if start == nil || stop == nil {
-		t.Fatal("s and x should each hand the terminal to wtm")
+	m, check := step(t, m, key("s"))
+	if check == nil {
+		t.Fatal("s should read the memory first")
 	}
+	m = drain(t, m, check)
+	m, stop := step(t, m, key("x"))
+	if stop == nil {
+		t.Fatal("x should run wtm stop")
+	}
+	drain(t, m, stop)
 	ran(t, s, []string{"start", "repo", "feat/a"}, []string{"stop", "repo", "feat/a"})
 }
 
-// back is the verb returning the terminal, once the replayed keys have settled.
-func back(t *testing.T, m Model, verb string) Model {
-	t.Helper()
-	m, _ = step(t, m, actionMsg{verb: verb, branch: "feat/a"})
-	m.settle = time.Time{}
-	return m
-}
-
-// Keys typed at docker's output are replayed when the dashboard takes the
-// terminal back: an enter meant for a slow start opened a shell.
-func TestKeysTypedWhileAVerbRunsAreDropped(t *testing.T) {
+// Keys typed in a shell the dashboard opened are replayed when it takes the
+// terminal back: an enter meant for the shell opened another.
+func TestKeysTypedWhileAVerbHasTheTerminalAreDropped(t *testing.T) {
+	t.Setenv("SHELL", "/bin/sh")
 	s := &source{}
 	m, _ := loaded(t, s, entry("feat/a", "up", 1))
-	m, _ = step(t, m, key("s"))
+	m, _ = step(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 	for _, k := range []tea.KeyPressMsg{{Code: tea.KeyEnter}, key("d"), key("y"), key("x")} {
 		var cmd tea.Cmd
 		if m, cmd = step(t, m, k); cmd != nil {
-			t.Fatalf("%s arrived while start had the terminal and must be dropped", k)
+			t.Fatalf("%s arrived while the shell had the terminal and must be dropped", k)
 		}
 	}
-	m, _ = step(t, m, actionMsg{verb: "start", branch: "feat/a"})
+	m, _ = step(t, m, actionMsg{verb: "shell", branch: "feat/a"})
 	if _, cmd := step(t, m, tea.KeyPressMsg{Code: tea.KeyEnter}); cmd != nil {
 		t.Fatal("an enter replayed right after the return must be dropped too")
 	}
 	m.settle = time.Time{}
-	step(t, m, key("x"))
-	ran(t, s, []string{"start", "repo", "feat/a"}, []string{"stop", "repo", "feat/a"})
+	m, cmd := step(t, m, key("x"))
+	drain(t, m, cmd)
+	ran(t, s, []string{"run", "repo", "feat/a", "--", "/bin/sh"}, []string{"stop", "repo", "feat/a"})
 }
 
 func TestEnterOpensTheUserShellInTheWorktree(t *testing.T) {
@@ -235,7 +233,7 @@ func TestAFailureWaitsForEnterBeforeTheDashboardComesBack(t *testing.T) {
 	} {
 		var stdout, stderr bytes.Buffer
 		h := &held{cmd: exec.Command("sh", "-c", c.script), what: "start feat/a",
-			banner: "wtm start feat/a" + comesBack, pause: c.pause}
+			banner: "logs of feat/a · ctrl+c returns to the dashboard", pause: c.pause}
 		h.SetStdin(strings.NewReader("\n"))
 		h.SetStdout(&stdout)
 		h.SetStderr(&stderr)
@@ -247,7 +245,7 @@ func TestAFailureWaitsForEnterBeforeTheDashboardComesBack(t *testing.T) {
 		if err != nil && !errors.As(err, &exit) {
 			t.Fatalf("%s: the command's own error should come back, got %v", c.name, err)
 		}
-		if !strings.HasPrefix(stdout.String(), "\x1b[H\x1b[2J") || !strings.Contains(stdout.String(), "comes back") {
+		if !strings.HasPrefix(stdout.String(), "\x1b[H\x1b[2J") || !strings.Contains(stdout.String(), "returns to the dashboard") {
 			t.Fatalf("%s: the screen should be cleared and headed first, got %q", c.name, stdout.String())
 		}
 		if waits := strings.Contains(stderr.String(), "press enter"); waits != c.waits {
