@@ -6,6 +6,15 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Added
+
+- `a` in `wtm tui` adopts the selected worktree left to adopt. The dashboard
+  asks first, naming the checkout and what wtm writes there, since `wtm adopt`
+  with no terminal refuses to write into one, then runs `wtm adopt -y` in the
+  output panel. Tight memory is told in the same question, and only a `y` to it
+  passes `--ignore-memory`. A worktree on a detached HEAD is turned away with
+  the `git switch -c` that fixes it.
+
 ### Changed
 
 - In `wtm tui`, `s`, `x` and `d` no longer leave the dashboard: the verb's

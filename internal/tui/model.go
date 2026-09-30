@@ -64,6 +64,8 @@ type Model struct {
 	failed  bool
 	confirm *removal
 	memo    *memoryAsk
+	// checking is a memory reading on its way to a start or an adoption.
+	checking bool
 	// job is the verb the panel shows, running or done, until esc or the next.
 	job *job
 
@@ -150,7 +152,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch msg.String() {
 		case "q", "esc", "ctrl+c":
 			return m, tea.Quit
-		case "s", "x", "d", "enter", "l":
+		case "s", "x", "d", "enter", "l", "a":
 			return m, m.act(msg.String())
 		case "up", "k":
 			return m, m.move(-1)

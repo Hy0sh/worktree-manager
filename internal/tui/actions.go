@@ -49,9 +49,24 @@ func (m *Model) act(key string) tea.Cmd {
 	if !ok {
 		return nil
 	}
+	// A second start while the first is still reading memory would run both.
+	if m.checking {
+		m.tell(false, "still reading docker's memory…")
+		return nil
+	}
 	switch {
+	case e.Adoptable() && key == "a":
+		// adopt refuses a detached HEAD: wtm keys a worktree by its branch.
+		if e.Detached || e.Branch == "" {
+			m.tell(true, "%s is on a detached HEAD: check a branch out there first "+
+				"(`git -C %s switch -c <branch>`)", e.Path, e.Path)
+			return nil
+		}
+		return m.readMemory("adopt", e)
 	case e.Adoptable():
-		m.tell(false, "not adopted: `wtm adopt %s` gives it a stack first", e.Branch)
+		m.tell(false, "not adopted: a gives it a stack first")
+		return nil
+	case key == "a":
 		return nil
 	case e.Branch == "":
 		m.tell(true, "%s names no branch, and wtm addresses a worktree by its branch", e.Path)
@@ -59,11 +74,7 @@ func (m *Model) act(key string) tea.Cmd {
 	}
 	switch key {
 	case "s":
-		ctx, memory := m.ctx, m.src.Memory
-		return func() tea.Msg {
-			warning, err := memory(ctx)
-			return memoryMsg{entry: e, warning: warning, err: err}
-		}
+		return m.readMemory("start", e)
 	case "x":
 		return m.launch("stop", e.Branch, "stop", m.project, e.Branch)
 	case "d":
@@ -243,25 +254,45 @@ func (h *held) Run() error {
 }
 
 type memoryMsg struct {
+	verb    string
 	entry   worktree.Entry
 	warning string
 	err     error
 }
 
-// memoryAsk is the question `wtm start` asks at a terminal, asked here
-// instead: the start in the panel has none.
+// memoryAsk is the question `wtm start` and `wtm adopt` ask at a terminal,
+// asked here instead: the verb in the panel has none, and adopt without one
+// refuses to write into a checkout it did not create.
 type memoryAsk struct {
+	verb    string
 	entry   worktree.Entry
 	warning string
 }
 
+// readMemory takes docker a few seconds, stats included: the note says so,
+// or the key reads as ignored and the next one is typed at nothing.
+func (m *Model) readMemory(verb string, e worktree.Entry) tea.Cmd {
+	m.checking = true
+	m.tell(false, "reading docker's memory before the %s…", verb)
+	ctx, memory := m.ctx, m.src.Memory
+	return func() tea.Msg {
+		warning, err := memory(ctx)
+		return memoryMsg{verb: verb, entry: e, warning: warning, err: err}
+	}
+}
+
 // checked starts at once unless memory is tight. An unreadable reading does
-// not stop a start either: wtm start itself goes ahead on one.
+// not stop a start either: wtm start itself goes ahead on one. An adoption is
+// always asked about, tight memory or not.
 func (m *Model) checked(msg memoryMsg) tea.Cmd {
-	if msg.err != nil || msg.warning == "" {
+	m.checking, m.note = false, ""
+	if msg.err != nil {
+		msg.warning = ""
+	}
+	if msg.verb == "start" && msg.warning == "" {
 		return m.launch("start", msg.entry.Branch, "start", m.project, msg.entry.Branch)
 	}
-	m.memo = &memoryAsk{entry: msg.entry, warning: msg.warning}
+	m.memo = &memoryAsk{verb: msg.verb, entry: msg.entry, warning: msg.warning}
 	return nil
 }
 
@@ -270,10 +301,21 @@ func (m *Model) answerMemory(key string) tea.Cmd {
 	switch key {
 	case "y":
 		m.memo = nil
-		return m.launch("start", a.entry.Branch, "start", "--ignore-memory", m.project, a.entry.Branch)
+		args := []string{a.verb}
+		if a.verb == "adopt" {
+			args = append(args, "-y")
+		}
+		if a.warning != "" {
+			args = append(args, "--ignore-memory")
+		}
+		return m.launch(a.verb, a.entry.Branch, append(args, m.project, a.entry.Branch)...)
 	case "n", "esc", "q":
 		m.memo = nil
-		m.tell(false, "stack of %s not started: free some memory first", a.entry.Branch)
+		if a.verb == "adopt" {
+			m.tell(false, "%s not adopted: nothing was written", a.entry.Branch)
+		} else {
+			m.tell(false, "stack of %s not started: free some memory first", a.entry.Branch)
+		}
 	case "ctrl+c":
 		return tea.Quit
 	}
@@ -309,7 +351,7 @@ func (m *Model) whileRunning(key string) bool {
 		j.hidden = false
 	case "q":
 		m.tell(false, "%s %s is running: ctrl+c interrupts it", j.verb, j.branch)
-	case "s", "x", "d", "enter", "l":
+	case "s", "x", "d", "enter", "l", "a":
 		m.tell(false, "%s %s is still running: wait for it, or ctrl+c", j.verb, j.branch)
 	default:
 		return false

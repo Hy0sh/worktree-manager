@@ -84,6 +84,8 @@ func (m Model) render() string {
 		if m.confirm.plan.RequiresForce() {
 			keys = "y remove with --force · n keep it"
 		}
+	case m.memo != nil && m.memo.verb == "adopt":
+		keys = "y adopt · n leave it as it is"
 	case m.memo != nil:
 		keys = "y start anyway · n leave it down"
 	}
@@ -188,7 +190,7 @@ func (m Model) detail() []string {
 	lines := []string{"", e.Path}
 	switch {
 	case e.Adoptable():
-		return append(lines, faint.Render("not adopted: `wtm adopt "+e.Branch+"` gives it a stack where it stands"))
+		return append(lines, faint.Render("not adopted: a gives it a stack where it stands"))
 	case e.ComposeProject == "":
 		return append(lines, faint.Render("no stack index recorded yet: its first start allocates one"))
 	case m.portsFor != e.Path:
@@ -281,6 +283,8 @@ func (m Model) keys() string {
 		return "↑/↓ move · esc hide the output · ctrl+c interrupt " + m.job.verb + open + " · r refresh"
 	case !ok:
 		return "r refresh · q quit" + closing
+	case e.Adoptable() && !e.Detached && e.Branch != "":
+		return "↑/↓ move · a adopt · r refresh · q quit" + closing
 	case e.Adoptable() || e.Branch == "":
 		return "↑/↓ move · r refresh · q quit" + closing
 	case e.Status != "up" || e.ComposeProject == "":
@@ -322,11 +326,19 @@ func lastLines(lines []string, room int) []string {
 	return append(lines[:head:head], lines[len(lines)-(room-head):]...)
 }
 
-// memoryQuestion is what `wtm start` would have asked at a terminal.
+// memoryQuestion is what `wtm start` or `wtm adopt` would have asked at a
+// terminal: adopt what it writes and where, both the memory when it is tight.
 func (m Model) memoryQuestion() []string {
-	return []string{"", bold.Render("start " + m.memo.entry.BranchLabel() + "?"),
-		m.memo.warning,
-		faint.Render("y starts it anyway, as `wtm start --ignore-memory` does")}
+	a := m.memo
+	lines := []string{"", bold.Render(a.verb + " " + a.entry.BranchLabel() + "?")}
+	if a.verb == "adopt" {
+		lines = append(lines, "wtm writes its .env, its compose overrides and its own files in "+a.entry.Path+
+			", then starts the stack. The worktree stays where it is.")
+	}
+	if a.warning != "" {
+		lines = append(lines, a.warning, faint.Render("y goes ahead anyway, as --ignore-memory does"))
+	}
+	return lines
 }
 
 // wrapKeys breaks the key line between two keys, never inside one: cut at the
