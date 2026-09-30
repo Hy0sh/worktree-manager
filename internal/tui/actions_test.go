@@ -102,8 +102,8 @@ func TestNothingRunsOnAWorktreeLeftToAdopt(t *testing.T) {
 		}
 	}
 	ran(t, s)
-	if !strings.Contains(m.note, "wtm adopt worktree-curry") {
-		t.Fatalf("note = %q, want the adopt line", m.note)
+	if !strings.Contains(m.note, "a gives it a stack") {
+		t.Fatalf("note = %q, want the way to adopt it", m.note)
 	}
 }
 
@@ -264,7 +264,7 @@ func TestTheKeyLineOffersWhatTheSelectedRowTakes(t *testing.T) {
 		not     string
 	}{
 		{"empty", nil, "r refresh · q quit", "start"},
-		{"adoptable", []worktree.Entry{curry}, "↑/↓ move · r refresh", "start"},
+		{"adoptable", []worktree.Entry{curry}, "↑/↓ move · a adopt · r refresh", "start"},
 		{"no index", []worktree.Entry{entry("feat/b", "down", 0)}, "s start", "l logs"},
 		{"down", []worktree.Entry{entry("feat/c", "down", 3)}, "x stop", "l logs"},
 		{"indexed", []worktree.Entry{entry("feat/a", "up", 1)}, "l logs", ""},
@@ -353,5 +353,98 @@ func TestTheURLUnderTheCursorStaysOnScreen(t *testing.T) {
 	}
 	if !strings.Contains(view, bold.Render("› ")+"svc20") {
 		t.Fatalf("svc20 is under the cursor and must show:\n%s", view)
+	}
+}
+
+func curryEntry() worktree.Entry {
+	return worktree.Entry{Worktree: stack.Worktree{Branch: "worktree-curry",
+		Path: "/repo/.claude/worktrees/curry"}, Status: worktree.StatusAdoptable}
+}
+
+// Without a terminal, `wtm adopt` refuses to write into a checkout it did not
+// create: the dashboard asks, then passes -y.
+func TestAdoptAsksFirstThenRunsInThePanel(t *testing.T) {
+	s := &source{}
+	m, _ := loaded(t, s, curryEntry())
+	m, cmd := step(t, m, key("a"))
+	m, _ = step(t, m, cmd())
+	ran(t, s)
+	view := m.render()
+	for _, want := range []string{"adopt worktree-curry?", "/repo/.claude/worktrees/curry", "stays where it is", "y adopt"} {
+		if !strings.Contains(view, want) {
+			t.Fatalf("the question should say %q:\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "--ignore-memory") {
+		t.Fatalf("memory is fine: nothing to say about it:\n%s", view)
+	}
+	m, _ = step(t, m, key("n"))
+	ran(t, s)
+	if !strings.Contains(m.note, "nothing was written") {
+		t.Fatalf("note = %q", m.note)
+	}
+
+	m, cmd = step(t, m, key("a"))
+	m, _ = step(t, m, cmd())
+	m, cmd = step(t, m, key("y"))
+	m = drain(t, m, cmd)
+	ran(t, s, []string{"adopt", "-y", "repo", "worktree-curry"})
+	if m.note != "adopt worktree-curry: done" {
+		t.Fatalf("note = %q", m.note)
+	}
+}
+
+func TestAdoptOnTightMemorySaysSoAndIgnoresItOnlyWhenAnswered(t *testing.T) {
+	s := &source{memory: "warning: 7.5 GiB of 8 GiB in use"}
+	m, _ := loaded(t, s, curryEntry())
+	m, cmd := step(t, m, key("a"))
+	m, _ = step(t, m, cmd())
+	if view := m.render(); !strings.Contains(view, "7.5 GiB") || !strings.Contains(view, "adopt worktree-curry?") {
+		t.Fatalf("one question, the memory in it:\n%s", view)
+	}
+	m, cmd = step(t, m, key("y"))
+	drain(t, m, cmd)
+	ran(t, s, []string{"adopt", "-y", "--ignore-memory", "repo", "worktree-curry"})
+}
+
+func TestAdoptTurnsADetachedWorktreeAway(t *testing.T) {
+	s := &source{}
+	curry := curryEntry()
+	curry.Branch, curry.Detached, curry.Head = "", true, "37a276b48e772823"
+	m, _ := loaded(t, s, curry)
+	m, cmd := step(t, m, key("a"))
+	if cmd != nil {
+		t.Fatal("adopt refuses a detached HEAD: nothing should be asked")
+	}
+	if !strings.Contains(m.note, "switch -c <branch>") || strings.Contains(m.render(), "a adopt") {
+		t.Fatalf("the way out should show, and a should not be offered: note %q\n%s", m.note, m.render())
+	}
+}
+
+func TestAIsQuietOnAWorktreeWtmAlreadyManages(t *testing.T) {
+	s := &source{}
+	m, _ := loaded(t, s, entry("feat/a", "up", 1))
+	if m, cmd := step(t, m, key("a")); cmd != nil || m.memo != nil {
+		t.Fatal("an adopted or created worktree has nothing to adopt")
+	}
+	ran(t, s)
+}
+
+// Reading memory takes docker a few seconds: a key typed at a screen that
+// did not move was lost, and a second s would have started twice.
+func TestTheMemoryReadingSaysSoAndRunsOnce(t *testing.T) {
+	s := &source{}
+	m, _ := loaded(t, s, curryEntry(), entry("feat/a", "down", 1))
+	m, cmd := step(t, m, key("a"))
+	if !strings.Contains(m.render(), "reading docker's memory before the adopt") {
+		t.Fatalf("the wait should show:\n%s", m.render())
+	}
+	m, _ = step(t, m, key("j"))
+	if m, again := step(t, m, key("s")); again != nil || !strings.Contains(m.note, "still reading") {
+		t.Fatalf("a second reading must not start, note %q", m.note)
+	}
+	m, _ = step(t, m, cmd())
+	if m.checking || m.memo == nil || strings.Contains(m.note, "reading") {
+		t.Fatalf("the answer should clear the wait and ask, note %q", m.note)
 	}
 }

@@ -29,7 +29,8 @@ func newTUICmd(a *app) *cobra.Command {
 			"showing under the table. enter opens a shell in it and l follows its\n" +
 			"logs, both taking the terminal until they are done. o moves the cursor\n" +
 			"onto the worktree's urls, and enter opens the one it is on in the\n" +
-			"browser. r refreshes at once, q quits.",
+			"browser. a adopts a worktree wtm did not create, asking first.\n" +
+			"r refreshes at once, q quits.",
 		Args:              cobra.RangeArgs(0, 1),
 		ValidArgsFunction: a.completeProjects,
 		SilenceUsage:      true,
