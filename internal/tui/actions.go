@@ -14,8 +14,6 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/worktree"
 )
 
-const comesBack = " · the dashboard comes back once it is done"
-
 type actionMsg struct {
 	verb   string
 	branch string
@@ -61,9 +59,13 @@ func (m *Model) act(key string) tea.Cmd {
 	}
 	switch key {
 	case "s":
-		return m.run("start", e.Branch, "wtm start "+e.Branch+comesBack, true, "start", m.project, e.Branch)
+		ctx, memory := m.ctx, m.src.Memory
+		return func() tea.Msg {
+			warning, err := memory(ctx)
+			return memoryMsg{entry: e, warning: warning, err: err}
+		}
 	case "x":
-		return m.run("stop", e.Branch, "wtm stop "+e.Branch+comesBack, true, "stop", m.project, e.Branch)
+		return m.launch("stop", e.Branch, "stop", m.project, e.Branch)
 	case "d":
 		ctx, inspect := m.ctx, m.src.InspectRemoval
 		return func() tea.Msg {
@@ -155,7 +157,7 @@ func (m *Model) answer(key string) tea.Cmd {
 		if r.plan.RequiresForce() {
 			args = []string{"remove", "--force", m.project, r.entry.Branch}
 		}
-		return m.run("remove", r.entry.Branch, "wtm "+strings.Join(args, " ")+comesBack, true, args...)
+		return m.launch("remove", r.entry.Branch, args...)
 	case "n", "esc", "q":
 		m.confirm = nil
 		m.tell(false, "nothing removed")
@@ -175,6 +177,15 @@ func (m *Model) run(verb, branch, banner string, pause bool, args ...string) tea
 	return tea.Exec(ec, func(err error) tea.Msg {
 		return actionMsg{verb: verb, branch: branch, err: err}
 	})
+}
+
+// finish notes how a verb ended and lists again: the listing running now may
+// have started before the verb, and another follows it then.
+func (m *Model) finish(msg actionMsg) tea.Cmd {
+	m.done(msg)
+	cmd := m.refresh()
+	m.again = cmd == nil
+	return cmd
 }
 
 func (m *Model) done(msg actionMsg) {
@@ -229,4 +240,79 @@ func (h *held) Run() error {
 		_, _ = bufio.NewReader(h.cmd.Stdin).ReadString('\n')
 	}
 	return err
+}
+
+type memoryMsg struct {
+	entry   worktree.Entry
+	warning string
+	err     error
+}
+
+// memoryAsk is the question `wtm start` asks at a terminal, asked here
+// instead: the start in the panel has none.
+type memoryAsk struct {
+	entry   worktree.Entry
+	warning string
+}
+
+// checked starts at once unless memory is tight. An unreadable reading does
+// not stop a start either: wtm start itself goes ahead on one.
+func (m *Model) checked(msg memoryMsg) tea.Cmd {
+	if msg.err != nil || msg.warning == "" {
+		return m.launch("start", msg.entry.Branch, "start", m.project, msg.entry.Branch)
+	}
+	m.memo = &memoryAsk{entry: msg.entry, warning: msg.warning}
+	return nil
+}
+
+func (m *Model) answerMemory(key string) tea.Cmd {
+	a := m.memo
+	switch key {
+	case "y":
+		m.memo = nil
+		return m.launch("start", a.entry.Branch, "start", "--ignore-memory", m.project, a.entry.Branch)
+	case "n", "esc", "q":
+		m.memo = nil
+		m.tell(false, "stack of %s not started: free some memory first", a.entry.Branch)
+	case "ctrl+c":
+		return tea.Quit
+	}
+	return nil
+}
+
+// launch runs a verb in the panel.
+func (m *Model) launch(verb, branch string, args ...string) tea.Cmd {
+	j, err := startJob(verb, branch, m.src.Wtm(args...))
+	if err != nil {
+		m.tell(true, "%s %s: %v", verb, branch, err)
+		return nil
+	}
+	m.job, m.note, m.failed = j, "", false
+	return j.next()
+}
+
+// whileRunning answers the keys a running job reserves, and leaves moving,
+// refreshing and the URLs to the dashboard. Quitting would cut the job's
+// output off, and compose writing to a closed pipe dies halfway.
+func (m *Model) whileRunning(key string) bool {
+	j := m.job
+	switch key {
+	case "ctrl+c":
+		if j.interrupt() {
+			m.tell(true, "killing %s %s", j.verb, j.branch)
+		} else {
+			m.tell(false, "interrupting %s %s… (ctrl+c again kills it)", j.verb, j.branch)
+		}
+	case "esc":
+		j.hidden = true
+	case "p":
+		j.hidden = false
+	case "q":
+		m.tell(false, "%s %s is running: ctrl+c interrupts it", j.verb, j.branch)
+	case "s", "x", "d", "enter", "l":
+		m.tell(false, "%s %s is still running: wait for it, or ctrl+c", j.verb, j.branch)
+	default:
+		return false
+	}
+	return true
 }

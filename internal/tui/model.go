@@ -24,6 +24,10 @@ type Source struct {
 	Wtm func(args ...string) *exec.Cmd
 	// Open hands a URL to the desktop's browser.
 	Open func(url string) error
+	// Memory is the warning `wtm start` prints when memory is tight, empty when
+	// it is not. A start in the panel has no terminal to ask from, so the
+	// dashboard asks before it runs.
+	Memory func(ctx context.Context) (string, error)
 }
 
 // refreshEvery is also the floor between two listings: a docker slower than
@@ -59,6 +63,9 @@ type Model struct {
 	note    string
 	failed  bool
 	confirm *removal
+	memo    *memoryAsk
+	// job is the verb the panel shows, running or done, until esc or the next.
+	job *job
 
 	ports    []string
 	portsFor string
@@ -126,8 +133,19 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if m.confirm != nil {
 			return m, m.answer(msg.String())
 		}
+		if m.memo != nil {
+			return m, m.answerMemory(msg.String())
+		}
 		if m.picking {
 			return m, m.choose(msg.String())
+		}
+		if m.job != nil && m.job.running {
+			if handled := m.whileRunning(msg.String()); handled {
+				return m, nil
+			}
+		} else if m.job != nil && msg.String() == "esc" {
+			m.job = nil
+			return m, nil
 		}
 		switch msg.String() {
 		case "q", "esc", "ctrl+c":
@@ -151,9 +169,28 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m, tea.Batch(m.refresh(), tick())
 	case actionMsg:
 		m.away, m.settle = false, time.Now().Add(settleFor)
-		m.done(msg)
-		cmd := m.refresh()
-		m.again = cmd == nil
+		return m, m.finish(msg)
+	case memoryMsg:
+		return m, m.checked(msg)
+	case jobLineMsg:
+		if m.job == nil {
+			return m, nil
+		}
+		m.job.add(msg.line)
+		return m, m.job.next()
+	case jobEndMsg:
+		if m.job == nil {
+			return m, nil
+		}
+		j := m.job
+		j.running, j.err = false, msg.err
+		cmd := m.finish(actionMsg{verb: j.verb, branch: j.branch, err: msg.err})
+		// Put away, a success has nothing left to show but its note, and a
+		// failure has its reason to show.
+		if j.hidden && (msg.err == nil || j.interrupted) {
+			m.job = nil
+		}
+		j.hidden = false
 		return m, cmd
 	case removalMsg:
 		m.ask(msg)

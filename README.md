@@ -141,7 +141,8 @@ wtm adopt --no-start                        # adopt now, bring the stack up late
 # lifecycle
 wtm list                                    # worktrees of this project
 wtm tui                                     # the same, live, with the selected one's addresses
-                                            # s start · x stop · d remove · enter shell · l logs
+                                            # s start · x stop · d remove, their output under the table
+                                            # enter shell · l logs, both in the terminal
                                             # o picks one of its urls, enter opens it in the browser
 wtm start feat/my-branch                    # bring a stopped stack back up
 wtm start feat/my-branch --profile light    # only the services that profile names

@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/Hy0sh/worktree-manager/internal/config"
+	"github.com/Hy0sh/worktree-manager/internal/dockermem"
 	"github.com/Hy0sh/worktree-manager/internal/tui"
 	"github.com/Hy0sh/worktree-manager/internal/worktree"
 )
@@ -24,11 +25,11 @@ func newTUICmd(a *app) *cobra.Command {
 		Long: "Shows what `wtm list` prints, refreshed every five seconds, with the\n" +
 			"addresses of the selected worktree: a terminal to leave open beside the\n" +
 			"agents.\n\n" +
-			"s, x and d start, stop and remove the selected worktree, enter opens a\n" +
-			"shell in it and l follows its logs: each runs the wtm verb itself, which\n" +
-			"takes the terminal until it is done. o moves the cursor onto the\n" +
-			"worktree's urls, and enter opens the one it is on in the browser.\n" +
-			"r refreshes at once, q quits.",
+			"s, x and d start, stop and remove the selected worktree, their output\n" +
+			"showing under the table. enter opens a shell in it and l follows its\n" +
+			"logs, both taking the terminal until they are done. o moves the cursor\n" +
+			"onto the worktree's urls, and enter opens the one it is on in the\n" +
+			"browser. r refreshes at once, q quits.",
 		Args:              cobra.RangeArgs(0, 1),
 		ValidArgsFunction: a.completeProjects,
 		SilenceUsage:      true,
@@ -47,6 +48,13 @@ func newTUICmd(a *app) *cobra.Command {
 				return fmt.Errorf("locating the wtm binary the dashboard runs its verbs with: %w", err)
 			}
 			src.Wtm = func(args ...string) *exec.Cmd { return exec.Command(exe, args...) }
+			src.Memory = func(ctx context.Context) (string, error) {
+				u, err := dockermem.Read(ctx, a.runner)
+				if err != nil {
+					return "", err
+				}
+				return u.Warning(), nil
+			}
 			// Its output would land across the dashboard: exec discards what it
 			// is given no writer for.
 			src.Open = func(url string) error {
