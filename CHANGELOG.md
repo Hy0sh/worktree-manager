@@ -6,6 +6,8 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+## [0.26.0] - 2026-10-02
+
 ### Added
 
 - `wtm switch <branch> [--from <ref>]` moves an adopted worktree to another
@@ -1198,7 +1200,8 @@ First tagged release. The whole worktree lifecycle behind one binary:
   identical so worktrees created with it keep working.
 - A project without a compose file is not an error, there is simply no stack.
 
-[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.25.0...HEAD
+[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.26.0...HEAD
+[0.26.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.25.0...v0.26.0
 [0.25.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.24.0...v0.25.0
 [0.24.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.23.0...v0.24.0
 [0.23.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.22.0...v0.23.0
