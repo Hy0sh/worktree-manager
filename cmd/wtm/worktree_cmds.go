@@ -265,6 +265,46 @@ func newAdoptCmd(a *app) *cobra.Command {
 	return cmd
 }
 
+func newSwitchCmd(a *app) *cobra.Command {
+	var flags afterFlags
+	var from string
+	cmd := &cobra.Command{
+		Use:   "switch [project] <branch>",
+		Short: "Moves an adopted worktree to another branch, on a fresh stack",
+		Long: "Run from an adopted worktree: checks the branch out there, drops the old\n" +
+			"branch's stack, database included, and starts a fresh one on the restored\n" +
+			"dump. The index moves with the worktree, so its ports do not change.\n\n" +
+			"An existing branch is checked out as-is, one only a remote carries is\n" +
+			"tracked, and any other is cut from --from (default: the project's base).\n" +
+			"Refused, with nothing changed, while tracked files are modified. It never\n" +
+			"asks anything; rerunning the same command finishes a switch that failed.\n\n" +
+			"  wtm switch feat/next-task --from origin/main",
+		Args: flags.args(
+			needArgs(1, 2, "name the branch to switch to, as in `wtm switch feat/my-branch`")),
+		SilenceUsage:  true,
+		SilenceErrors: true,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := flags.refuse(); err != nil {
+				return err
+			}
+			name, p, branch, err := a.resolveOne(args)
+			if err != nil {
+				return err
+			}
+			o := a.options(name, p, branch)
+			o.Base = a.cfg.BaseBranchFor(p)
+			if from != "" {
+				o.Base = from
+			}
+			flags.applyTo(cmd, &o)
+			return worktree.Switch(cmd.Context(), o)
+		},
+	}
+	cmd.Flags().StringVar(&from, "from", "", "where a new branch is cut from (default: the project's base)")
+	flags.bind(cmd, a)
+	return cmd
+}
+
 func newStopCmd(a *app) *cobra.Command {
 	var all bool
 	cmd := &cobra.Command{

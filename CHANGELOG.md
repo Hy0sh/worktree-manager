@@ -6,6 +6,18 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Added
+
+- `wtm switch <branch> [--from <ref>]` moves an adopted worktree to another
+  branch, typed from inside it, without moving or removing the directory. git
+  goes first, so a refused checkout leaves the old stack as it was; then the
+  old branch's stack goes down with its volumes, its index is handed to the new
+  branch, and a fresh stack comes up on the restored dump, on the same ports.
+  Uncommitted changes to tracked files refuse it before anything moves, it never
+  asks a question, and rerunning it finishes a switch that failed halfway, or
+  re-keys a worktree a bare `git switch -c` already moved. It takes the same
+  `--profile`, `--no-start`, `--no-post-create`, `--run` and `--exec` as adopt.
+
 ## [0.25.0] - 2026-10-02
 
 ### Added

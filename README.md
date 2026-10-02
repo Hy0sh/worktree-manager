@@ -137,6 +137,7 @@ wtm adopt my-app worktree-curry             # or name it from anywhere
 wtm adopt --as feat/my-feature              # renaming the branch on the way in
 wtm adopt worktree-curry -y                 # do not ask, for a script
 wtm adopt --no-start                        # adopt now, bring the stack up later
+wtm switch feat/next --from origin/main     # same worktree, next branch, fresh stack
 
 # lifecycle
 wtm list                                    # worktrees of this project
@@ -274,6 +275,24 @@ it next does not.
 
 A worktree on a detached HEAD cannot be adopted: wtm keys a worktree by its
 branch, and there is none to key it by.
+
+That key is also why a bare `git switch -c` in an adopted worktree loses its
+stack: the stack stays filed under the old branch. `wtm switch` is the way to
+move one to its next branch, typed from inside it:
+
+```sh
+wtm switch feat/next-task --from origin/main
+```
+
+It checks the branch out first (an existing one as-is, one only a remote
+carries tracked, any other cut from `--from`, the project's base by default),
+then drops the old branch's stack with its database and starts a fresh one on
+the restored dump. The index moves with the worktree, so the ports do not
+change. Tracked files left modified refuse the switch before anything moves;
+it never asks a question, which suits an agent; and if it fails halfway,
+running the same command again finishes it, which also repairs a worktree a
+bare `git switch` already moved. Only adopted worktrees switch: a created one
+is named after its branch, and `wtm create` makes the next one.
 
 Creation deliberately sits behind the `create` verb. It used to be the bare
 form, `wtm <branch>`, until a mistyped `wtm list` created a branch called
