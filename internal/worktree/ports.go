@@ -41,8 +41,14 @@ func allocatePorts(ctx context.Context, o Options, wt stack.Worktree, dest strin
 	if err != nil {
 		return err
 	}
+	path := filepath.Join(dest, portsOverride)
 	if len(allocations) == 0 {
 		o.logf("warning: this project publishes no port, nothing to isolate")
+		// Whatever stands there is not wtm's: a branch committing that name as a
+		// link to ~/.ssh/id_rsa had it spliced into the compose override.
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return err
+		}
 		return nil
 	}
 	// Literal ports cannot be reached through the environment, so a generated
@@ -50,7 +56,6 @@ func allocatePorts(ctx context.Context, o Options, wt stack.Worktree, dest strin
 	// and that file then has to restate every port or it isolates nothing.
 	envTracked := tracked(ctx, o, dest, ".env")
 	override := stack.PortsOverride(allocations, envTracked)
-	path := filepath.Join(dest, portsOverride)
 	if override == "" {
 		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
 			return err

@@ -7,6 +7,9 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/Hy0sh/worktree-manager/internal/compose"
+	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
 
 // A .env.local or an IDE's local settings are git-ignored and each developer's
@@ -246,6 +249,41 @@ func TestCopyEnvFilesSkipsASymlinkLeavingTheProject(t *testing.T) {
 	}
 	if len(warned) == 0 || !strings.Contains(warned[0], "outside the project") {
 		t.Fatalf("expected a warning, got %v", warned)
+	}
+}
+
+// The compose override is copied like the .env files, and gets their rule.
+func TestComposeOverrideLinkLeavingTheProjectIsNotCopied(t *testing.T) {
+	root, dest := t.TempDir(), t.TempDir()
+	secret := filepath.Join(t.TempDir(), "credentials")
+	if err := os.WriteFile(secret, []byte("aws_secret_access_key"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(secret, filepath.Join(root, compose.OverrideNames[0])); err != nil {
+		t.Fatal(err)
+	}
+	if err := copyComposeOverrides(root, dest, overwriteCopies, func(string, ...any) {}); err != nil {
+		t.Fatalf("a hostile link must be skipped, not fail the create: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(dest, compose.OverrideNames[0])); !os.IsNotExist(err) {
+		t.Fatal("the out-of-project target was copied")
+	}
+}
+
+// A project publishing no port writes no ports file, so one standing there is
+// the branch's: committed as a link, it had a host file spliced into compose.
+func TestAPortsFileNotWrittenByWtmIsRemoved(t *testing.T) {
+	f := newFixture(t)
+	mustWrite(t, filepath.Join(f.root, "compose.yaml"), "services:\n  worker:\n    image: busybox\n")
+	dest := t.TempDir()
+	if err := os.Symlink(filepath.Join(t.TempDir(), "id_rsa"), filepath.Join(dest, portsOverride)); err != nil {
+		t.Fatal(err)
+	}
+	if err := allocatePorts(context.Background(), f.opts("feat/x"), stack.Worktree{Index: 1}, dest); err != nil {
+		t.Fatalf("allocatePorts: %v", err)
+	}
+	if _, err := os.Lstat(filepath.Join(dest, portsOverride)); !os.IsNotExist(err) {
+		t.Fatal("the planted ports file must go")
 	}
 }
 
