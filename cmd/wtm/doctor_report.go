@@ -14,8 +14,7 @@ import (
 )
 
 // portHolder is one published port a worktree stack would take, and who takes
-// it. The project name is what makes a clash reportable: within one project
-// the allocator already refuses to hand the same port twice.
+// it, project included: the clash may be across projects or within one.
 type portHolder struct {
 	Port    int
 	Project string

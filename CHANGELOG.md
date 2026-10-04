@@ -31,6 +31,18 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   kept them off the same index, but each checked its ports against a registry
   read before the other recorded its own. The check now reads the registry the
   lock holds.
+- `wtm project remove` refused a project whose wtm-created worktrees remained,
+  but not one with adopted worktrees left: those, on the same port offset, went
+  unseen, and the freed offset could go to the next project.
+
+### Security
+
+- No link out of the project is followed any more when reading into a worktree:
+  a ports file a branch committed (a link to a host file, say) was spliced into
+  the compose override when the project publishes no port, a symlinked compose
+  override in the main checkout was copied without the containment check the
+  `.env` files get, and the SQLite refresh collected the file the migration
+  container left even when it was a link.
 
 ## [0.26.0] - 2026-10-02
 

@@ -21,9 +21,9 @@ func (a *app) completeProjects(_ *cobra.Command, args []string, _ string) ([]str
 	return a.cfg.Names(), cobra.ShellCompDirectiveNoFileComp
 }
 
-// completeTargets suggests what `stop` and `remove` accept: a project name, or
-// a branch that actually has a worktree. Guessing branch names by hand is
-// exactly the friction worth removing here.
+// completeTargets suggests what the commands taking `[project] <branch>`
+// accept: a project name, or a branch that actually has a worktree. Guessing
+// branch names by hand is exactly the friction worth removing here.
 func (a *app) completeTargets(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
 	return a.completePosition(args, a.worktreeBranches)
 }
