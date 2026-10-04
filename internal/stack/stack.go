@@ -83,18 +83,25 @@ func (c *Client) portHolder(ctx context.Context, err error) string {
 	return ""
 }
 
-// Down stops a worktree's stack. volumes takes the anonymous ones along too:
-// they carry no compose label, so a project naming none leaks one per start.
-// stop keeps them, remove takes them.
-func (c *Client) Down(ctx context.Context, project, worktreeDir string, volumes bool) error {
-	args := []string{"compose", "-p", project, "down"}
-	if volumes {
-		args = append(args, "--volumes")
-	}
+// Down takes a worktree's stack away for good, its volumes included. The
+// anonymous ones carry no compose label: left by a down, nothing finds them
+// again, not even the next up, which mounts fresh ones.
+func (c *Client) Down(ctx context.Context, project, worktreeDir string) error {
+	return c.compose(ctx, worktreeDir, "-p", project, "down", "--volumes")
+}
+
+// Stop halts a worktree's stack and keeps its containers, so the next up
+// starts them again with the anonymous volumes they had. A down there left
+// those volumes behind on every stop, a batch per stop and start.
+func (c *Client) Stop(ctx context.Context, project, worktreeDir string) error {
+	return c.compose(ctx, worktreeDir, "-p", project, "stop")
+}
+
+func (c *Client) compose(ctx context.Context, dir string, args ...string) error {
 	_, err := c.Runner.Run(ctx, execx.Cmd{
 		Name: "docker",
-		Args: args,
-		Dir:  worktreeDir,
+		Args: append([]string{"compose"}, args...),
+		Dir:  dir,
 		Live: true,
 	})
 	return err

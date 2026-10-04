@@ -79,10 +79,11 @@ type repoWorktrees struct {
 	// outside wtm. Each pushes new worktrees one index further out, and makes a
 	// foreign worktree on that branch read as managed.
 	Stale []string
-	// Drifted are branches whose worktree still stands where it was recorded
-	// but now holds another branch. They look exactly like Stale to git, and
-	// releasing one takes down a stack somebody is working in.
-	Drifted []string
+	// Drifted are the worktrees still standing where a branch was recorded but
+	// holding another one now, listed under the recorded branch (Holds says the
+	// other). They look exactly like Stale to git, and releasing one takes down
+	// a stack somebody is working in.
+	Drifted []stack.Worktree
 	// Abandoned are the directories still on disk that git no longer lists,
 	// left by a pruned administrative directory. They hold no stack, and no
 	// other report can see them: everything else keys off git's listing.
@@ -112,7 +113,10 @@ func (a *app) liveProjects(ctx context.Context, names []string) []repoWorktrees 
 				live = append(live, stack.ProjectName(repo, idx, wt.Branch))
 				continue
 			}
-			unindexed = append(unindexed, wt.Branch)
+			// Switched outside wtm, its stack is known by the old name below.
+			if client.RecordedAt(wt) == "" {
+				unindexed = append(unindexed, wt.Branch)
+			}
 		}
 		// A project with no compose file starts no stack, so none of its
 		// worktrees ever gets an index and nothing docker holds can be theirs:
@@ -123,23 +127,30 @@ func (a *app) liveProjects(ctx context.Context, names []string) []repoWorktrees 
 		// A worktree still standing where a branch was recorded did not vanish:
 		// somebody switched branches in it, which takes the old name out of
 		// git's listing while the worktree, and its stack, are very much alive.
-		livePaths := map[string]bool{}
-		for _, wt := range worktrees {
-			livePaths[filepath.Clean(wt.Path)] = true
+		// All and not Worktrees: an adopted one holding an unrecorded branch is
+		// not listed there, and read as stale, the next create took it down.
+		all, err := client.All(ctx)
+		if err != nil {
+			continue
 		}
-		var stale, drifted []string
+		var drifted []stack.Worktree
+		for _, wt := range all {
+			if recorded := client.RecordedAt(wt); recorded != "" {
+				wt.Holds, wt.Branch = wt.Branch, recorded
+				drifted = append(drifted, wt)
+				present[recorded] = true
+				// Its stack is a live one: counted as an orphan, clean dropped it.
+				live = append(live, stack.ProjectName(repo, p.WorktreeIndices[recorded], recorded))
+			}
+		}
+		var stale []string
 		for branch := range p.WorktreeIndices {
-			if present[branch] {
-				continue
+			if !present[branch] {
+				stale = append(stale, branch)
 			}
-			if at := p.WorktreePaths[branch]; at != "" && livePaths[filepath.Clean(at)] {
-				drifted = append(drifted, branch)
-				continue
-			}
-			stale = append(stale, branch)
 		}
 		sort.Strings(stale)
-		sort.Strings(drifted)
+		sort.Slice(drifted, func(i, j int) bool { return drifted[i].Branch < drifted[j].Branch })
 		// A git that cannot answer already dropped the project above, so a
 		// failure here is the filesystem's: nothing to report either way.
 		abandoned, _ := client.Abandoned(ctx)
@@ -156,13 +167,13 @@ func (a *app) reportDrifted(rws []repoWorktrees) {
 	var lines []string
 	for _, rw := range rws {
 		p := a.cfg.Projects[rw.Name]
-		for _, branch := range rw.Drifted {
-			lines = append(lines, fmt.Sprintf("%s: index %d is recorded for %s, whose worktree at %s now holds another branch",
-				rw.Name, p.WorktreeIndices[branch], branch, p.WorktreePaths[branch]))
+		for _, wt := range rw.Drifted {
+			lines = append(lines, fmt.Sprintf("%s: index %d is recorded for %s, whose worktree at %s now holds %s: %s",
+				rw.Name, p.WorktreeIndices[wt.Branch], wt.Branch, wt.Path, wt.Holds, stack.DriftRemedy(wt)))
 		}
 	}
 	a.section("worktrees whose branch was switched (their stack still answers to the old name):", lines,
-		"nothing to clean: address that stack by its recorded branch, or move the worktree back to it")
+		"nothing to clean: stop, start or remove reach that stack by either branch name")
 }
 
 func (a *app) reportStaleIndices(stale []staleIndex) {

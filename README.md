@@ -148,7 +148,7 @@ wtm tui                                     # the same, live, with the selected 
                                             # a adopts a worktree left to adopt, asking first
 wtm start feat/my-branch                    # bring a stopped stack back up
 wtm start feat/my-branch --profile light    # only the services that profile names
-wtm stop feat/my-branch
+wtm stop feat/my-branch                     # containers kept stopped, start brings them back
 wtm stop --all                              # every worktree of the project
 wtm remove feat/my-branch                   # stack, volumes and built images go, branch kept
 wtm remove feat/my-branch --force           # despite modified tracked files, or a lock
@@ -276,8 +276,10 @@ it next does not.
 A worktree on a detached HEAD cannot be adopted: wtm keys a worktree by its
 branch, and there is none to key it by.
 
-That key is also why a bare `git switch -c` in an adopted worktree loses its
-stack: the stack stays filed under the old branch. `wtm switch` is the way to
+That key is also why a bare `git switch -c` in an adopted worktree strands its
+stack: the stack stays filed under the old branch. `wtm list` shows it as
+`old (now on new)`, `stop`, `start` and `remove` reach it by either name, and
+`adopt` refuses to give that directory a second one. `wtm switch` is the way to
 move one to its next branch, typed from inside it:
 
 ```sh

@@ -117,7 +117,24 @@ func (a *app) optionsFor(args []string) (worktree.Options, error) {
 	if err != nil {
 		return worktree.Options{}, err
 	}
-	return a.options(name, p, branch), nil
+	o := a.options(name, p, branch)
+	// A worktree switched outside wtm holds a branch with no stack while its
+	// stack stays recorded under the old one: naming the branch it holds names
+	// that stack, rather than allocating a second one in the same directory.
+	// FindByBranch says so when it finds it.
+	if p.WorktreeIndices[branch] == 0 && len(p.WorktreePaths) > 0 {
+		if all, err := o.Stack.All(context.Background()); err == nil {
+			for _, wt := range all {
+				if wt.Branch == branch {
+					if recorded := o.Stack.RecordedAt(wt); recorded != "" {
+						o.Branch = recorded
+					}
+					break
+				}
+			}
+		}
+	}
+	return o, nil
 }
 
 func (a *app) options(name string, p config.Project, branch string) worktree.Options {

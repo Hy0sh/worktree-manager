@@ -46,6 +46,37 @@ func newAllFixture(t *testing.T, in string) *allFixture {
 	return f
 }
 
+// A worktree switched by a bare `git switch` holds a branch with no stack, its
+// stack recorded under the old one. A tool naming the branch it sees there
+// (acw stops its workers that way) has to reach that stack, not "no worktree".
+func TestNamingTheBranchADriftedWorktreeHoldsReachesItsStack(t *testing.T) {
+	dir := t.TempDir()
+	if err := os.WriteFile(filepath.Join(dir, "docker-compose.yml"), []byte("services: {}\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	wt := filepath.Join(t.TempDir(), "curry")
+	cfg := &config.Config{Projects: map[string]config.Project{"myapp": {Dir: dir,
+		WorktreeIndices: map[string]int{"feat/old": 2},
+		WorktreePaths:   map[string]string{"feat/old": wt}}}}
+	a, fake, out := newTestApp(t, cfg, "", func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(c.String(), "worktree list") {
+			return execx.Result{Stdout: "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n" +
+				"worktree " + wt + "\nHEAD bbb\nbranch refs/heads/feat/next\n"}, nil
+		}
+		return execx.Result{}, nil
+	})
+	cmd := newStopCmd(a)
+	cmd.SetArgs([]string{"myapp", "feat/next"})
+	cmd.SetOut(out)
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("stop: %v", err)
+	}
+	want := "-p " + filepath.Base(dir) + "-wt-2-feat-old stop"
+	if !strings.Contains(strings.Join(fake.Lines(), "\n"), want) {
+		t.Fatalf("want %q in:\n%s", want, strings.Join(fake.Lines(), "\n"))
+	}
+}
+
 // Stopping a dozen branches one call at a time is the whole reason --all exists.
 func TestStopAllTakesDownEveryWorktree(t *testing.T) {
 	f := newAllFixture(t, "")
@@ -56,8 +87,8 @@ func TestStopAllTakesDownEveryWorktree(t *testing.T) {
 		t.Fatalf("stop --all: %v", err)
 	}
 	repo := filepath.Base(f.dir)
-	for _, want := range []string{"-p " + repo + "-wt-1-feat-a down",
-		"-p " + repo + "-wt-2-feat-b down", "-p " + repo + "-wt-3-feat-c down"} {
+	for _, want := range []string{"-p " + repo + "-wt-1-feat-a stop",
+		"-p " + repo + "-wt-2-feat-b stop", "-p " + repo + "-wt-3-feat-c stop"} {
 		if !strings.Contains(strings.Join(f.fake.Lines(), "\n"), want) {
 			t.Fatalf("want %q in:\n%s", want, strings.Join(f.fake.Lines(), "\n"))
 		}
@@ -71,7 +102,7 @@ func TestStopAllCarriesOnAfterAFailure(t *testing.T) {
 	repo := filepath.Base(f.dir)
 	inner := f.fake.Handler
 	f.fake.Handler = func(c execx.Cmd) (execx.Result, error) {
-		if strings.Contains(c.String(), repo+"-wt-2-feat-b down") {
+		if strings.Contains(c.String(), repo+"-wt-2-feat-b stop") {
 			return execx.Result{ExitCode: 1}, errors.New("container is locked")
 		}
 		return inner(c)
@@ -84,7 +115,7 @@ func TestStopAllCarriesOnAfterAFailure(t *testing.T) {
 		t.Fatal("a failed worktree must still fail the command")
 	}
 	lines := strings.Join(f.fake.Lines(), "\n")
-	for _, want := range []string{"-p " + repo + "-wt-1-feat-a down", "-p " + repo + "-wt-3-feat-c down"} {
+	for _, want := range []string{"-p " + repo + "-wt-1-feat-a stop", "-p " + repo + "-wt-3-feat-c stop"} {
 		if !strings.Contains(lines, want) {
 			t.Fatalf("the walk must carry on, want %q in:\n%s", want, lines)
 		}

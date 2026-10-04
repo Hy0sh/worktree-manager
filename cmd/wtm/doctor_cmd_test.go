@@ -325,16 +325,21 @@ func TestDoctorReportsWorktreeDirectoriesGitNoLongerLists(t *testing.T) {
 func TestDoctorTellsABranchSwitchFromAVanishedWorktree(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "my-app")
 	drifted := dir + "/.worktrees/feat/renamed"
+	// An adopted one is the case git's listing alone hid: holding a branch with
+	// no index, it is not a managed worktree, and its old branch read as stale.
+	adopted := filepath.Join(t.TempDir(), "curry")
 	cfg := &config.Config{Projects: map[string]config.Project{"myapp": {Dir: dir,
-		WorktreeIndices: map[string]int{"feat/before": 3, "feat/gone": 5},
+		WorktreeIndices: map[string]int{"feat/before": 3, "feat/gone": 5, "feat/adopted": 4},
 		WorktreePaths: map[string]string{
-			"feat/before": drifted,
-			"feat/gone":   dir + "/.worktrees/feat/gone",
+			"feat/before":  drifted,
+			"feat/gone":    dir + "/.worktrees/feat/gone",
+			"feat/adopted": adopted,
 		}}}}
 	a, _, out := newTestApp(t, cfg, "", func(c execx.Cmd) (execx.Result, error) {
 		if strings.Contains(c.String(), "worktree list") {
 			return execx.Result{Stdout: "worktree " + dir + "\nbranch refs/heads/develop\n\n" +
-				"worktree " + drifted + "\nbranch refs/heads/feat/after\n"}, nil
+				"worktree " + drifted + "\nbranch refs/heads/feat/after\n\n" +
+				"worktree " + adopted + "\nbranch refs/heads/feat/elsewhere\n"}, nil
 		}
 		return execx.Result{}, nil
 	})
@@ -343,11 +348,18 @@ func TestDoctorTellsABranchSwitchFromAVanishedWorktree(t *testing.T) {
 		t.Fatalf("doctor: %v", err)
 	}
 	got := out.String()
-	if !strings.Contains(got, "whose worktree at "+drifted+" now holds another branch") {
-		t.Fatalf("the drift must be named as such:\n%s", got)
+	for _, want := range []string{
+		"whose worktree at " + drifted + " now holds feat/after: switch it back to feat/before",
+		"whose worktree at " + adopted + " now holds feat/elsewhere: `wtm switch feat/elsewhere`",
+	} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("the drift must be named as such, want %q:\n%s", want, got)
+		}
 	}
-	if strings.Contains(got, "index 3 is recorded for feat/before, which has no worktree") {
-		t.Fatalf("a drifted branch must not be reported as stale:\n%s", got)
+	for _, branch := range []string{"feat/before", "feat/adopted"} {
+		if strings.Contains(got, "recorded for "+branch+", which has no worktree") {
+			t.Fatalf("a drifted branch must not be reported as stale:\n%s", got)
+		}
 	}
 	// The one whose worktree really is gone still has to be reported.
 	if !strings.Contains(got, "index 5 is recorded for feat/gone, which has no worktree") {

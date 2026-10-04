@@ -205,6 +205,11 @@ func Adopt(ctx context.Context, o Options) error {
 	case o.Resolver.Recorded()[wt.Branch] > 0:
 		return fmt.Errorf("%s is already adopted: start its stack with `wtm start %s`",
 			wt.Path, wt.Branch)
+	case o.Stack.RecordedAt(wt) != "":
+		// Adopting again would give the directory a second stack and leave the
+		// first one running under a name nothing addresses any more.
+		return fmt.Errorf("%s already has a stack, recorded under %s before it was switched to %s: "+
+			"move that stack with `wtm switch %s` from there", wt.Path, o.Stack.RecordedAt(wt), wt.Branch, wt.Branch)
 	}
 	if o.RenameTo != "" {
 		if err := refuseOptionLike(wt.Branch, o.RenameTo); err != nil {
@@ -340,7 +345,7 @@ func Stop(ctx context.Context, o Options) error {
 		}
 		return err
 	}
-	if err := o.Stack.Down(ctx, o.projectName(wt), wt.Path, false); err != nil {
+	if err := o.Stack.Stop(ctx, o.projectName(wt), wt.Path); err != nil {
 		return fmt.Errorf("stopping the stack: %w", err)
 	}
 	o.logf("stack stopped (worktree %d, %s)", wt.Index, o.Branch)
@@ -377,12 +382,18 @@ func Remove(ctx context.Context, o Options) error {
 			return err
 		default:
 			stackKnown = true
-			if err := o.Stack.Down(ctx, o.projectName(wt), wt.Path, true); err != nil {
+			if err := o.Stack.Down(ctx, o.projectName(wt), wt.Path); err != nil {
 				return fmt.Errorf("stopping the stack: %w", err)
 			}
 		}
 	}
-	if wt.UnderRoot {
+	switch {
+	case wt.Holds != "":
+		// Switched outside wtm: the stack was the old branch's, the checkout
+		// now holds another one's work, so only the stack and wtm's files go.
+		removeArtifacts(o, wt.Path)
+		o.logf("stack of %s removed, worktree kept: %s now holds %s", o.Branch, wt.Path, wt.Holds)
+	case wt.UnderRoot:
 		// The first --force covers the untracked files wtm itself put there; a
 		// lock takes a second one, which is git's own rule.
 		args := []string{"-C", o.Project.Dir, "worktree", "remove", "--force"}
@@ -398,7 +409,7 @@ func Remove(ctx context.Context, o Options) error {
 		}
 		pruneEmptyParents(wt.Path, stack.WorktreesRoot(o.Project.Dir))
 		o.logf("worktree removed: %s (branch %s kept)", wt.Path, o.Branch)
-	} else {
+	default:
 		// wtm only takes down what it built. The checkout came from somewhere
 		// else, and something may well still be working in it.
 		removeArtifacts(o, wt.Path)
@@ -451,7 +462,7 @@ func releaseStale(ctx context.Context, o Options, n int) error {
 		// A failed Down means containers may still be running under the old
 		// project name, so the index must stay reserved or the next worktree
 		// allocated there would collide with them: same rule as Stop and Remove.
-		if err := o.Stack.Down(ctx, o.projectName(wt), o.Project.Dir, true); err != nil {
+		if err := o.Stack.Down(ctx, o.projectName(wt), o.Project.Dir); err != nil {
 			return fmt.Errorf("taking down the stack left at index %d for %s (index kept): %w", n, o.Branch, err)
 		}
 		removeLeftovers(ctx, o, wt)

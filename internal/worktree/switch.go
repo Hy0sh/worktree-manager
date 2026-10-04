@@ -78,7 +78,7 @@ func Switch(ctx context.Context, o Options) error {
 	if old != o.Branch {
 		if n := recorded[old]; n > 0 && compose.Has(o.Project.Dir) {
 			prev := stack.Worktree{Index: n, Branch: old, Path: wt.Path}
-			if err := o.Stack.Down(ctx, o.projectName(prev), wt.Path, true); err != nil {
+			if err := o.Stack.Down(ctx, o.projectName(prev), wt.Path); err != nil {
 				return fmt.Errorf("taking down the stack of %s (now on %s, rerun the same command): %w",
 					old, o.Branch, err)
 			}

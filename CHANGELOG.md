@@ -6,6 +6,27 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Fixed
+
+- `wtm stop` leaked the stack's anonymous volumes, a batch per stop and start:
+  it ran `docker compose down`, which removes the containers and leaves their
+  anonymous volumes behind, and the next up mounts fresh ones. It now runs
+  `docker compose stop`, so the containers, and those volumes, come back on the
+  next start. `wtm remove` still takes everything down with `--volumes`. What
+  earlier versions leaked is what `wtm doctor` reports as anonymous volumes no
+  container mounts; its command drops them.
+- A worktree switched by a bare `git switch` stranded its stack, still filed
+  under the old branch: `stop`, `start` and `remove` answered "no worktree for
+  branch" under either name, `wtm list` offered the worktree for adoption, and
+  adopting it gave the directory a second stack. Naming either branch now
+  reaches that stack, `remove` takes it and keeps the checkout, `list` shows it
+  as `old (now on new)`, and `adopt` refuses with the `wtm switch` that moves it.
+- An adopted worktree switched that way was reported as stale by `wtm doctor`
+  and its stack as an orphan: once that stack was stopped the next `wtm create`
+  released its index, and `wtm clean` took the stack down, database included.
+  It is now reported as switched, with the command that moves its stack, and
+  neither touches it.
+
 ## [0.26.0] - 2026-10-02
 
 ### Added

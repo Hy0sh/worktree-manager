@@ -33,6 +33,10 @@ type Worktree struct {
 	// UnderRoot says the worktree sits where wtm creates its own. An adopted
 	// one does not, which is what Remove reads to leave the directory alone.
 	UnderRoot bool
+	// Holds is the branch checked out there when it is not Branch: the
+	// worktree was switched outside wtm, and Branch is the one its stack is
+	// still recorded under. Empty otherwise.
+	Holds string
 }
 
 // ShortHead abbreviates Head the way git prints it in its own listings.
@@ -161,6 +165,15 @@ func (c *Client) FindByBranch(ctx context.Context, branch string) (Worktree, err
 			return wt, nil
 		}
 	}
+	// git no longer lists the branch, but its worktree may still stand where
+	// it was recorded, switched to another branch with its stack still up.
+	if wt, ok := c.drifted(ctx, branch); ok {
+		if c.Out != nil {
+			fmt.Fprintf(c.Out, "note: %s now holds %s, this is the stack it had on %s (%s)\n",
+				wt.Path, wt.Holds, branch, DriftRemedy(wt))
+		}
+		return wt, nil
+	}
 	known := make([]string, 0, len(wts))
 	for _, wt := range wts {
 		known = append(known, fmt.Sprintf("%d:%s", wt.Pos, wt.Branch))
@@ -170,6 +183,49 @@ func (c *Client) FindByBranch(ctx context.Context, branch string) (Worktree, err
 		list = "known worktrees: " + strings.Join(known, ", ")
 	}
 	return Worktree{}, fmt.Errorf("no worktree for branch %q (%s)", branch, list)
+}
+
+// drifted finds the worktree standing at branch's recorded path while holding
+// another branch, and returns it under branch, the name its stack answers to.
+func (c *Client) drifted(ctx context.Context, branch string) (Worktree, bool) {
+	at := c.Paths[branch]
+	if at == "" || !c.Managed[branch] {
+		return Worktree{}, false
+	}
+	all, err := c.All(ctx)
+	if err != nil {
+		return Worktree{}, false
+	}
+	for _, wt := range all {
+		if filepath.Clean(wt.Path) == filepath.Clean(at) && wt.Branch != branch {
+			wt.Holds, wt.Branch = wt.Branch, branch
+			return wt, true
+		}
+	}
+	return Worktree{}, false
+}
+
+// DriftRemedy says how to give a switched worktree's stack to the branch it
+// holds. wtm switch refuses a worktree wtm created, named after its branch.
+func DriftRemedy(wt Worktree) string {
+	if wt.UnderRoot {
+		return fmt.Sprintf("switch it back to %s, or `wtm remove %s` then `wtm start %s`",
+			wt.Branch, wt.Branch, wt.Holds)
+	}
+	return fmt.Sprintf("`wtm switch %s` from there moves it to the branch it holds", wt.Holds)
+}
+
+// RecordedAt is the branch the stack of wt is recorded under when wt holds a
+// branch with no stack of its own, "" otherwise. A branch is checked out in
+// one worktree at most, so naming the branch it holds names that stack.
+func (c *Client) RecordedAt(wt Worktree) string {
+	if c.Managed[wt.Branch] {
+		return ""
+	}
+	if b := BranchAt(c.Paths, wt.Path); b != wt.Branch && c.Managed[b] {
+		return b
+	}
+	return ""
 }
 
 // Abandoned lists the directories under WorktreesRoot that still carry a
