@@ -47,8 +47,8 @@ func newAllFixture(t *testing.T, in string) *allFixture {
 }
 
 // A worktree switched by a bare `git switch` holds a branch with no stack, its
-// stack recorded under the old one. A tool naming the branch it sees there
-// (acw stops its workers that way) has to reach that stack, not "no worktree".
+// stack recorded under the old one. A script naming the branch it sees there
+// has to reach that stack, not "no worktree".
 func TestNamingTheBranchADriftedWorktreeHoldsReachesItsStack(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "docker-compose.yml"), []byte("services: {}\n"), 0o644); err != nil {
@@ -78,8 +78,8 @@ func TestNamingTheBranchADriftedWorktreeHoldsReachesItsStack(t *testing.T) {
 }
 
 // A branch that moved to another worktree: feat/x's stack stays at u, which now
-// holds feat/y, and w (an agent's worktree, its stack under agents/w) checked
-// feat/x out. Naming feat/x from w used to reach u's stack and hide w's own.
+// holds feat/y, and w (its own stack under feat/w) checked feat/x out. Naming
+// feat/x used to reach u's stack and hide w's own.
 func TestABranchNamesTheStackOfTheWorktreeItIsCheckedOutIn(t *testing.T) {
 	dir := t.TempDir()
 	if err := os.WriteFile(filepath.Join(dir, "docker-compose.yml"), []byte("services: {}\n"), 0o644); err != nil {
@@ -87,8 +87,8 @@ func TestABranchNamesTheStackOfTheWorktreeItIsCheckedOutIn(t *testing.T) {
 	}
 	u, w := filepath.Join(t.TempDir(), "u"), filepath.Join(t.TempDir(), "w")
 	cfg := &config.Config{Projects: map[string]config.Project{"myapp": {Dir: dir,
-		WorktreeIndices: map[string]int{"feat/x": 2, "agents/w": 3},
-		WorktreePaths:   map[string]string{"feat/x": u, "agents/w": w}}}}
+		WorktreeIndices: map[string]int{"feat/x": 2, "feat/w": 3},
+		WorktreePaths:   map[string]string{"feat/x": u, "feat/w": w}}}}
 	a, fake, out := newTestApp(t, cfg, "", func(c execx.Cmd) (execx.Result, error) {
 		if strings.Contains(c.String(), "worktree list") {
 			return execx.Result{Stdout: "worktree " + dir + "\nHEAD abc\nbranch refs/heads/main\n\n" +
@@ -105,7 +105,7 @@ func TestABranchNamesTheStackOfTheWorktreeItIsCheckedOutIn(t *testing.T) {
 	}
 	lines := strings.Join(fake.Lines(), "\n")
 	repo := filepath.Base(dir)
-	if !strings.Contains(lines, "-p "+repo+"-wt-3-agents-w stop") || strings.Contains(lines, "-wt-2-feat-x stop") {
+	if !strings.Contains(lines, "-p "+repo+"-wt-3-feat-w stop") || strings.Contains(lines, "-wt-2-feat-x stop") {
 		t.Fatalf("w's own stack must be stopped, and u's left alone:\n%s", lines)
 	}
 }
