@@ -205,6 +205,15 @@ func (c *Client) drifted(ctx context.Context, branch string) (Worktree, bool) {
 	return Worktree{}, false
 }
 
+// Manage makes branch's worktree visible to the listing before its index is
+// recorded, which an adoption or a switch needs to find the worktree it acts on.
+func (c *Client) Manage(branch string) {
+	if c.Managed == nil {
+		c.Managed = map[string]bool{}
+	}
+	c.Managed[branch] = true
+}
+
 // DriftRemedy says how to give a switched worktree's stack to the branch it
 // holds. wtm switch refuses a worktree wtm created, named after its branch.
 func DriftRemedy(wt Worktree) string {

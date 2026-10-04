@@ -11,7 +11,6 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/backup"
 	"github.com/Hy0sh/worktree-manager/internal/compose"
 	"github.com/Hy0sh/worktree-manager/internal/config"
-	"github.com/Hy0sh/worktree-manager/internal/dbengine"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 	"github.com/Hy0sh/worktree-manager/internal/safefile"
 )
@@ -66,9 +65,7 @@ func provision(ctx context.Context, o Options, dest string, mode provisionMode) 
 	if err := copyComposeOverrides(o.Project.Dir, dest, mode, o.logf); err != nil {
 		return fmt.Errorf("copying compose overrides: %w", err)
 	}
-	// A file-based engine reads nothing from the backup directory at runtime:
-	// its dump is copied into the worktree instead of being mounted.
-	if o.Project.Dump && !dbengine.IsFileBased(o.Project.BackupConfig().DBEngine) {
+	if o.mountsSnapshot() {
 		if err := linkSnapshotDir(o, dest); err != nil {
 			return fmt.Errorf("linking to the backup: %w", err)
 		}

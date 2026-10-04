@@ -51,28 +51,45 @@ func addWorktree(ctx context.Context, o Options, dest string) error {
 	if err := os.MkdirAll(filepath.Dir(dest), 0o755); err != nil {
 		return fmt.Errorf("creating %s: %w", filepath.Dir(dest), err)
 	}
-	args := []string{"-C", o.Project.Dir, "worktree", "add"}
-	if branchExists(ctx, o) {
-		o.logf("branch %s already exists locally: reused as-is, base %q ignored", o.Branch, o.Base)
-		args = append(args, dest, o.Branch)
-	} else {
-		remote, err := remoteBranch(ctx, o)
-		if err != nil {
-			return err
-		}
-		if remote == "" {
-			noteBaseBehind(ctx, o)
-			args = append(args, "-b", o.Branch, dest, o.Base)
-		} else {
-			o.logf("branch %s only exists on %s: checked out from %s/%s with its upstream set, base %q ignored",
-				o.Branch, remote, remote, o.Branch, o.Base)
-			args = append(args, "--track", "-b", o.Branch, dest, remote+"/"+o.Branch)
-		}
+	flags, ref, err := startPoint(ctx, o, "-b")
+	if err != nil {
+		return err
 	}
+	args := append(append([]string{"-C", o.Project.Dir, "worktree", "add"}, flags...), dest, ref)
 	if _, err := o.Runner.Run(ctx, execx.Cmd{Name: "git", Args: args, Live: true}); err != nil {
 		return fmt.Errorf("creating the worktree: %w", err)
 	}
 	return nil
+}
+
+// startPoint is where o.Branch comes from, as the flags and the ref git takes:
+// a local branch as-is, one only a remote carries tracked, any other cut from
+// base. create is the command's flag for a new branch, -b or -c.
+func startPoint(ctx context.Context, o Options, create string) (flags []string, ref string, err error) {
+	if branchExists(ctx, o) {
+		o.logf("branch %s already exists locally: checked out as-is, base %q ignored", o.Branch, o.Base)
+		return nil, o.Branch, nil
+	}
+	remote, err := remoteBranch(ctx, o)
+	if err != nil {
+		return nil, "", err
+	}
+	if remote == "" {
+		noteBaseBehind(ctx, o)
+		return []string{create, o.Branch}, o.Base, nil
+	}
+	o.logf("branch %s only exists on %s: checked out from %s/%s with its upstream set, base %q ignored",
+		o.Branch, remote, remote, o.Branch, o.Base)
+	return []string{"--track", create, o.Branch}, remote + "/" + o.Branch, nil
+}
+
+// refuseBadBranch stops a branch git would read as an option or a refspec, and
+// a base it would read as an option, before anything runs.
+func refuseBadBranch(o Options) error {
+	if err := refuseOptionLike(o.Branch, o.Base); err != nil {
+		return err
+	}
+	return refuseRefspec(o.Branch)
 }
 
 // noteBaseBehind says when the local base the worktree is cut from trails its

@@ -113,10 +113,7 @@ func (o Options) logf(format string, args ...any) {
 }
 
 func Create(ctx context.Context, o Options) error {
-	if err := refuseOptionLike(o.Branch, o.Base); err != nil {
-		return err
-	}
-	if err := refuseRefspec(o.Branch); err != nil {
+	if err := refuseBadBranch(o); err != nil {
 		return err
 	}
 	dest, err := o.dest()
@@ -215,10 +212,10 @@ func Adopt(ctx context.Context, o Options) error {
 		if err := refuseOptionLike(wt.Branch, o.RenameTo); err != nil {
 			return err
 		}
-	}
-	if o.RenameTo != "" && refExists(ctx, o, "refs/heads/"+o.RenameTo) {
-		return fmt.Errorf("branch %s already exists: pick another name for %s",
-			o.RenameTo, wt.Branch)
+		if refExists(ctx, o, "refs/heads/"+o.RenameTo) {
+			return fmt.Errorf("branch %s already exists: pick another name for %s",
+				o.RenameTo, wt.Branch)
+		}
 	}
 	question := fmt.Sprintf(
 		"adopt %s? wtm writes its .env, its compose overrides and its own files there", wt.Path)
@@ -241,10 +238,7 @@ func Adopt(ctx context.Context, o Options) error {
 	// The index is what every other command reads to see this worktree at all,
 	// and start allocates it. Until it does, the listing still hides the
 	// worktree, so FindByBranch would fail on the very thing being adopted.
-	if o.Stack.Managed == nil {
-		o.Stack.Managed = map[string]bool{}
-	}
-	o.Stack.Managed[wt.Branch] = true
+	o.Stack.Manage(wt.Branch)
 	// Allocated here and not left to start: --no-start never reaches it, and an
 	// adoption that records no index is one no later command can see.
 	if err := o.resolveIndex(ctx, &wt, index.MayAllocate); err != nil {
@@ -270,21 +264,35 @@ func adoptTarget(ctx context.Context, o *Options) (stack.Worktree, error) {
 		return stack.Worktree{}, fmt.Errorf("no worktree for branch %q in %s: "+
 			"create one with `wtm create %s`", o.Branch, o.Project.Dir, o.Branch)
 	}
-	cur, err := gitx.CurrentWorktree(ctx, o.Runner)
+	wt, _, err := currentWorktree(ctx, *o, "name a branch, or run this from the worktree to adopt")
 	if err != nil {
 		return stack.Worktree{}, err
 	}
+	o.Branch = wt.Branch
+	return wt, nil
+}
+
+// currentWorktree is the worktree of this repository the command was typed
+// from, as git lists it, and where git says the caller stands. hint is what to
+// do instead when typed from the repository itself.
+func currentWorktree(ctx context.Context, o Options, hint string) (stack.Worktree, gitx.Current, error) {
+	cur, err := gitx.CurrentWorktree(ctx, o.Runner)
+	if err != nil {
+		return stack.Worktree{}, cur, err
+	}
 	if !cur.Linked {
-		return stack.Worktree{}, fmt.Errorf("%s is the repository itself and not a worktree: "+
-			"name a branch, or run this from the worktree to adopt", cur.Path)
+		return stack.Worktree{}, cur, fmt.Errorf("%s is the repository itself and not a worktree: %s", cur.Path, hint)
+	}
+	all, err := o.Stack.All(ctx)
+	if err != nil {
+		return stack.Worktree{}, cur, err
 	}
 	for _, wt := range all {
 		if config.SamePath(wt.Path, cur.Path) {
-			o.Branch = wt.Branch
-			return wt, nil
+			return wt, cur, nil
 		}
 	}
-	return stack.Worktree{}, fmt.Errorf("%s is a worktree of another repository than %s",
+	return stack.Worktree{}, cur, fmt.Errorf("%s is a worktree of another repository than %s",
 		cur.Path, o.Project.Dir)
 }
 
@@ -453,11 +461,13 @@ func releaseStale(ctx context.Context, o Options, n int) error {
 		// A running stack is not a leftover: a branch switched inside a worktree
 		// drops out of `git worktree list` while its containers keep the name, and
 		// this runs on every create, where `--volumes` takes that database along.
-		if ids := runningContainers(ctx, o, wt); o.Inferred && len(ids) > 0 {
-			return fmt.Errorf("branch %s has no worktree, but the stack at index %d still runs %d container(s), "+
-				"which is what a worktree that switched branches looks like: the index is kept and nothing was removed.\n"+
-				"if it really is a leftover, take it down first with `docker compose -p %s down -v`",
-				o.Branch, n, len(ids), o.projectName(wt))
+		if o.Inferred {
+			if ids := labelled(ctx, o, wt, runningSweep); len(ids) > 0 {
+				return fmt.Errorf("branch %s has no worktree, but the stack at index %d still runs %d container(s), "+
+					"which is what a worktree that switched branches looks like: the index is kept and nothing was removed.\n"+
+					"if it really is a leftover, take it down first with `docker compose -p %s down -v`",
+					o.Branch, n, len(ids), o.projectName(wt))
+			}
 		}
 		// A failed Down means containers may still be running under the old
 		// project name, so the index must stay reserved or the next worktree
