@@ -7,7 +7,6 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/compose"
 	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
-	"github.com/Hy0sh/worktree-manager/internal/gitx"
 	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
 
@@ -16,33 +15,14 @@ import (
 // refused checkout leaves the old stack untouched. Rerunning finishes a switch
 // that failed halfway, since the recorded path still names the old branch.
 func Switch(ctx context.Context, o Options) error {
-	if err := refuseOptionLike(o.Branch, o.Base); err != nil {
+	if err := refuseBadBranch(o); err != nil {
 		return err
 	}
-	if err := refuseRefspec(o.Branch); err != nil {
-		return err
-	}
-	cur, err := gitx.CurrentWorktree(ctx, o.Runner)
+	wt, cur, err := currentWorktree(ctx, o, "run switch from the worktree to move")
 	if err != nil {
 		return err
-	}
-	if !cur.Linked {
-		return fmt.Errorf("%s is the repository itself and not a worktree: "+
-			"run switch from the worktree to move", cur.Path)
-	}
-	all, err := o.Stack.All(ctx)
-	if err != nil {
-		return err
-	}
-	var wt stack.Worktree
-	for _, w := range all {
-		if config.SamePath(w.Path, cur.Path) {
-			wt = w
-		}
 	}
 	switch {
-	case wt.Path == "":
-		return fmt.Errorf("%s is a worktree of another repository than %s", cur.Path, o.Project.Dir)
 	case wt.UnderRoot:
 		// Its directory is named after its branch: switching would leave a
 		// worktree whose path lies about what it holds.
@@ -78,7 +58,7 @@ func Switch(ctx context.Context, o Options) error {
 	if old != o.Branch {
 		if n := recorded[old]; n > 0 && compose.Has(o.Project.Dir) {
 			prev := stack.Worktree{Index: n, Branch: old, Path: wt.Path}
-			if err := o.Stack.Down(ctx, o.projectName(prev), wt.Path, true); err != nil {
+			if err := o.Stack.Down(ctx, o.projectName(prev), wt.Path); err != nil {
 				return fmt.Errorf("taking down the stack of %s (now on %s, rerun the same command): %w",
 					old, o.Branch, err)
 			}
@@ -88,36 +68,20 @@ func Switch(ctx context.Context, o Options) error {
 			return fmt.Errorf("moving the index of %s to %s (rerun the same command): %w", old, o.Branch, err)
 		}
 		o.logf("stack of %s dropped, its index now belongs to %s", old, o.Branch)
+		o.Stack.Rekey(old, o.Branch)
 	}
 
-	if o.Stack.Managed == nil {
-		o.Stack.Managed = map[string]bool{}
-	}
-	o.Stack.Managed[o.Branch] = true
+	o.Stack.Manage(o.Branch)
 	return provisionAndStart(ctx, o, wt.Path, keepWorktreeCopies)
 }
 
-// checkout puts o.Branch in dir with the rules of addWorktree: a local branch
-// as-is, a branch only a remote carries tracking it, anything else cut from base.
+// checkout puts o.Branch in dir with the rules of addWorktree (startPoint).
 func checkout(ctx context.Context, o Options, dir string) error {
-	args := []string{"-C", dir, "switch"}
-	if branchExists(ctx, o) {
-		o.logf("branch %s already exists locally: checked out as-is, base %q ignored", o.Branch, o.Base)
-		args = append(args, o.Branch)
-	} else {
-		remote, err := remoteBranch(ctx, o)
-		if err != nil {
-			return err
-		}
-		if remote == "" {
-			noteBaseBehind(ctx, o)
-			args = append(args, "-c", o.Branch, o.Base)
-		} else {
-			o.logf("branch %s only exists on %s: checked out from %s/%s with its upstream set, base %q ignored",
-				o.Branch, remote, remote, o.Branch, o.Base)
-			args = append(args, "--track", "-c", o.Branch, remote+"/"+o.Branch)
-		}
+	flags, ref, err := startPoint(ctx, o, "-c")
+	if err != nil {
+		return err
 	}
+	args := append(append([]string{"-C", dir, "switch"}, flags...), ref)
 	if _, err := o.Runner.Run(ctx, execx.Cmd{Name: "git", Args: args, Live: true}); err != nil {
 		return fmt.Errorf("switching to %s (nothing else was changed): %w", o.Branch, err)
 	}

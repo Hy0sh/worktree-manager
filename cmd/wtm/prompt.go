@@ -30,6 +30,16 @@ func (p *prompter) logf(format string, args ...any) {
 	fmt.Fprintf(p.out, format+"\n", args...)
 }
 
+// line reads one answer, trimmed. A closed input ends the line the question
+// left open, so whatever prints next does not land after it.
+func (p *prompter) line() (string, error) {
+	if !p.in.Scan() {
+		fmt.Fprintln(p.out)
+		return "", errNoInput
+	}
+	return strings.TrimSpace(p.in.Text()), nil
+}
+
 // ask reads one answer. An empty answer keeps current, which is what makes the
 // stepper usable on an edit: enter, enter, enter, and only the field you care
 // about is typed.
@@ -39,15 +49,11 @@ func (p *prompter) ask(question, current string) (string, error) {
 	} else {
 		fmt.Fprintf(p.out, "%s: ", question)
 	}
-	if !p.in.Scan() {
-		fmt.Fprintln(p.out)
-		return "", errNoInput
+	answer, err := p.line()
+	if err != nil || answer != "" {
+		return answer, err
 	}
-	answer := strings.TrimSpace(p.in.Text())
-	if answer == "" {
-		return current, nil
-	}
-	return answer, nil
+	return current, nil
 }
 
 // askInherited asks for a value the project leaves unset, showing what applies
@@ -55,11 +61,7 @@ func (p *prompter) ask(question, current string) (string, error) {
 // value: recording that would pin the project to today's registry default.
 func (p *prompter) askInherited(question, inherited string) (string, error) {
 	fmt.Fprintf(p.out, "%s [inherited: %s]: ", question, inherited)
-	if !p.in.Scan() {
-		fmt.Fprintln(p.out)
-		return "", errNoInput
-	}
-	return strings.TrimSpace(p.in.Text()), nil
+	return p.line()
 }
 
 // askRequired keeps asking until something is typed, since a stepper that
@@ -86,11 +88,11 @@ func (p *prompter) askYesNo(question string, current bool) (bool, error) {
 	}
 	for {
 		fmt.Fprintf(p.out, "%s [%s] ", question, hint)
-		if !p.in.Scan() {
-			fmt.Fprintln(p.out)
-			return false, errNoInput
+		answer, err := p.line()
+		if err != nil {
+			return false, err
 		}
-		switch strings.ToLower(strings.TrimSpace(p.in.Text())) {
+		switch strings.ToLower(answer) {
 		case "":
 			return current, nil
 		case "y", "yes":
@@ -129,11 +131,10 @@ func (p *prompter) askPairs(question string, current, suggested map[string]strin
 	pairs := map[string]string{}
 	for {
 		fmt.Fprint(p.out, "  ")
-		if !p.in.Scan() {
-			fmt.Fprintln(p.out)
-			return nil, errNoInput
+		line, err := p.line()
+		if err != nil {
+			return nil, err
 		}
-		line := strings.TrimSpace(p.in.Text())
 		if line == "" {
 			if len(pairs) == 0 {
 				return current, nil

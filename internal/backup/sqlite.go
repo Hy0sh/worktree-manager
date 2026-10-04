@@ -25,9 +25,14 @@ func (m *Manager) refreshFile(ctx context.Context, name string, p config.Project
 	if err := m.migrate(ctx, p, cfg, tmpDBFile); err != nil {
 		return err
 	}
-	info, err := os.Stat(host)
+	info, err := os.Lstat(host)
 	if err != nil {
 		return fmt.Errorf("the migration left no %s in %s: the %s service must bind-mount the project directory for wtm to collect the database file", tmpDBFile, p.Dir, cfg.AppService)
+	}
+	// The container wrote it: a link there would publish whatever host file it
+	// names as the dump, and copy it into every worktree.
+	if !info.Mode().IsRegular() {
+		return fmt.Errorf("the migration left %s as something other than a regular file: refusing to collect it", tmpDBFile)
 	}
 	// Opening a sqlite database creates the file and writes nothing into it, so
 	// an empty file is a migration that built its schema somewhere else, and

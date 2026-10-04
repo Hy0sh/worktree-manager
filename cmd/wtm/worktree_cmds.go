@@ -74,7 +74,7 @@ func (f *afterFlags) refuse() error {
 	return nil
 }
 
-func (f *afterFlags) applyTo(cmd *cobra.Command, o *worktree.Options) {
+func (f *afterFlags) applyTo(o *worktree.Options) {
 	o.NoStart, o.NoPostCreate = f.noStart, f.noPostCreate
 	o.RunAfter, o.ExecAfter = f.run, f.exec
 	o.Profile = f.profile
@@ -144,7 +144,7 @@ func newCreateCmd(a *app) *cobra.Command {
 				}
 				o.Base, o.BaseFromHere = cur.Branch, true
 			}
-			flags.applyTo(cmd, &o)
+			flags.applyTo(&o)
 			if p.Dump && !flags.noStart {
 				if st := a.manager().Check(cmd.Context(), name, p); st.Behind() {
 					fmt.Fprintf(a.out, "note: the dump is %s, `wtm backup refresh %s` would save the replay\n",
@@ -248,7 +248,7 @@ func newAdoptCmd(a *app) *cobra.Command {
 				branch = rest[0]
 			}
 			o := a.options(name, p, branch)
-			flags.applyTo(cmd, &o)
+			flags.applyTo(&o)
 			o.RenameTo = renameTo
 			// Deliberately not a.confirmer(): with nobody to answer, adopting
 			// must refuse and name -y rather than write into somebody's
@@ -296,7 +296,7 @@ func newSwitchCmd(a *app) *cobra.Command {
 			if from != "" {
 				o.Base = from
 			}
-			flags.applyTo(cmd, &o)
+			flags.applyTo(&o)
 			return worktree.Switch(cmd.Context(), o)
 		},
 	}
@@ -382,7 +382,8 @@ func newRemoveCmd(a *app) *cobra.Command {
 func removeAllQuestion(entries []worktree.Entry) string {
 	adopted := 0
 	for _, e := range entries {
-		if !e.UnderRoot {
+		// Remove keeps a switched worktree's directory too, wtm-created or not.
+		if !e.UnderRoot || e.Holds != "" {
 			adopted++
 		}
 	}

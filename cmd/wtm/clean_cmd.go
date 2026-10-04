@@ -154,7 +154,7 @@ func (a *app) downOrphanStacks(ctx context.Context, orphans []orphanStack) []str
 	for _, o := range orphans {
 		dir := a.cfg.Projects[o.Project].Dir
 		client := &stack.Client{Runner: a.runner, Dir: dir, Out: a.out}
-		if err := client.Down(ctx, o.Stack, dir, true); err != nil {
+		if err := client.Down(ctx, o.Stack, dir); err != nil {
 			failed = append(failed, fmt.Sprintf("  stack %s: %v", o.Stack, err))
 			continue
 		}

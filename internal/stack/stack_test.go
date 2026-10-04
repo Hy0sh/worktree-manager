@@ -42,18 +42,27 @@ func TestUpTargetsTheWorktreeProject(t *testing.T) {
 	}
 }
 
-func TestDownKeepsVolumes(t *testing.T) {
+// A down between two starts left the anonymous volumes behind, which the next
+// up never mounts again: stop keeps the containers, and with them the volumes.
+func TestStopKeepsContainersAndVolumes(t *testing.T) {
 	f := &execx.Fake{}
 	c, _ := newClient(t, f)
-	if err := c.Down(context.Background(), "myapp-wt-1-feat-x", "/wt", false); err != nil {
+	if err := c.Stop(context.Background(), "myapp-wt-1-feat-x", "/wt"); err != nil {
+		t.Fatalf("Stop: %v", err)
+	}
+	if line := f.Lines()[0]; !strings.HasSuffix(line, "compose -p myapp-wt-1-feat-x stop") {
+		t.Fatalf("stop call = %q", line)
+	}
+}
+
+func TestDownTakesTheVolumes(t *testing.T) {
+	f := &execx.Fake{}
+	c, _ := newClient(t, f)
+	if err := c.Down(context.Background(), "myapp-wt-1-feat-x", "/wt"); err != nil {
 		t.Fatalf("Down: %v", err)
 	}
-	line := f.Lines()[0]
-	if !strings.HasSuffix(line, "compose -p myapp-wt-1-feat-x down") {
+	if line := f.Lines()[0]; !strings.HasSuffix(line, "compose -p myapp-wt-1-feat-x down --volumes") {
 		t.Fatalf("down call = %q", line)
-	}
-	if strings.Contains(line, "-v") {
-		t.Fatal("stopping must not destroy the database")
 	}
 }
 

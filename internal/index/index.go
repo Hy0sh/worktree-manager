@@ -33,10 +33,10 @@ type Resolver struct {
 	Name       string // project name in the registry
 	RepoName   string // filepath.Base of the project directory
 	Out        io.Writer
-	// Conflicts says why index n must not be handed out, or "" when it may.
-	// The resolver knows nothing about ports; the worktree package does, and
-	// with a stride of 1 services one port apart collide on neighbouring indices.
-	Conflicts func(n int) string
+	// Conflicts says why index n must not be handed out, or "" when it may: with
+	// a stride of 1, services one port apart collide on neighbouring indices.
+	// It runs under the registry lock, given the registry that lock holds.
+	Conflicts func(c *config.Config, n int) string
 }
 
 func (r *Resolver) logf(format string, args ...any) {
@@ -45,11 +45,11 @@ func (r *Resolver) logf(format string, args ...any) {
 	}
 }
 
-func (r *Resolver) conflicts(n int) string {
+func (r *Resolver) conflicts(c *config.Config, n int) string {
 	if r.Conflicts == nil {
 		return ""
 	}
-	return r.Conflicts(n)
+	return r.Conflicts(c, n)
 }
 
 // Resolve tries, first answer winning: recorded → backfill from docker labels →
@@ -129,7 +129,7 @@ func (r *Resolver) Resolve(ctx context.Context, branch string, pos int, mode Mod
 			// A new worktree's position is usually free, so this is the path a
 			// plain create takes: it must ask the same question as the
 			// allocation loop below.
-			if why := r.conflicts(pos); why != "" {
+			if why := r.conflicts(c, pos); why != "" {
 				skipped(pos, why)
 			} else {
 				return take(pos)
@@ -147,7 +147,7 @@ func (r *Resolver) Resolve(ctx context.Context, branch string, pos int, mode Mod
 				skipped(n, "docker still holds containers or volumes of a previous worktree there")
 				continue
 			}
-			if why := r.conflicts(n); why != "" {
+			if why := r.conflicts(c, n); why != "" {
 				skipped(n, why)
 				continue
 			}

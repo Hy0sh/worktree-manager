@@ -87,7 +87,8 @@ func without(list, drop []string) []string {
 // registry entry, and the freed offset goes to the next project, whose stacks
 // would then fight those worktrees' ports. A git error traps nothing.
 func refuseIfWorktreesRemain(ctx context.Context, a *app, name string, p config.Project) error {
-	client := &stack.Client{Runner: a.runner, Dir: p.Dir}
+	// Managed and Paths, or the adopted worktrees, on the same offset, go unseen.
+	client := &stack.Client{Runner: a.runner, Dir: p.Dir, Managed: managed(p), Paths: p.WorktreePaths}
 	worktrees, err := client.Worktrees(ctx)
 	if err != nil || len(worktrees) == 0 {
 		return nil

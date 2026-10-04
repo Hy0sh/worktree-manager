@@ -117,7 +117,23 @@ func (a *app) optionsFor(args []string) (worktree.Options, error) {
 	if err != nil {
 		return worktree.Options{}, err
 	}
-	return a.options(name, p, branch), nil
+	o := a.options(name, p, branch)
+	// A branch names the stack of the worktree it is checked out in. Switched
+	// outside wtm, that stack is recorded under the old branch: name it, rather
+	// than a second stack there, or the stack this branch left elsewhere.
+	if len(p.WorktreePaths) > 0 {
+		if all, err := o.Stack.All(context.Background()); err == nil {
+			for _, wt := range all {
+				if wt.Branch == branch {
+					if recorded := o.Stack.RecordedAt(wt); recorded != "" {
+						o.Branch = recorded
+					}
+					break
+				}
+			}
+		}
+	}
+	return o, nil
 }
 
 func (a *app) options(name string, p config.Project, branch string) worktree.Options {

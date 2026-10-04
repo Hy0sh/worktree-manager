@@ -64,6 +64,32 @@ func TestRefreshCollectsTheMigratedSQLiteFile(t *testing.T) {
 	}
 }
 
+// The container writes that path: left as a link, it would have the host file
+// it names published as the dump and copied into every worktree.
+func TestRefreshSQLiteRefusesALink(t *testing.T) {
+	p := newProject(t)
+	p.Backup.DBEngine = "sqlite"
+	secret := filepath.Join(t.TempDir(), "id_rsa")
+	if err := os.WriteFile(secret, []byte("PRIVATE KEY"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	f := &execx.Fake{Handler: func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(c.String(), "manage.py migrate") {
+			if err := os.Symlink(secret, filepath.Join(p.Dir, ".wtm-snapshot-tmp.sqlite3")); err != nil {
+				t.Fatal(err)
+			}
+		}
+		return okHandler(c)
+	}}
+	m := newManager(t, f)
+	if err := m.Refresh(context.Background(), "myapp", p); err == nil {
+		t.Fatal("a link must be refused")
+	}
+	if _, err := os.Stat(m.DumpPath("myapp")); !os.IsNotExist(err) {
+		t.Fatal("no dump may be published from a link")
+	}
+}
+
 // Opening a sqlite database creates the file and writes nothing, so a
 // migration that built its schema in another database leaves an empty one
 // behind. Publishing it would bring every worktree up on an empty database.

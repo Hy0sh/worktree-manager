@@ -186,7 +186,7 @@ func TestStopUsesResolvedIndex(t *testing.T) {
 	}
 	last := f.fake.Lines()[len(f.fake.Lines())-1]
 	want := stack.ProjectName(filepath.Base(f.root), 7, "feat/x")
-	if !strings.Contains(last, "compose -p "+want+" down") {
+	if !strings.Contains(last, "compose -p "+want+" stop") {
 		t.Fatalf("last call = %q", last)
 	}
 }

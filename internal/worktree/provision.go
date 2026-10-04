@@ -11,7 +11,6 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/backup"
 	"github.com/Hy0sh/worktree-manager/internal/compose"
 	"github.com/Hy0sh/worktree-manager/internal/config"
-	"github.com/Hy0sh/worktree-manager/internal/dbengine"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 	"github.com/Hy0sh/worktree-manager/internal/safefile"
 )
@@ -63,12 +62,10 @@ func provision(ctx context.Context, o Options, dest string, mode provisionMode) 
 	if err := copyListed(ctx, o, dest, mode); err != nil {
 		return fmt.Errorf("copying the files listed in copy: %w", err)
 	}
-	if err := copyComposeOverrides(o.Project.Dir, dest, mode); err != nil {
+	if err := copyComposeOverrides(o.Project.Dir, dest, mode, o.logf); err != nil {
 		return fmt.Errorf("copying compose overrides: %w", err)
 	}
-	// A file-based engine reads nothing from the backup directory at runtime:
-	// its dump is copied into the worktree instead of being mounted.
-	if o.Project.Dump && !dbengine.IsFileBased(o.Project.BackupConfig().DBEngine) {
+	if o.mountsSnapshot() {
 		if err := linkSnapshotDir(o, dest); err != nil {
 			return fmt.Errorf("linking to the backup: %w", err)
 		}
@@ -264,10 +261,19 @@ func copyListed(ctx context.Context, o Options, dest string, mode provisionMode)
 	return nil
 }
 
-func copyComposeOverrides(root, dest string, mode provisionMode) error {
+func copyComposeOverrides(root, dest string, mode provisionMode, logf func(string, ...any)) error {
+	rootReal, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return err
+	}
 	for _, name := range compose.OverrideNames {
 		src := filepath.Join(root, name)
-		if _, err := os.Stat(src); err != nil {
+		info, err := os.Lstat(src)
+		if err != nil {
+			continue
+		}
+		// Same rule as the .env files: a link is followed only inside the project.
+		if info.Mode()&fs.ModeSymlink != 0 && !linkStaysInside(rootReal, src, name, logf) {
 			continue
 		}
 		// The one wtm wrote before the project had its own is no local edit.

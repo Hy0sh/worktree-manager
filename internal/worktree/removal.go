@@ -75,8 +75,9 @@ func InspectRemoval(ctx context.Context, o Options) (RemovalPlan, error) {
 		return RemovalPlan{Kind: RemoveAbandoned, Path: dest}, nil
 	}
 	plan := RemovalPlan{Kind: RemoveAdopted, Path: wt.Path, Index: recorded, wt: wt}
-	// An adopted checkout stays where it is, so nothing in it is at risk.
-	if !wt.UnderRoot {
+	// An adopted checkout stays where it is, so nothing in it is at risk. So
+	// does one switched outside wtm: it holds another branch's work now.
+	if !wt.UnderRoot || wt.Holds != "" {
 		return plan, nil
 	}
 	plan.Kind = RemoveCreated

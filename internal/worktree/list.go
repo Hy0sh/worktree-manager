@@ -49,6 +49,8 @@ func (e Entry) BranchLabel() string {
 		return fmt.Sprintf("(detached %s)", e.ShortHead())
 	case e.Detached:
 		return fmt.Sprintf("%s (detached %s)", e.Branch, e.ShortHead())
+	case e.Holds != "":
+		return fmt.Sprintf("%s (now on %s)", e.Branch, e.Holds)
 	}
 	return e.Branch
 }
@@ -73,6 +75,11 @@ func List(ctx context.Context, o Options) ([]Entry, error) {
 	}
 	entries := make([]Entry, 0, len(worktrees))
 	for _, wt := range worktrees {
+		// Switched outside wtm, it is listed under the branch its stack answers
+		// to: offered for adoption, it would get a second stack.
+		if recorded := o.Stack.RecordedAt(wt); recorded != "" {
+			wt.Holds, wt.Branch = wt.Branch, recorded
+		}
 		if !wt.UnderRoot && !o.Stack.Managed[wt.Branch] {
 			entries = append(entries, Entry{Worktree: wt, Status: StatusAdoptable})
 			continue

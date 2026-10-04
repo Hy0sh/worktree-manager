@@ -113,10 +113,7 @@ func (o Options) logf(format string, args ...any) {
 }
 
 func Create(ctx context.Context, o Options) error {
-	if err := refuseOptionLike(o.Branch, o.Base); err != nil {
-		return err
-	}
-	if err := refuseRefspec(o.Branch); err != nil {
+	if err := refuseBadBranch(o); err != nil {
 		return err
 	}
 	dest, err := o.dest()
@@ -205,15 +202,20 @@ func Adopt(ctx context.Context, o Options) error {
 	case o.Resolver.Recorded()[wt.Branch] > 0:
 		return fmt.Errorf("%s is already adopted: start its stack with `wtm start %s`",
 			wt.Path, wt.Branch)
+	case o.Stack.RecordedAt(wt) != "":
+		// Adopting again would give the directory a second stack and leave the
+		// first one running under a name nothing addresses any more.
+		return fmt.Errorf("%s already has a stack, recorded under %s before it was switched to %s: "+
+			"move that stack with `wtm switch %s` from there", wt.Path, o.Stack.RecordedAt(wt), wt.Branch, wt.Branch)
 	}
 	if o.RenameTo != "" {
 		if err := refuseOptionLike(wt.Branch, o.RenameTo); err != nil {
 			return err
 		}
-	}
-	if o.RenameTo != "" && refExists(ctx, o, "refs/heads/"+o.RenameTo) {
-		return fmt.Errorf("branch %s already exists: pick another name for %s",
-			o.RenameTo, wt.Branch)
+		if refExists(ctx, o, "refs/heads/"+o.RenameTo) {
+			return fmt.Errorf("branch %s already exists: pick another name for %s",
+				o.RenameTo, wt.Branch)
+		}
 	}
 	question := fmt.Sprintf(
 		"adopt %s? wtm writes its .env, its compose overrides and its own files there", wt.Path)
@@ -236,10 +238,7 @@ func Adopt(ctx context.Context, o Options) error {
 	// The index is what every other command reads to see this worktree at all,
 	// and start allocates it. Until it does, the listing still hides the
 	// worktree, so FindByBranch would fail on the very thing being adopted.
-	if o.Stack.Managed == nil {
-		o.Stack.Managed = map[string]bool{}
-	}
-	o.Stack.Managed[wt.Branch] = true
+	o.Stack.Manage(wt.Branch)
 	// Allocated here and not left to start: --no-start never reaches it, and an
 	// adoption that records no index is one no later command can see.
 	if err := o.resolveIndex(ctx, &wt, index.MayAllocate); err != nil {
@@ -265,21 +264,35 @@ func adoptTarget(ctx context.Context, o *Options) (stack.Worktree, error) {
 		return stack.Worktree{}, fmt.Errorf("no worktree for branch %q in %s: "+
 			"create one with `wtm create %s`", o.Branch, o.Project.Dir, o.Branch)
 	}
-	cur, err := gitx.CurrentWorktree(ctx, o.Runner)
+	wt, _, err := currentWorktree(ctx, *o, "name a branch, or run this from the worktree to adopt")
 	if err != nil {
 		return stack.Worktree{}, err
 	}
+	o.Branch = wt.Branch
+	return wt, nil
+}
+
+// currentWorktree is the worktree of this repository the command was typed
+// from, as git lists it, and where git says the caller stands. hint is what to
+// do instead when typed from the repository itself.
+func currentWorktree(ctx context.Context, o Options, hint string) (stack.Worktree, gitx.Current, error) {
+	cur, err := gitx.CurrentWorktree(ctx, o.Runner)
+	if err != nil {
+		return stack.Worktree{}, cur, err
+	}
 	if !cur.Linked {
-		return stack.Worktree{}, fmt.Errorf("%s is the repository itself and not a worktree: "+
-			"name a branch, or run this from the worktree to adopt", cur.Path)
+		return stack.Worktree{}, cur, fmt.Errorf("%s is the repository itself and not a worktree: %s", cur.Path, hint)
+	}
+	all, err := o.Stack.All(ctx)
+	if err != nil {
+		return stack.Worktree{}, cur, err
 	}
 	for _, wt := range all {
 		if config.SamePath(wt.Path, cur.Path) {
-			o.Branch = wt.Branch
-			return wt, nil
+			return wt, cur, nil
 		}
 	}
-	return stack.Worktree{}, fmt.Errorf("%s is a worktree of another repository than %s",
+	return stack.Worktree{}, cur, fmt.Errorf("%s is a worktree of another repository than %s",
 		cur.Path, o.Project.Dir)
 }
 
@@ -323,7 +336,8 @@ func Start(ctx context.Context, o Options) error {
 	return nil
 }
 
-// Stop takes the stack down and leaves the worktree in place.
+// Stop halts the stack's containers, keeping them for the next start, and
+// leaves the worktree in place.
 func Stop(ctx context.Context, o Options) error {
 	wt, err := o.Stack.FindByBranch(ctx, o.Branch)
 	if err != nil {
@@ -340,7 +354,7 @@ func Stop(ctx context.Context, o Options) error {
 		}
 		return err
 	}
-	if err := o.Stack.Down(ctx, o.projectName(wt), wt.Path, false); err != nil {
+	if err := o.Stack.Stop(ctx, o.projectName(wt), wt.Path); err != nil {
 		return fmt.Errorf("stopping the stack: %w", err)
 	}
 	o.logf("stack stopped (worktree %d, %s)", wt.Index, o.Branch)
@@ -357,6 +371,12 @@ func Remove(ctx context.Context, o Options) error {
 	// as it was, stack included.
 	if err := plan.refusal(o); err != nil {
 		return err
+	}
+	// A sweep releases what looks vanished; a worktree that switched branches
+	// still stands, with its stack and its database.
+	if o.Inferred && plan.wt.Holds != "" {
+		return fmt.Errorf("branch %s has no worktree of its own, but its stack's worktree %s still stands, "+
+			"holding %s: it switched branches, and nothing was removed", o.Branch, plan.wt.Path, plan.wt.Holds)
 	}
 	switch plan.Kind {
 	case RemoveStale:
@@ -377,12 +397,18 @@ func Remove(ctx context.Context, o Options) error {
 			return err
 		default:
 			stackKnown = true
-			if err := o.Stack.Down(ctx, o.projectName(wt), wt.Path, true); err != nil {
+			if err := o.Stack.Down(ctx, o.projectName(wt), wt.Path); err != nil {
 				return fmt.Errorf("stopping the stack: %w", err)
 			}
 		}
 	}
-	if wt.UnderRoot {
+	switch {
+	case wt.Holds != "":
+		// Switched outside wtm: the stack was the old branch's, the checkout
+		// now holds another one's work, so only the stack and wtm's files go.
+		removeArtifacts(o, wt.Path)
+		o.logf("stack of %s removed, worktree kept: %s now holds %s", o.Branch, wt.Path, wt.Holds)
+	case wt.UnderRoot:
 		// The first --force covers the untracked files wtm itself put there; a
 		// lock takes a second one, which is git's own rule.
 		args := []string{"-C", o.Project.Dir, "worktree", "remove", "--force"}
@@ -398,7 +424,7 @@ func Remove(ctx context.Context, o Options) error {
 		}
 		pruneEmptyParents(wt.Path, stack.WorktreesRoot(o.Project.Dir))
 		o.logf("worktree removed: %s (branch %s kept)", wt.Path, o.Branch)
-	} else {
+	default:
 		// wtm only takes down what it built. The checkout came from somewhere
 		// else, and something may well still be working in it.
 		removeArtifacts(o, wt.Path)
@@ -442,16 +468,18 @@ func releaseStale(ctx context.Context, o Options, n int) error {
 		// A running stack is not a leftover: a branch switched inside a worktree
 		// drops out of `git worktree list` while its containers keep the name, and
 		// this runs on every create, where `--volumes` takes that database along.
-		if ids := runningContainers(ctx, o, wt); o.Inferred && len(ids) > 0 {
-			return fmt.Errorf("branch %s has no worktree, but the stack at index %d still runs %d container(s), "+
-				"which is what a worktree that switched branches looks like: the index is kept and nothing was removed.\n"+
-				"if it really is a leftover, take it down first with `docker compose -p %s down -v`",
-				o.Branch, n, len(ids), o.projectName(wt))
+		if o.Inferred {
+			if ids := labelled(ctx, o, wt, runningSweep); len(ids) > 0 {
+				return fmt.Errorf("branch %s has no worktree, but the stack at index %d still runs %d container(s), "+
+					"which is what a worktree that switched branches looks like: the index is kept and nothing was removed.\n"+
+					"if it really is a leftover, take it down first with `docker compose -p %s down -v`",
+					o.Branch, n, len(ids), o.projectName(wt))
+			}
 		}
 		// A failed Down means containers may still be running under the old
 		// project name, so the index must stay reserved or the next worktree
 		// allocated there would collide with them: same rule as Stop and Remove.
-		if err := o.Stack.Down(ctx, o.projectName(wt), o.Project.Dir, true); err != nil {
+		if err := o.Stack.Down(ctx, o.projectName(wt), o.Project.Dir); err != nil {
 			return fmt.Errorf("taking down the stack left at index %d for %s (index kept): %w", n, o.Branch, err)
 		}
 		removeLeftovers(ctx, o, wt)

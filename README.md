@@ -18,7 +18,7 @@ it already had.
 
 | | Why | When |
 |---|---|---|
-| Go >= 1.24 | to install the binary | install only |
+| Go >= 1.26 | to install the binary | install only |
 | `git` >= 2.31 | worktrees, and `--path-format` to resolve the repository from inside one | always |
 | `docker` with Compose v2 | starting a worktree's stack | projects that have one |
 
@@ -61,7 +61,7 @@ which carries one per platform (darwin and linux, arm64 and amd64) plus a
 `SHA256SUMS` to check them against:
 
 ```sh
-tar -xzf wtm_v0.12.0_darwin_arm64.tar.gz wtm
+tar -xzf wtm_<version>_darwin_arm64.tar.gz wtm
 mv wtm ~/.local/bin/
 ```
 
@@ -101,7 +101,7 @@ time, so it only needs regenerating when you upgrade to a version that adds
 commands. Arguments complete too, not just subcommands and flags:
 
 ```
-wtm <TAB>                    # registered project names
+wtm <TAB>                    # subcommands
 wtm stop <TAB>               # projects, plus branches that have a worktree
 wtm stop myapp <TAB>         # that project's worktree branches
 wtm backup refresh <TAB>     # registered project names
@@ -148,7 +148,7 @@ wtm tui                                     # the same, live, with the selected 
                                             # a adopts a worktree left to adopt, asking first
 wtm start feat/my-branch                    # bring a stopped stack back up
 wtm start feat/my-branch --profile light    # only the services that profile names
-wtm stop feat/my-branch
+wtm stop feat/my-branch                     # containers kept stopped, start brings them back
 wtm stop --all                              # every worktree of the project
 wtm remove feat/my-branch                   # stack, volumes and built images go, branch kept
 wtm remove feat/my-branch --force           # despite modified tracked files, or a lock
@@ -171,7 +171,7 @@ cd $(wtm path feat/my-branch)       # a bare `docker compose` there reaches the 
                                      # unless the project has an override of its own
 eval "$(wtm env feat/my-branch)"     # the same environment as run, for a shell or direnv:
                                      # the only way a bare compose interpolates ${PORT}s right
-wtm ports                            # typed from a worktree, ports, path, env, exec and run take its branch
+wtm ports                            # typed from a worktree, ports, path, env, exec, run and logs take its branch
 wtm ports feat/my-branch             # the addresses `start` printed, one service per line
 
 # database backup
@@ -182,6 +182,11 @@ wtm backup remove my-app
 
 If the first argument is a registered project, it's treated as such;
 otherwise it's a branch of the current directory's project.
+
+Creation deliberately sits behind the `create` verb. It used to be the bare
+form, `wtm <branch>`, until a mistyped `wtm list` created a branch called
+`list` along with its worktree: any unknown word silently mutated the
+repository. Now only a real subcommand runs, and anything else is rejected.
 
 `<base>` completes to the local branches plus the remote ones no local branch
 stands for. It is resolved in the main repository, never in the worktree the
@@ -215,6 +220,18 @@ checked out tracking it, fetching first in case it was pushed since your
 last fetch. `<base>` is ignored in both cases, and only used for a branch
 that exists nowhere yet. Should two remotes carry the same branch name, wtm
 refuses to guess, as git does.
+
+`--run` plays its line with the compose environment `wtm run` sets, `--exec`
+after the project's own `post_create`. Both may be given at once, `--exec`
+first so a fixture depending on the seed finds it, and `--run` last since it is
+the one taking over the terminal. A failure is a warning naming the line that
+replays it, never a failed creation. Neither is remembered: they are flags of
+one `create` and never reach `config.json`, so nothing in a repository can hand
+wtm a command to play on its own. What the command itself does is another
+matter, and `--run` runs on the host with your rights, in a checkout of a
+branch that may not be yours: creating someone else's branch and playing its
+`package.json` scripts in one line is exactly as trusting as it sounds.
+`--exec` is bounded by the container.
 
 `exec` and `run` are deliberately distinct: `exec` enters the stack's
 container, `run` stays on your machine with the worktree as working
@@ -276,9 +293,13 @@ it next does not.
 A worktree on a detached HEAD cannot be adopted: wtm keys a worktree by its
 branch, and there is none to key it by.
 
-That key is also why a bare `git switch -c` in an adopted worktree loses its
-stack: the stack stays filed under the old branch. `wtm switch` is the way to
-move one to its next branch, typed from inside it:
+That key is also why a bare `git switch -c` in an adopted worktree strands its
+stack: the stack stays filed under the old branch. A stack belongs to the
+directory it was started in, so wtm follows it there: `wtm list` shows it as
+`old (now on new)`, `stop`, `start` and `remove` reach it by the branch the
+worktree holds, or by the old one while no other worktree has that checked out,
+and `adopt` refuses to give that directory a second one. `wtm switch` is the way
+to move one to its next branch, typed from inside it:
 
 ```sh
 wtm switch feat/next-task --from origin/main
@@ -293,11 +314,6 @@ it never asks a question, which suits an agent; and if it fails halfway,
 running the same command again finishes it, which also repairs a worktree a
 bare `git switch` already moved. Only adopted worktrees switch: a created one
 is named after its branch, and `wtm create` makes the next one.
-
-Creation deliberately sits behind the `create` verb. It used to be the bare
-form, `wtm <branch>`, until a mistyped `wtm list` created a branch called
-`list` along with its worktree: any unknown word silently mutated the
-repository. Now only a real subcommand runs, and anything else is rejected.
 
 ## Configuring the backup
 
@@ -360,13 +376,13 @@ wtm project edit my-app --ready-timeout 2m --ready-interval 10s
 `ready_timeout` is how long each service gets, `ready_interval` how often it is
 asked. Left unset, a database gets a minute and an application ten, asked every
 second, and a wait that holds repeats itself every thirty seconds with the time
-elapsed. A timeout is not a failed creation: the worktree stands, and the
-warning names the `wtm exec` line that replays the command.
+elapsed. A timeout, like a failing command, is not a failed creation: the
+worktree stands, and the warning names the `wtm exec` line that replays the
+command.
 
 Do not point it at a script that resets the database: dropping the schema to
 migrate it again throws away the restored dump and pays for the migrations wtm
-exists to skip. Seed only. A failing command is a warning and not a failed
-creation, and the warning names the `wtm exec` line that replays it.
+exists to skip. Seed only.
 
 Postgres, MySQL, MariaDB, MongoDB and SQLite are supported. The engine is
 read from the database service's image in the compose file and offered as the
@@ -407,7 +423,9 @@ The project answers what it can, and each answer becomes the default offered:
 | migration command and pathspec | the framework, from `manage.py`, `bin/console`, `artisan`, `bin/rails`, `prisma/schema.prisma` or `alembic.ini` at the root |
 | services besides the database | only asked when the service depends on others, named in the question |
 | variables | the database variables the service's compose `environment:` sets, the name replaced by `{{database}}` |
-| `.git-container` | only asked when a volume mounts `.git` | The walk ends on a summary of what the answers change, saved only
+| `.git-container` | only asked when a volume mounts `.git` |
+
+The walk ends on a summary of what the answers change, saved only
 once confirmed; `create` then prints the next commands to run.
 
 What the backup questions ask, for a Symfony project whose database service is
@@ -597,12 +615,18 @@ engine. Below that come the problems nothing else mentions: the ports two
 projects would both publish, the ports two worktrees of one project would both
 publish (with the `portStride` remedy), the recorded indices no worktree stands
 behind — each pushing new worktrees one index further out — the worktrees whose
-index the registry does not carry, and what removed worktrees left behind:
-their stacks, still holding containers, their volumes (which squat the indices
-their ports came from) and the images their stacks built. Last come the
-anonymous volumes no container mounts, left by images that name their own data
-directory: those belong to no project, so they are counted even with an empty
-registry. Each of those lines carries the command that drops them.
+branch was switched under them, the worktrees whose index the registry does not
+carry, and what removed worktrees left behind: their stacks, still holding
+containers, their volumes (which squat the indices their ports came from) and
+the images their stacks built. Each of those lines carries the command that
+drops them.
+
+A switched worktree is not a leftover: its index and its stack stay, filed
+under the old branch, and `stop`, `start` and `remove` reach that stack by the
+branch the worktree holds. Its line carries the command that moves the stack to the branch
+the worktree now holds: `wtm switch <held>` from an adopted worktree; for a
+worktree wtm created, switching it back, or `wtm remove <old>` then
+`wtm start <held>`.
 
 A worktree with no recorded index is named for a reason: its stack cannot be
 told from one a removed worktree left, so the three leftover reports hold back
@@ -616,6 +640,10 @@ since every other command reads `git worktree list`, and they make `wtm create`
 refuse their branch. `wtm clean` deliberately leaves them, because their git
 metadata is gone and nothing can say any more whether they hold uncommitted
 work: `wtm remove <project> <branch> --force` deletes one.
+
+Last come the anonymous volumes no container mounts, left by images that name
+their own data directory: those belong to no project, so they are counted even
+with an empty registry, with the command that drops them.
 
 ```sh
 wtm clean            # every registered project, as doctor reads them
@@ -649,12 +677,18 @@ that fails prints a warning and the create carries on.
 The build cache is only ever reported. Buildkit attributes none of it to a
 project, so only you can decide it is expendable.
 
-Before starting a stack, the tool compares the Docker VM's measured usage
-against its capacity and warns (without blocking) if one more stack risks
-saturating it. The estimate is based on the average observed consumption of
-running stacks, never on declared `mem_limit`s: one stack here declares
-over 13 GB of cumulative caps while actually running in 2 GB. Ephemeral
-`compose run` containers are excluded from that average.
+Before a stack goes up, wtm measures what the memory it has to fit into already
+holds and says when one more would not. On a native Linux docker that pool is
+the whole machine, session and browser included; Docker Desktop gives the
+containers a budget of their own. When it is tight, a create or a start asks
+whether to go ahead, and answering no leaves the worktree without its stack, to
+be started later with `wtm start`. The question only comes on a terminal: the
+estimate is an average over the running stacks, worth a person's judgement and
+never worth failing a script or an agent over. `--ignore-memory` answers it in
+advance, for an automation that runs under a terminal with nobody behind it.
+That average is the consumption observed, never the declared `mem_limit`s: one
+stack here declares over 13 GB of cumulative caps while actually running in
+2 GB. Ephemeral `compose run` containers are left out of it.
 
 ## How the database restore works
 
@@ -724,37 +758,6 @@ with a warning.
 Putting the mount in the project's compose instead would tie the behaviour
 to the branch the worktree was cut from, since that file is versioned.
 
-A fresh worktree still needs its seed, which the dump deliberately leaves out.
-`post_create` plays it on its own, and `wtm exec` is the way in by hand: either
-beats reaching the container yourself, which means knowing the compose project
-name derived from the repository, the index and the branch. `wtm create
---no-post-create` leaves it out for one worktree, for a stack wanted quickly
-rather than seeded, and prints the `wtm exec` line that plays it later.
-
-Before a stack goes up, wtm measures what the memory it has to fit into already
-holds and says when one more would not. On a native Linux docker that pool is
-the whole machine, session and browser included; Docker Desktop gives the
-containers a budget of their own. When it is tight, a create or a start asks
-whether to go ahead, and answering no leaves the worktree without its stack, to
-be started later with `wtm start`. The question only comes on a terminal: the
-estimate is an average over the running stacks, worth a person's judgement and
-never worth failing a script or an agent over. `--ignore-memory` answers it in
-advance, for an automation that runs under a terminal with nobody behind it.
-
-`wtm create --run` and `--exec` play one shell line each once the worktree is
-ready: `--run` on your machine from the worktree directory, with the compose
-environment `wtm run` sets, `--exec` in the application container after the
-project's own `post_create`. Both may be given at once, `--exec` first so a
-fixture depending on the seed finds it, and `--run` last since it is the one
-taking over the terminal. A failure is a warning naming the line that replays
-it, never a failed creation. Neither is remembered: they are flags of one
-`create` and never reach `config.json`, so nothing in a repository can hand
-wtm a command to play on its own. What the command itself does is another
-matter, and `--run` runs on the host with your rights, in a checkout of a
-branch that may not be yours: creating someone else's branch and playing its
-`package.json` scripts in one line is exactly as trusting as it sounds.
-`--exec` is bounded by the container.
-
 The official postgres, mysql, mariadb and mongo images all run
 `docker-entrypoint-initdb.d` only on an empty data directory, which gives the
 right semantics for free: a fresh worktree restores, an existing one is
@@ -774,38 +777,29 @@ A single dump per project, never duplicated: each worktree accesses it
 through a `.db-snapshot` directory symlink. `WTM_CONFIG_DIR` and
 `WTM_BACKUPS_DIR` let you relocate these paths.
 
-## Tests
-
-```sh
-go test ./...        # unit tests, no dependency on git/docker/node
-go vet ./...
-gofmt -l .
-```
-
-Sequences of external commands are verified through `internal/execx` (an
-injectable runner). What isn't covered automatically, to check by hand on
-a real project (my-app):
-
-1. `wtm create <project> <branch> --no-start` -> the worktree contains the
-   `*.env` files, the `.git-container` and `.db-snapshot` symlinks.
-2. Without `--no-start` -> the stack starts and the allocated ports are
-   displayed.
-3. `wtm backup refresh <project>` with the stack stopped -> it starts on
-   its own and stops it again, the dump shows up in `backup list`.
-4. `wtm stop` then `remove` -> stack stopped, worktree removed, local
-   branch still present.
-
 ## Contributing
 
 Pull requests are welcome. `main` is the only long-lived branch: branch off it,
-keep the branch short, open a PR. CI runs `go test -race`, `go vet`, `gofmt`,
-staticcheck, a build and a docker integration job driving the real binary
-through `testdata/integration/run.sh`, and has to be green to merge. What changed between
-published versions is in [CHANGELOG.md](CHANGELOG.md).
+keep the branch short, open a PR. What changed between published versions is in
+[CHANGELOG.md](CHANGELOG.md).
+
+```sh
+go test -race ./...
+go vet ./...
+gofmt -l .
+go build ./...
+```
 
 The test suite needs neither git, docker nor node: every external command goes
-through an injectable runner, which keeps it fast and hermetic. Please keep it
-that way.
+through an injectable runner (`internal/execx`), which keeps it fast and
+hermetic. Please keep it that way.
+
+CI runs those four, plus govulncheck, staticcheck, and a docker integration job
+driving the real binary through `testdata/integration/run.sh` (create, backup
+refresh, list, remove, doctor, clean); it has to be green to merge. One thing
+neither covers, to check by hand: `wtm create <project> <branch> --no-start`
+leaves the `*.env` files and the `.git-container` and `.db-snapshot` symlinks in
+the worktree.
 
 Publishing a version is a changelog entry and a tag:
 

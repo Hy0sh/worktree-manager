@@ -32,11 +32,14 @@ var (
 	// Only what compose built: a pulled image carries no project label, so the
 	// postgres the main stack also runs can never be caught by this sweep.
 	imageSweep = sweep{noun: "image", list: []string{"images", "-q"}, rm: []string{"rmi"}}
+	// Listed, never dropped: a worktree that vanished leaves stopped containers
+	// at most, one that only switched branches leaves them running.
+	runningSweep = sweep{noun: "container", list: []string{"ps", "-q"}}
 )
 
-// removeLeftovers drops the stack's volumes and built images once the worktree
-// is gone. `docker compose down`, which stop runs, keeps both: without this
-// every removal leaves its database and gigabytes of images behind forever.
+// removeLeftovers drops what `down --volumes` leaves once the worktree is gone:
+// the images compose built, and volumes no service listed today still mounts.
+// Without it every removal leaves gigabytes of images behind forever.
 func removeLeftovers(ctx context.Context, o Options, wt stack.Worktree) {
 	removeSwept(ctx, o, wt, volumeSweep)
 	removeSwept(ctx, o, wt, imageSweep)
@@ -192,11 +195,18 @@ func writeNameOverride(o Options, wt stack.Worktree, dest string) error {
 	return nil
 }
 
+// mountsSnapshot says the database restores the central dump through a mount.
+// A file-based engine has no database service: its dump is copied into the
+// worktree, and nothing reads the backup directory at runtime.
+func (o Options) mountsSnapshot() bool {
+	return o.Project.Dump && !dbengine.IsFileBased(o.Project.BackupConfig().DBEngine)
+}
+
 // withSnapshotMount adds the dump mount of .wtm-snapshot.yaml to the ports
 // override: a database first brought up without it initialises empty, and
 // initdb never runs again on a data directory that is not.
 func withSnapshotMount(o Options, ports string) string {
-	if !o.Project.Dump || dbengine.IsFileBased(o.Project.BackupConfig().DBEngine) {
+	if !o.mountsSnapshot() {
 		return ports
 	}
 	db := o.Project.BackupConfig().DBService
@@ -279,9 +289,7 @@ func composeFiles(o Options, dest string) ([]string, error) {
 	for _, f := range projectFiles {
 		files = append(files, filepath.Join(dest, filepath.Base(f)))
 	}
-	// A file-based engine has no snapshot override: the generated file would
-	// reference a database service the project does not have.
-	if o.Project.Dump && !dbengine.IsFileBased(o.Project.BackupConfig().DBEngine) {
+	if o.mountsSnapshot() {
 		files = append(files, filepath.Join(dest, snapshotOverride))
 	}
 	if path := filepath.Join(dest, portsOverride); fileExists(path) {
@@ -293,19 +301,4 @@ func composeFiles(o Options, dest string) ([]string, error) {
 func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
-}
-
-// runningContainers lists what docker still runs under a stack's compose
-// project. A worktree that really vanished leaves stopped containers at most;
-// one that only switched branches leaves them running, since nobody stopped it.
-func runningContainers(ctx context.Context, o Options, wt stack.Worktree) []string {
-	res, err := o.Runner.Run(ctx, execx.Cmd{
-		Name: "docker",
-		Args: []string{"ps", "-q", "--filter",
-			"label=com.docker.compose.project=" + o.projectName(wt)},
-	})
-	if err != nil {
-		return nil
-	}
-	return strings.Fields(res.Stdout)
 }

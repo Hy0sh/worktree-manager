@@ -281,7 +281,7 @@ func TestPortClashNamesTheNeighbourAndItsPort(t *testing.T) {
 	f := twoDBFixture(t)
 	o := f.opts("feat/y")
 	o.Project.PortOffset = 1000
-	why := portClash(o)(2)
+	why := clashAt(t, f, o, 2)
 	for _, want := range []string{"26434", "feat/x", "db_test", "db"} {
 		if !strings.Contains(why, want) {
 			t.Fatalf("reason should carry %q, got %q", want, why)
@@ -307,7 +307,7 @@ func TestPortClashNamesTheSameNeighbourEveryRun(t *testing.T) {
 	o := f.opts("feat/y")
 	o.Project.PortOffset = 1000
 	for i := 0; i < 20; i++ {
-		if why := portClash(o)(2); !strings.Contains(why, "feat/a") {
+		if why := clashAt(t, f, o, 2); !strings.Contains(why, "feat/a") {
 			t.Fatalf("the first neighbour in order must be the one named, got %q", why)
 		}
 	}
@@ -332,7 +332,7 @@ func TestPortClashSeesAnotherProjectsWorktree(t *testing.T) {
 	}
 	o := f.opts("feat/y")
 	o.Project.PortOffset = 1000
-	why := portClash(o)(3)
+	why := clashAt(t, f, o, 3)
 	for _, want := range []string{"26436", "other", "feat/z", "port_offset"} {
 		if !strings.Contains(why, want) {
 			t.Fatalf("reason should carry %q, got %q", want, why)
@@ -344,7 +344,7 @@ func TestPortClashIsSilentOnAFreeIndex(t *testing.T) {
 	f := twoDBFixture(t)
 	o := f.opts("feat/y")
 	o.Project.PortOffset = 1000
-	if why := portClash(o)(3); why != "" {
+	if why := clashAt(t, f, o, 3); why != "" {
 		t.Fatalf("index 3 clashes with nothing, got %q", why)
 	}
 }
@@ -355,7 +355,42 @@ func TestPortClashIgnoresTheBranchBeingResolved(t *testing.T) {
 	f := twoDBFixture(t)
 	o := f.opts("feat/x")
 	o.Project.PortOffset = 1000
-	if why := portClash(o)(1); why != "" {
+	if why := clashAt(t, f, o, 1); why != "" {
 		t.Fatalf("feat/x owns index 1, got %q", why)
+	}
+}
+
+// clashAt asks portClash about index n against the registry as it stands, the
+// way the resolver does under its lock.
+func clashAt(t *testing.T, f *fixture, o Options, n int) string {
+	t.Helper()
+	cfg, err := config.Load(f.cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return portClash(o)(cfg, n)
+}
+
+// The ports are read once, before the lock; the indices are read from the
+// registry handed in, so one recorded meanwhile is seen.
+func TestPortClashJudgesTheRegistryItIsGiven(t *testing.T) {
+	f := twoDBFixture(t)
+	o := f.opts("feat/y")
+	o.Project.PortOffset = 1000
+	check := portClash(o)
+	if err := config.WithLock(f.cfgPath, func(c *config.Config) error {
+		p := c.Projects["myapp"]
+		p.WorktreeIndices["feat/meanwhile"] = 2
+		c.Projects["myapp"] = p
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	cfg, err := config.Load(f.cfgPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if why := check(cfg, 3); !strings.Contains(why, "feat/meanwhile") {
+		t.Fatalf("index 3 clashes with the index 2 recorded meanwhile, got %q", why)
 	}
 }
