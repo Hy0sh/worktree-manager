@@ -382,7 +382,8 @@ func newRemoveCmd(a *app) *cobra.Command {
 func removeAllQuestion(entries []worktree.Entry) string {
 	adopted := 0
 	for _, e := range entries {
-		if !e.UnderRoot {
+		// Remove keeps a switched worktree's directory too, wtm-created or not.
+		if !e.UnderRoot || e.Holds != "" {
 			adopted++
 		}
 	}

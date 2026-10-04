@@ -37,9 +37,9 @@ var (
 	runningSweep = sweep{noun: "container", list: []string{"ps", "-q"}}
 )
 
-// removeLeftovers drops the stack's volumes and built images once the worktree
-// is gone. `docker compose down`, which stop runs, keeps both: without this
-// every removal leaves its database and gigabytes of images behind forever.
+// removeLeftovers drops what `down --volumes` leaves once the worktree is gone:
+// the images compose built, and volumes no service listed today still mounts.
+// Without it every removal leaves gigabytes of images behind forever.
 func removeLeftovers(ctx context.Context, o Options, wt stack.Worktree) {
 	removeSwept(ctx, o, wt, volumeSweep)
 	removeSwept(ctx, o, wt, imageSweep)

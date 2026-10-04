@@ -136,14 +136,16 @@ func (a *app) adoptableBranches(name string) []string {
 	if err != nil {
 		return nil
 	}
-	client := &stack.Client{Runner: a.runner, Dir: p.Dir, Out: io.Discard}
+	client := &stack.Client{Runner: a.runner, Dir: p.Dir, Out: io.Discard, Managed: managed(p),
+		Paths: p.WorktreePaths}
 	worktrees, err := client.All(context.Background())
 	if err != nil {
 		return nil
 	}
 	var branches []string
 	for _, w := range worktrees {
-		if !w.UnderRoot && !w.Detached && p.WorktreeIndices[w.Branch] == 0 {
+		// One switched outside wtm already has a stack, which adopt refuses to double.
+		if !w.UnderRoot && !w.Detached && p.WorktreeIndices[w.Branch] == 0 && client.RecordedAt(w) == "" {
 			branches = append(branches, w.Branch)
 		}
 	}
@@ -164,6 +166,10 @@ func (a *app) worktreeBranches(name string) []string {
 	branches := make([]string, 0, len(worktrees))
 	for _, w := range worktrees {
 		branches = append(branches, w.Branch)
+		// Switched outside wtm, either name reaches its stack.
+		if w.Holds != "" {
+			branches = append(branches, w.Holds)
+		}
 	}
 	return branches
 }

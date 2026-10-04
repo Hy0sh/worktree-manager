@@ -79,10 +79,8 @@ type repoWorktrees struct {
 	// outside wtm. Each pushes new worktrees one index further out, and makes a
 	// foreign worktree on that branch read as managed.
 	Stale []string
-	// Drifted are the worktrees still standing where a branch was recorded but
-	// holding another one now, listed under the recorded branch (Holds says the
-	// other). They look exactly like Stale to git, and releasing one takes down
-	// a stack somebody is working in.
+	// Drifted are worktrees switched outside wtm, under their recorded branch.
+	// Read as Stale, releasing one took down a stack somebody works in.
 	Drifted []stack.Worktree
 	// Abandoned are the directories still on disk that git no longer lists,
 	// left by a pruned administrative directory. They hold no stack, and no
@@ -106,42 +104,26 @@ func (a *app) liveProjects(ctx context.Context, names []string) []repoWorktrees 
 		repo := filepath.Base(p.Dir)
 		live := make([]string, 0, len(worktrees))
 		var unindexed []string
+		var drifted []stack.Worktree
 		present := map[string]bool{}
 		for _, wt := range worktrees {
 			present[wt.Branch] = true
+			// Switched outside wtm, listed under its recorded branch: neither
+			// stale for create to release nor an orphan stack for clean to drop.
+			if wt.Holds != "" {
+				drifted = append(drifted, wt)
+			}
 			if idx := p.WorktreeIndices[wt.Branch]; idx > 0 {
 				live = append(live, stack.ProjectName(repo, idx, wt.Branch))
 				continue
 			}
-			// Switched outside wtm, its stack is known by the old name below.
-			if client.RecordedAt(wt) == "" {
-				unindexed = append(unindexed, wt.Branch)
-			}
+			unindexed = append(unindexed, wt.Branch)
 		}
 		// A project with no compose file starts no stack, so none of its
 		// worktrees ever gets an index and nothing docker holds can be theirs:
 		// counting them would hold back every report below, forever.
 		if !compose.Has(p.Dir) {
 			unindexed = nil
-		}
-		// A worktree still standing where a branch was recorded did not vanish:
-		// somebody switched branches in it, which takes the old name out of
-		// git's listing while the worktree, and its stack, are very much alive.
-		// All and not Worktrees: an adopted one holding an unrecorded branch is
-		// not listed there, and read as stale, the next create took it down.
-		all, err := client.All(ctx)
-		if err != nil {
-			continue
-		}
-		var drifted []stack.Worktree
-		for _, wt := range all {
-			if recorded := client.RecordedAt(wt); recorded != "" {
-				wt.Holds, wt.Branch = wt.Branch, recorded
-				drifted = append(drifted, wt)
-				present[recorded] = true
-				// Its stack is a live one: counted as an orphan, clean dropped it.
-				live = append(live, stack.ProjectName(repo, p.WorktreeIndices[recorded], recorded))
-			}
 		}
 		var stale []string
 		for branch := range p.WorktreeIndices {
@@ -150,7 +132,6 @@ func (a *app) liveProjects(ctx context.Context, names []string) []repoWorktrees 
 			}
 		}
 		sort.Strings(stale)
-		sort.Slice(drifted, func(i, j int) bool { return drifted[i].Branch < drifted[j].Branch })
 		// A git that cannot answer already dropped the project above, so a
 		// failure here is the filesystem's: nothing to report either way.
 		abandoned, _ := client.Abandoned(ctx)

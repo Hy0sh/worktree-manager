@@ -89,14 +89,9 @@ func portEnv(o Options, wt stack.Worktree) []string {
 	return env
 }
 
-// portClash checks a candidate index against recorded worktrees only, since
-// those are the ones that can run at the same time as the new one, in every
+// portClash checks a candidate index against the recorded worktrees of every
 // project: offsets step by 1000, less than the spread of the ports they shift.
-// The stride and offsets stay put: changing either moves existing ports.
-//
-// Each project's ports are read here, outside the registry lock, since that
-// runs compose; the indices are read from the registry the lock holds, or two
-// creates at once each missed the other's.
+// Ports are read here, before the lock; indices from the registry it holds.
 func portClash(o Options) func(c *config.Config, n int) string {
 	services, stride, err := projectPorts(o)
 	if err != nil {

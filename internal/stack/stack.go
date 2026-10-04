@@ -25,6 +25,7 @@ type Client struct {
 	// branch of an adopted worktree on a detached HEAD, a rebase stopped on a
 	// conflict for one, which git lists with no branch at all.
 	Paths map[string]string
+	noted map[string]bool // worktrees FindByBranch already wrote a note about
 }
 
 // Up brings a worktree's stack up, env ("API_PORT=20087") interpolating ahead

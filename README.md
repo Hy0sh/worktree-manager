@@ -294,10 +294,12 @@ A worktree on a detached HEAD cannot be adopted: wtm keys a worktree by its
 branch, and there is none to key it by.
 
 That key is also why a bare `git switch -c` in an adopted worktree strands its
-stack: the stack stays filed under the old branch. `wtm list` shows it as
-`old (now on new)`, `stop`, `start` and `remove` reach it by either name, and
-`adopt` refuses to give that directory a second one. `wtm switch` is the way to
-move one to its next branch, typed from inside it:
+stack: the stack stays filed under the old branch. A stack belongs to the
+directory it was started in, so wtm follows it there: `wtm list` shows it as
+`old (now on new)`, `stop`, `start` and `remove` reach it by the branch the
+worktree holds, or by the old one while no other worktree has that checked out,
+and `adopt` refuses to give that directory a second one. `wtm switch` is the way
+to move one to its next branch, typed from inside it:
 
 ```sh
 wtm switch feat/next-task --from origin/main
@@ -620,8 +622,8 @@ the images their stacks built. Each of those lines carries the command that
 drops them.
 
 A switched worktree is not a leftover: its index and its stack stay, filed
-under the old branch, and `stop`, `start` and `remove` reach that stack by
-either name. Its line carries the command that moves the stack to the branch
+under the old branch, and `stop`, `start` and `remove` reach that stack by the
+branch the worktree holds. Its line carries the command that moves the stack to the branch
 the worktree now holds: `wtm switch <held>` from an adopted worktree; for a
 worktree wtm created, switching it back, or `wtm remove <old>` then
 `wtm start <held>`.

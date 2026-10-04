@@ -33,10 +33,9 @@ type Resolver struct {
 	Name       string // project name in the registry
 	RepoName   string // filepath.Base of the project directory
 	Out        io.Writer
-	// Conflicts says why index n must not be handed out, or "" when it may.
-	// The resolver knows nothing about ports; the worktree package does, and
-	// with a stride of 1 services one port apart collide on neighbouring indices.
-	// It is called under the registry lock, with the registry that lock holds.
+	// Conflicts says why index n must not be handed out, or "" when it may: with
+	// a stride of 1, services one port apart collide on neighbouring indices.
+	// It runs under the registry lock, given the registry that lock holds.
 	Conflicts func(c *config.Config, n int) string
 }
 

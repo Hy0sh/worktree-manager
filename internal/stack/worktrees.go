@@ -55,7 +55,8 @@ func WorktreesRoot(repoDir string) string {
 }
 
 // Worktrees lists the worktrees wtm manages, in git's own order: the ones it
-// created, plus the adopted ones its registry carries an index for.
+// created, plus the adopted ones its registry carries an index for. One
+// switched outside wtm is listed under the branch its stack is recorded under.
 func (c *Client) Worktrees(ctx context.Context) ([]Worktree, error) {
 	all, err := c.All(ctx)
 	if err != nil {
@@ -63,6 +64,9 @@ func (c *Client) Worktrees(ctx context.Context) ([]Worktree, error) {
 	}
 	out := make([]Worktree, 0, len(all))
 	for _, wt := range all {
+		if recorded := c.RecordedAt(wt); recorded != "" {
+			wt.Holds, wt.Branch = wt.Branch, recorded
+		}
 		if wt.UnderRoot || c.Managed[wt.Branch] {
 			out = append(out, wt)
 		}
@@ -157,21 +161,23 @@ func (c *Client) FindByBranch(ctx context.Context, branch string) (Worktree, err
 		return Worktree{}, err
 	}
 	for _, wt := range wts {
-		if wt.Branch == branch {
-			if wt.Detached && c.Out != nil {
-				fmt.Fprintf(c.Out, "note: %s is on a detached HEAD at %s, not on branch %s\n",
-					wt.Path, wt.ShortHead(), branch)
-			}
-			return wt, nil
+		if wt.Branch != branch {
+			continue
 		}
-	}
-	// git no longer lists the branch, but its worktree may still stand where
-	// it was recorded, switched to another branch with its stack still up.
-	if wt, ok := c.drifted(ctx, branch); ok {
-		if c.Out != nil {
+		switch {
+		case c.Out == nil || c.noted[wt.Path]:
+		case wt.Detached:
+			fmt.Fprintf(c.Out, "note: %s is on a detached HEAD at %s, not on branch %s\n",
+				wt.Path, wt.ShortHead(), branch)
+		case wt.Holds != "":
 			fmt.Fprintf(c.Out, "note: %s now holds %s, this is the stack it had on %s (%s)\n",
 				wt.Path, wt.Holds, branch, DriftRemedy(wt))
 		}
+		// One note per command: start and prepareStack both look the worktree up.
+		if c.noted == nil {
+			c.noted = map[string]bool{}
+		}
+		c.noted[wt.Path] = true
 		return wt, nil
 	}
 	known := make([]string, 0, len(wts))
@@ -185,28 +191,6 @@ func (c *Client) FindByBranch(ctx context.Context, branch string) (Worktree, err
 	return Worktree{}, fmt.Errorf("no worktree for branch %q (%s)", branch, list)
 }
 
-// drifted finds the worktree standing at branch's recorded path while holding
-// another branch, and returns it under branch, the name its stack answers to.
-func (c *Client) drifted(ctx context.Context, branch string) (Worktree, bool) {
-	at := c.Paths[branch]
-	if at == "" || !c.Managed[branch] {
-		return Worktree{}, false
-	}
-	all, err := c.All(ctx)
-	if err != nil {
-		return Worktree{}, false
-	}
-	for _, wt := range all {
-		// RecordedAt's verdict, so remove, doctor and list agree on what drifted:
-		// one that read stale to doctor lost its running-stack guard here.
-		if filepath.Clean(wt.Path) == filepath.Clean(at) && c.RecordedAt(wt) == branch {
-			wt.Holds, wt.Branch = wt.Branch, branch
-			return wt, true
-		}
-	}
-	return Worktree{}, false
-}
-
 // Manage makes branch's worktree visible to the listing before its index is
 // recorded, which an adoption or a switch needs to find the worktree it acts on.
 func (c *Client) Manage(branch string) {
@@ -214,6 +198,17 @@ func (c *Client) Manage(branch string) {
 		c.Managed = map[string]bool{}
 	}
 	c.Managed[branch] = true
+}
+
+// Rekey files old's recorded path under branch, as config.RekeyWorktree does
+// in the registry: this copy would otherwise still list the worktree as old's.
+func (c *Client) Rekey(old, branch string) {
+	if at, ok := c.Paths[old]; ok {
+		delete(c.Paths, old)
+		c.Paths[branch] = at
+	}
+	delete(c.Managed, old)
+	c.Manage(branch)
 }
 
 // DriftRemedy says how to give a switched worktree's stack to the branch it
@@ -226,26 +221,27 @@ func DriftRemedy(wt Worktree) string {
 	return fmt.Sprintf("`wtm switch %s` from there moves it to the branch it holds", wt.Holds)
 }
 
-// RecordedAt is the branch the stack of wt is recorded under when wt holds a
-// branch with no stack of its own, "" otherwise. A branch is checked out in
-// one worktree at most, so naming the branch it holds names that stack.
+// RecordedAt is the branch wt's stack is recorded under when wt now holds
+// another branch, "" otherwise. A branch is checked out in one worktree at
+// most, so naming the branch it holds names that stack.
 func (c *Client) RecordedAt(wt Worktree) string {
-	if c.Managed[wt.Branch] {
-		return ""
-	}
-	// Sorted, and only an indexed branch: two entries on one path (a registry
-	// older than this check) otherwise made the answer depend on map order.
-	branches := make([]string, 0, len(c.Paths))
-	for b := range c.Paths {
-		branches = append(branches, b)
-	}
-	sort.Strings(branches)
-	for _, b := range branches {
-		if b != wt.Branch && c.Managed[b] && filepath.Clean(c.Paths[b]) == filepath.Clean(wt.Path) {
-			return b
+	// By path, the stack's real home: a branch can move to another worktree,
+	// the directory a stack was started in cannot. Sorted, for a registry that
+	// recorded two branches at one path, where wt's own branch wins.
+	var recorded []string
+	for b, at := range c.Paths {
+		if c.Managed[b] && filepath.Clean(at) == filepath.Clean(wt.Path) {
+			if b == wt.Branch {
+				return ""
+			}
+			recorded = append(recorded, b)
 		}
 	}
-	return ""
+	if len(recorded) == 0 {
+		return ""
+	}
+	sort.Strings(recorded)
+	return recorded[0]
 }
 
 // Abandoned lists the directories under WorktreesRoot that still carry a

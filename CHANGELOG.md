@@ -18,9 +18,13 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 - A worktree switched by a bare `git switch` stranded its stack, still filed
   under the old branch: `stop`, `start` and `remove` answered "no worktree for
   branch" under either name, `wtm list` offered the worktree for adoption, and
-  adopting it gave the directory a second stack. Naming either branch now
-  reaches that stack, `remove` takes it and keeps the checkout, `list` shows it
-  as `old (now on new)`, and `adopt` refuses with the `wtm switch` that moves it.
+  adopting it gave the directory a second stack. A stack now belongs to the
+  directory it was started in: the branch the worktree holds reaches it (the
+  old one too, while no other worktree has it checked out), `remove` takes it
+  and keeps the checkout, `list` shows it as `old (now on new)`, `adopt` refuses
+  with the `wtm switch` that moves it, and a removal create's sweep inferred
+  refuses a worktree that still stands. A branch checked out in another
+  worktree since no longer reaches the stack it left behind.
 - An adopted worktree switched that way was reported as stale by `wtm doctor`
   and its stack as an orphan: once that stack was stopped the next `wtm create`
   released its index, and `wtm clean` took the stack down, database included.

@@ -68,6 +68,7 @@ func Switch(ctx context.Context, o Options) error {
 			return fmt.Errorf("moving the index of %s to %s (rerun the same command): %w", old, o.Branch, err)
 		}
 		o.logf("stack of %s dropped, its index now belongs to %s", old, o.Branch)
+		o.Stack.Rekey(old, o.Branch)
 	}
 
 	o.Stack.Manage(o.Branch)

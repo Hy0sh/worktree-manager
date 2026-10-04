@@ -336,7 +336,8 @@ func Start(ctx context.Context, o Options) error {
 	return nil
 }
 
-// Stop takes the stack down and leaves the worktree in place.
+// Stop halts the stack's containers, keeping them for the next start, and
+// leaves the worktree in place.
 func Stop(ctx context.Context, o Options) error {
 	wt, err := o.Stack.FindByBranch(ctx, o.Branch)
 	if err != nil {
@@ -370,6 +371,12 @@ func Remove(ctx context.Context, o Options) error {
 	// as it was, stack included.
 	if err := plan.refusal(o); err != nil {
 		return err
+	}
+	// A sweep releases what looks vanished; a worktree that switched branches
+	// still stands, with its stack and its database.
+	if o.Inferred && plan.wt.Holds != "" {
+		return fmt.Errorf("branch %s has no worktree of its own, but its stack's worktree %s still stands, "+
+			"holding %s: it switched branches, and nothing was removed", o.Branch, plan.wt.Path, plan.wt.Holds)
 	}
 	switch plan.Kind {
 	case RemoveStale:
