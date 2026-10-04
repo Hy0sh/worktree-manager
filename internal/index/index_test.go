@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 )
 
@@ -139,7 +140,7 @@ func TestResolveSkipsAnIndexTheCallerRefuses(t *testing.T) {
 	r, path, _ := newResolver(t, map[string]int{"feat/a": 1}, []string{})
 	var out strings.Builder
 	r.Out = &out
-	r.Conflicts = func(n int) string {
+	r.Conflicts = func(_ *config.Config, n int) string {
 		if n == 2 {
 			return "db would publish 26434, which feat/a already publishes for db_test"
 		}
@@ -160,6 +161,31 @@ func TestResolveSkipsAnIndexTheCallerRefuses(t *testing.T) {
 	}
 }
 
+// Two creates at once each judged its ports against a registry read before the
+// other recorded its index. The check gets the registry the lock holds.
+func TestConflictsSeeTheRegistryTheLockHolds(t *testing.T) {
+	r, path, _ := newResolver(t, map[string]int{"feat/a": 1}, []string{})
+	var seen map[string]int
+	r.Conflicts = func(c *config.Config, n int) string {
+		seen = c.Projects[r.Name].WorktreeIndices
+		return ""
+	}
+	if err := config.WithLock(path, func(c *config.Config) error {
+		p := c.Projects[r.Name]
+		p.WorktreeIndices["feat/meanwhile"] = 2
+		c.Projects[r.Name] = p
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := r.Resolve(context.Background(), "feat/b", 0, MayAllocate); err != nil {
+		t.Fatalf("Resolve: %v", err)
+	}
+	if seen["feat/meanwhile"] != 2 {
+		t.Fatalf("the check must see what was recorded before the lock, saw %v", seen)
+	}
+}
+
 func TestResolveWithoutConflictsBehavesAsBefore(t *testing.T) {
 	r, _, _ := newResolver(t, map[string]int{"feat/a": 1}, []string{})
 	got, err := r.Resolve(context.Background(), "feat/b", 0, MayAllocate)
@@ -175,7 +201,7 @@ func TestResolveFallbackAsksTheCallerToo(t *testing.T) {
 	r, path, _ := newResolver(t, map[string]int{"feat/a": 1}, []string{})
 	var out strings.Builder
 	r.Out = &out
-	r.Conflicts = func(n int) string {
+	r.Conflicts = func(_ *config.Config, n int) string {
 		if n == 2 {
 			return "db would publish 26434, which feat/a already publishes for db_test"
 		}

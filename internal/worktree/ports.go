@@ -88,61 +88,65 @@ func portEnv(o Options, wt stack.Worktree) []string {
 // those are the ones that can run at the same time as the new one, in every
 // project: offsets step by 1000, less than the spread of the ports they shift.
 // The stride and offsets stay put: changing either moves existing ports.
-func portClash(o Options) func(n int) string {
+//
+// Each project's ports are read here, outside the registry lock, since that
+// runs compose; the indices are read from the registry the lock holds, or two
+// creates at once each missed the other's.
+func portClash(o Options) func(c *config.Config, n int) string {
 	services, stride, err := projectPorts(o)
 	if err != nil {
-		return func(int) string { return "" }
+		return func(*config.Config, int) string { return "" }
 	}
 	cfg, err := config.Load(o.Resolver.ConfigPath)
 	if err != nil {
-		return func(int) string { return "" }
+		return func(*config.Config, int) string { return "" }
 	}
-	type neighbour struct {
-		who, remedy string
-		sameProject bool
-		index       int
-		ports       []stack.Allocation
+	type published struct {
+		services []compose.ServicePort
+		stride   int
 	}
-	var neighbours []neighbour
-	// Sorted twice over: map order would name a different neighbour each run,
-	// for what is one and the same clash.
+	ports := map[string]published{o.Name: {services, stride}}
 	for _, name := range cfg.Names() {
-		p := cfg.Projects[name]
-		theirServices, theirStride := services, stride
-		prefix, remedy := "", "raise portStride in .wtcrc.json to spread the indices further apart"
-		if name != o.Name {
-			if theirServices, err = compose.MergedServicePorts(p.Dir); err != nil {
-				continue
-			}
-			theirStride = stack.Stride(p.Dir)
-			prefix, remedy = name+"/", "raise port_offset for one of the two projects in config.json"
+		if name == o.Name {
+			continue
 		}
-		for _, branch := range slices.Sorted(maps.Keys(p.WorktreeIndices)) {
-			if name == o.Name && branch == o.Branch {
-				continue
-			}
-			idx := p.WorktreeIndices[branch]
-			theirs, err := stack.Allocate(theirServices, idx, theirStride, p.PortOffset)
-			if err != nil {
-				continue
-			}
-			neighbours = append(neighbours, neighbour{prefix + branch, remedy, name == o.Name, idx, theirs})
+		dir := cfg.Projects[name].Dir
+		if theirs, err := compose.MergedServicePorts(dir); err == nil {
+			ports[name] = published{theirs, stack.Stride(dir)}
 		}
 	}
-	return func(n int) string {
+	return func(c *config.Config, n int) string {
 		mine, err := stack.Allocate(services, n, stride, o.Project.PortOffset)
 		if err != nil {
 			return ""
 		}
-		for _, nb := range neighbours {
-			if nb.sameProject && nb.index == n {
+		// Sorted twice over: map order would name a different neighbour each run,
+		// for what is one and the same clash.
+		for _, name := range c.Names() {
+			their, ok := ports[name]
+			if !ok {
 				continue
 			}
-			for _, a := range mine {
-				for _, b := range nb.ports {
-					if a.Port == b.Port {
-						return fmt.Sprintf("%s would publish %d, which %s already publishes for %s (%s)",
-							a.Service, a.Port, nb.who, b.Service, nb.remedy)
+			p := c.Projects[name]
+			prefix, remedy := "", "raise portStride in .wtcrc.json to spread the indices further apart"
+			if name != o.Name {
+				prefix, remedy = name+"/", "raise port_offset for one of the two projects in config.json"
+			}
+			for _, branch := range slices.Sorted(maps.Keys(p.WorktreeIndices)) {
+				idx := p.WorktreeIndices[branch]
+				if name == o.Name && (branch == o.Branch || idx == n) {
+					continue
+				}
+				theirs, err := stack.Allocate(their.services, idx, their.stride, p.PortOffset)
+				if err != nil {
+					continue
+				}
+				for _, a := range mine {
+					for _, b := range theirs {
+						if a.Port == b.Port {
+							return fmt.Sprintf("%s would publish %d, which %s already publishes for %s (%s)",
+								a.Service, a.Port, prefix+branch, b.Service, remedy)
+						}
 					}
 				}
 			}

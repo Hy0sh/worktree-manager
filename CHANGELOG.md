@@ -26,6 +26,11 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
   released its index, and `wtm clean` took the stack down, database included.
   It is now reported as switched, with the command that moves its stack, and
   neither touches it.
+- Two worktrees given an index at the same moment (two agents adopting at once)
+  could still publish the same host port with a stride of 1: the registry lock
+  kept them off the same index, but each checked its ports against a registry
+  read before the other recorded its own. The check now reads the registry the
+  lock holds.
 
 ## [0.26.0] - 2026-10-02
 
