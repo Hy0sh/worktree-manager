@@ -197,7 +197,9 @@ func (c *Client) drifted(ctx context.Context, branch string) (Worktree, bool) {
 		return Worktree{}, false
 	}
 	for _, wt := range all {
-		if filepath.Clean(wt.Path) == filepath.Clean(at) && wt.Branch != branch {
+		// RecordedAt's verdict, so remove, doctor and list agree on what drifted:
+		// one that read stale to doctor lost its running-stack guard here.
+		if filepath.Clean(wt.Path) == filepath.Clean(at) && c.RecordedAt(wt) == branch {
 			wt.Holds, wt.Branch = wt.Branch, branch
 			return wt, true
 		}
@@ -231,8 +233,17 @@ func (c *Client) RecordedAt(wt Worktree) string {
 	if c.Managed[wt.Branch] {
 		return ""
 	}
-	if b := BranchAt(c.Paths, wt.Path); b != wt.Branch && c.Managed[b] {
-		return b
+	// Sorted, and only an indexed branch: two entries on one path (a registry
+	// older than this check) otherwise made the answer depend on map order.
+	branches := make([]string, 0, len(c.Paths))
+	for b := range c.Paths {
+		branches = append(branches, b)
+	}
+	sort.Strings(branches)
+	for _, b := range branches {
+		if b != wt.Branch && c.Managed[b] && filepath.Clean(c.Paths[b]) == filepath.Clean(wt.Path) {
+			return b
+		}
 	}
 	return ""
 }

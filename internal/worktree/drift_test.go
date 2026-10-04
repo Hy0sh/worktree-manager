@@ -80,6 +80,29 @@ func TestRemovingADriftedStackKeepsTheCheckout(t *testing.T) {
 	}
 }
 
+// When the branch it holds has an index of its own, doctor does not call it
+// drifted but stale, and create's sweep removes it as Inferred: the removal
+// must take the stale path, whose running-stack guard refuses to tear it down.
+func TestADriftOnAnIndexedBranchKeepsTheRunningStackGuard(t *testing.T) {
+	f, path := driftedFixture(t)
+	f.managed["feat/next"] = true
+	inner := f.fake.Handler
+	f.fake.Handler = func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(c.String(), "ps -q") {
+			return execx.Result{Stdout: "abc123\n"}, nil
+		}
+		return inner(c)
+	}
+	o := f.driftedOpts("feat/old", path)
+	o.Inferred = true
+	if err := Remove(context.Background(), o); err == nil || !strings.Contains(err.Error(), "switched branches") {
+		t.Fatalf("the guard should refuse, got %v", err)
+	}
+	if lastCall(f, "down") != "" {
+		t.Fatalf("nothing may be taken down, ran %v", f.fake.Lines())
+	}
+}
+
 // Adopting it again would give the directory a second stack and orphan the
 // first, which `wtm list` used to invite by counting it as left to adopt.
 func TestADriftedWorktreeIsNeitherAdoptableNorListedAsSuch(t *testing.T) {
