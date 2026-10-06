@@ -1,8 +1,11 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"os/signal"
+	"syscall"
 	"text/tabwriter"
 	"time"
 
@@ -57,7 +60,12 @@ func newBackupCmd(a *app) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return a.manager().Refresh(cmd.Context(), name, p)
+			// Killed outright by a Ctrl-C, wtm skipped the cleanup of what the
+			// refresh started. Caught, it cancels and cleans up; a second one quits.
+			ctx, stop := signal.NotifyContext(cmd.Context(), os.Interrupt, syscall.SIGTERM)
+			defer stop()
+			context.AfterFunc(ctx, stop)
+			return a.manager().Refresh(ctx, name, p)
 		},
 	}
 

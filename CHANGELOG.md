@@ -6,6 +6,14 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Fixed
+
+- A `wtm backup refresh` stopped by Ctrl-C or SIGTERM left behind what it had
+  started: the database container, the temporary database and the network.
+  The signal killed wtm before its cleanup ran. It now cancels the refresh,
+  interrupts the running command (so `compose run --rm` still removes its
+  container) and takes down what it started; a second Ctrl-C quits at once.
+
 ## [0.27.0] - 2026-10-04
 
 ### Fixed

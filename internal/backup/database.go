@@ -50,6 +50,8 @@ func (m *Manager) ensureUp(ctx context.Context, name string, p config.Project, c
 // network are wtm's.
 func (m *Manager) cleanupStarted(ctx context.Context, p config.Project, cfg config.Backup, existing, wasRunning map[string]bool) func() {
 	return func() {
+		// An interrupted refresh still takes down what it started.
+		ctx := context.WithoutCancel(ctx)
 		var cmds [][]string
 		for _, service := range m.startedServices(ctx, p, cfg, wasRunning) {
 			// A service that already had a container keeps it: the developer
