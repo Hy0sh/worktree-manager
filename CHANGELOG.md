@@ -6,6 +6,8 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+## [0.27.1] - 2026-10-07
+
 ### Fixed
 
 - A `wtm backup refresh` stopped by Ctrl-C or SIGTERM left behind what it had
@@ -1252,7 +1254,8 @@ First tagged release. The whole worktree lifecycle behind one binary:
   identical so worktrees created with it keep working.
 - A project without a compose file is not an error, there is simply no stack.
 
-[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.27.0...HEAD
+[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.27.1...HEAD
+[0.27.1]: https://github.com/Hy0sh/worktree-manager/compare/v0.27.0...v0.27.1
 [0.27.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.25.0...v0.26.0
 [0.25.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.24.0...v0.25.0
