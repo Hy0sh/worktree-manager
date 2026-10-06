@@ -131,7 +131,7 @@ func (m *Manager) Refresh(ctx context.Context, name string, p config.Project) er
 	}
 	// From here the throwaway database may exist, so always try to drop it.
 	defer func() {
-		_, _ = m.execInDB(ctx, p, cfg, eng.DropTempDBArgs(cfg.DBUser, db))
+		_, _ = m.execInDB(context.WithoutCancel(ctx), p, cfg, eng.DropTempDBArgs(cfg.DBUser, db))
 	}()
 
 	if _, err := m.execInDB(ctx, p, cfg, eng.DropTempDBArgs(cfg.DBUser, db)); err != nil {

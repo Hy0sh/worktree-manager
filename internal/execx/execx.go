@@ -122,6 +122,9 @@ type OSRunner struct{}
 
 func (r OSRunner) Run(ctx context.Context, c Cmd) (Result, error) {
 	cmd := exec.CommandContext(ctx, c.Name, c.Args...)
+	// Killed, `compose run --rm` leaves its container behind; interrupted, as a
+	// Ctrl-C would, it removes it.
+	cmd.Cancel = func() error { return cmd.Process.Signal(os.Interrupt) }
 	cmd.Dir = c.Dir
 	if len(c.Env) > 0 {
 		cmd.Env = append(os.Environ(), c.Env...)

@@ -59,6 +59,36 @@ func TestRefreshRunsFullSequence(t *testing.T) {
 	}
 }
 
+// A Ctrl-C during the migration cancels the refresh: the temporary database
+// and the stack it brought up still go, on a context the interrupt left alive.
+func TestRefreshCleansUpWhenInterrupted(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	f := &execx.Fake{Handler: func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(c.String(), "manage.py migrate") {
+			cancel()
+			return execx.Result{}, context.Canceled
+		}
+		return okHandler(c)
+	}}
+	m := newManager(t, f)
+	if err := m.Refresh(ctx, "my-app", newProject(t)); err == nil {
+		t.Fatal("an interrupted refresh must fail")
+	}
+
+	lines := f.Lines()
+	assertCleanupOfADownedStack(t, lines)
+	cleanup := f.Calls[len(f.Calls)-3:]
+	if !strings.Contains(cleanup[0].Line(), "DROP DATABASE") {
+		t.Fatalf("the temporary database must be dropped, got %v", lines)
+	}
+	for _, c := range cleanup {
+		if c.Cancelled {
+			t.Errorf("%q ran on the cancelled context: it fails before it starts", c.Line())
+		}
+	}
+}
+
 func TestRefreshStopsWhenStackCannotStart(t *testing.T) {
 	f := &execx.Fake{Handler: func(c execx.Cmd) (execx.Result, error) {
 		if strings.Contains(c.String(), "up -d") {
