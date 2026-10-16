@@ -5,10 +5,13 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/Hy0sh/worktree-manager/internal/execx"
 )
 
 // The Go module proxy answers with what `go install ...@latest` would resolve,
@@ -76,6 +79,41 @@ func olderVersion(local, published string) bool {
 	// Same numbers: semver puts a pre-release before the release it leads to,
 	// which is how a build installed from a commit is told the tag is out.
 	return localPre
+}
+
+// installedElsewhere returns where `go install` writes when exe, the binary
+// running, lives somewhere else, and "" otherwise or when go cannot say. A copy
+// on the PATH ahead of that directory made every upgrade exit 0 and change nothing.
+func (a *app) installedElsewhere(ctx context.Context, exe string) string {
+	ctx, cancel := context.WithTimeout(ctx, latestTimeout)
+	defer cancel()
+	res, err := a.runner.Run(ctx, execx.Cmd{Name: "go", Args: []string{"env", "GOBIN", "GOPATH"}})
+	if err != nil {
+		return ""
+	}
+	// An unset GOBIN prints as an empty first line, which trimming first would eat.
+	gobin, gopath, _ := strings.Cut(res.Stdout, "\n")
+	dir := strings.TrimSpace(gobin)
+	if dir == "" {
+		// go install writes to the first entry of a GOPATH list.
+		first, _, _ := strings.Cut(strings.TrimSpace(gopath), string(filepath.ListSeparator))
+		if first == "" {
+			return ""
+		}
+		dir = filepath.Join(first, "bin")
+	}
+	resolvedExe, err := filepath.EvalSymlinks(exe)
+	if err != nil {
+		return ""
+	}
+	resolvedDir, err := filepath.EvalSymlinks(dir)
+	if err != nil {
+		resolvedDir = dir
+	}
+	if filepath.Dir(resolvedExe) == resolvedDir {
+		return ""
+	}
+	return dir
 }
 
 var releaseTag = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)
