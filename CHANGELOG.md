@@ -6,6 +6,14 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Fixed
+
+- `wtm doctor` pointed at `go install ...@latest` even when that could not
+  change the wtm being run: a copy on the PATH ahead of `GOPATH/bin` kept its
+  old version while the upgrade exited 0. When it reports a newer release, it
+  now also says where `go install` writes if the running binary is elsewhere,
+  and which link to put in its place.
+
 ## [0.28.0] - 2026-10-16
 
 ### Changed
