@@ -1,10 +1,16 @@
 # Changelog
 
 What changed between published versions, and why. Versions follow
-[semantic versioning](https://semver.org): while the major stays at 0, a minor
-bump carries new commands or new behaviour, a patch bump carries fixes.
+[semantic versioning](https://semver.org): a major bump breaks a command, a
+flag or the `config.json` format, a minor bump carries new commands or new
+behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
+
+## [1.0.0] - 2026-10-16
+
+The commands, their flags and the `config.json` format are now stable: from
+here, breaking any of them takes a major version.
 
 ### Fixed
 
@@ -1271,7 +1277,8 @@ First tagged release. The whole worktree lifecycle behind one binary:
   identical so worktrees created with it keep working.
 - A project without a compose file is not an error, there is simply no stack.
 
-[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.28.0...HEAD
+[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.28.0...v1.0.0
 [0.28.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.27.1...v0.28.0
 [0.27.1]: https://github.com/Hy0sh/worktree-manager/compare/v0.27.0...v0.27.1
 [0.27.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.26.0...v0.27.0
