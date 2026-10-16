@@ -6,6 +6,15 @@ bump carries new commands or new behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+## [0.28.0] - 2026-10-16
+
+### Changed
+
+- The `wtm tui` dashboard runs on bubbletea 2.1.0 (from 2.0.10), which falls
+  back to default dimensions when the terminal reports a 0x0 size and no
+  longer risks a deadlock of its signal handling on exit.
+  `golang.org/x/term` moves to 0.47.0.
+
 ## [0.27.1] - 2026-10-07
 
 ### Fixed
@@ -1254,7 +1263,8 @@ First tagged release. The whole worktree lifecycle behind one binary:
   identical so worktrees created with it keep working.
 - A project without a compose file is not an error, there is simply no stack.
 
-[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.27.1...HEAD
+[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v0.28.0...HEAD
+[0.28.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.27.1...v0.28.0
 [0.27.1]: https://github.com/Hy0sh/worktree-manager/compare/v0.27.0...v0.27.1
 [0.27.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.26.0...v0.27.0
 [0.26.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.25.0...v0.26.0
