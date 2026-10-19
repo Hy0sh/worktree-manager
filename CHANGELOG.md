@@ -7,6 +7,16 @@ behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Added
+
+- `extra_databases` (`--extra-database`, repeatable) backs up other databases
+  of the same Postgres server along with the main one, for a seed that also
+  writes to, say, an identity provider's database. They are dumped as the
+  refresh leaves them, since their name sits in compose out of `{{database}}`'s
+  reach, and every new worktree restores them, creating any that is missing. A
+  refresh publishes the whole set or nothing, and `wtm backup remove` deletes
+  them with the main dump. A project without the setting behaves as before.
+
 ## [1.2.0] - 2026-10-19
 
 ### Added

@@ -38,7 +38,7 @@ func (m mongodb) ObjectCountArgs(_, db string) []string {
 
 // RestoreScript runs against the init phase's temporary mongod, which the
 // entrypoint starts without authentication on localhost.
-func (mongodb) RestoreScript(project string) string {
+func (mongodb) RestoreScript(project string, _ []string) string {
 	return restoreScript(project, `echo "wtm: restoring $dump into ${MONGO_INITDB_DATABASE:-test}"
 mongorestore --archive="$dump" --nsFrom='`+TempDBName(project)+`.*' --nsTo="${MONGO_INITDB_DATABASE:-test}.*"`)
 }

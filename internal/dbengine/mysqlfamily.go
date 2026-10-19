@@ -70,7 +70,7 @@ func (e mysqlFamily) ObjectCountArgs(_, db string) []string {
 // RestoreScript runs during the image's init phase: the entrypoint has
 // already created root with its password, and the temporary server listens
 // on the local socket only.
-func (e mysqlFamily) RestoreScript(project string) string {
+func (e mysqlFamily) RestoreScript(project string, _ []string) string {
 	return restoreScript(project, `echo "wtm: restoring $dump into `+strings.ReplaceAll(e.database, `"`, ``)+`"
 MYSQL_PWD=`+e.password+` `+e.client+` -uroot `+e.database+` < "$dump"`)
 }

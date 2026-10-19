@@ -37,8 +37,28 @@ func (postgres) ObjectCountArgs(user, db string) []string {
 // RestoreScript relies on docker-entrypoint-initdb.d only running on an empty
 // data directory: a fresh worktree restores, an existing one is left alone, and
 // nothing races the app's own migrate since healthy comes only after this.
-func (postgres) RestoreScript(project string) string {
-	return restoreScript(project, `echo "wtm: restoring $dump into ${POSTGRES_DB:-postgres}"
+func (postgres) RestoreScript(project string, extras []string) string {
+	restore := `echo "wtm: restoring $dump into ${POSTGRES_DB:-postgres}"
 pg_restore --no-owner --no-privileges --exit-on-error --single-transaction \
-  -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-postgres}" "$dump"`)
+  -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-postgres}" "$dump"`
+	for _, db := range extras {
+		restore += "\n" + restoreExtra(project, db)
+	}
+	return restoreScript(project, restore)
+}
+
+// restoreExtra creates the database only when missing: POSTGRES_DB may already
+// name it. A dump older than the setting has no file for it, which is no error.
+func restoreExtra(project, db string) string {
+	return `extra="/db-snapshot/` + project + `.` + db + `.dump"
+if [ -f "$extra" ]; then
+  echo "wtm: restoring $extra into ` + db + `"
+  psql -U "${POSTGRES_USER:-postgres}" -d "${POSTGRES_DB:-postgres}" -tAc \
+    "SELECT 1 FROM pg_database WHERE datname = '` + db + `'" | grep -q 1 \
+    || createdb -U "${POSTGRES_USER:-postgres}" "` + db + `"
+  pg_restore --no-owner --no-privileges --exit-on-error --single-transaction \
+    -U "${POSTGRES_USER:-postgres}" -d "` + db + `" "$extra"
+else
+  echo "wtm: no dump at $extra, ` + db + ` is left as it is"
+fi`
 }

@@ -91,6 +91,10 @@ type Backup struct {
 	// refresh, for a migrate_command that also seeds and needs a cache or object
 	// storage. Off by default; the refresh takes down whatever it started.
 	StartDependencies bool `json:"start_dependencies,omitempty"`
+	// ExtraDatabases are other databases of the same server dumped and restored
+	// with the main one (an identity provider's). Their name is fixed in compose,
+	// out of {{database}}'s reach, so they are dumped as the refresh leaves them.
+	ExtraDatabases []string `json:"extra_databases,omitempty"`
 	// MigrationsPath is the git pathspec of the migration files, used to tell
 	// whether a dump has fallen behind. The default matches the layout of
 	// Django, Prisma and MikroORM alike.
@@ -133,6 +137,19 @@ func (b Backup) Validate() error {
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf("incomplete backup configuration, missing %s (fill in the project's `backup` entry in config.json)", strings.Join(missing, " and "))
+	}
+	if len(b.ExtraDatabases) > 0 && b.DBEngine != "" && b.DBEngine != "postgres" {
+		return fmt.Errorf("extra_databases is supported with postgres only, not %s", b.DBEngine)
+	}
+	return ValidateExtraDatabases(b.ExtraDatabases)
+}
+
+// ValidateExtraDatabases guards names that end up in the restore shell script.
+func ValidateExtraDatabases(dbs []string) error {
+	for _, db := range dbs {
+		if err := ValidateIdentifier("extra database", db); err != nil {
+			return err
+		}
 	}
 	return nil
 }

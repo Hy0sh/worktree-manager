@@ -758,6 +758,18 @@ application service declares in `depends_on` for the duration, and taking back
 down whatever it started. It is off by default, since it costs containers and
 memory a plain migration has no use for.
 
+A seed may also write to a second database on the same server, the one an
+identity provider keeps its accounts in, while the app database stores their
+ids. `extra_databases` (`--extra-database auth`, repeatable) dumps each of them
+next to the main one, and a new worktree restores them all, creating a
+database that is not there yet. Postgres only. Their name is fixed in the
+compose file, where `{{database}}` cannot reach, so they are dumped as the
+refresh leaves them on the project's own database server, not through a
+throwaway copy: the seed runs against the real one and has to tolerate finding
+its accounts already there. A refresh publishes the whole set or nothing. An
+init script of the project's own that creates such a database runs after the
+restore, so it has to skip one that already exists.
+
 Nothing is asked of the project. wtm links `.db-snapshot` to the central
 backup directory, writes a restore script next to the dump, and generates a
 `.wtm-snapshot.yaml` in the worktree that mounts both into the database

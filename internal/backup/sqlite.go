@@ -62,7 +62,7 @@ func (m *Manager) publishFile(src, name string) error {
 		return err
 	}
 	defer in.Close()
-	return m.publish(name, func(w io.Writer) error {
+	return m.publish(name, []string{m.DumpPath(name)}, func(w io.Writer, _ int) error {
 		_, err := io.Copy(w, in)
 		return err
 	})
