@@ -84,6 +84,22 @@ func TestValidateNamesEveryMissingField(t *testing.T) {
 	}
 }
 
+func TestValidateKeepsExtraDatabasesToPostgresIdentifiers(t *testing.T) {
+	b := Backup{AppService: "backend", MigrateCommand: "make migrate", ExtraDatabases: []string{"auth"}}
+	if err := b.Validate(); err != nil {
+		t.Fatalf("postgres by default takes extras: %v", err)
+	}
+	b.DBEngine = "mysql"
+	if err := b.Validate(); err == nil {
+		t.Fatal("mysql has no restore for extras")
+	}
+	b.DBEngine = "postgres"
+	b.ExtraDatabases = []string{"auth'; drop"}
+	if err := b.Validate(); err == nil {
+		t.Fatal("a name landing in the restore script must be an identifier")
+	}
+}
+
 func TestExpandSubstitutesEveryPlaceholder(t *testing.T) {
 	got := Expand("postgresql://u@db/"+DatabasePlaceholder+"?schema="+DatabasePlaceholder, "tmp_db")
 	if want := "postgresql://u@db/tmp_db?schema=tmp_db"; got != want {

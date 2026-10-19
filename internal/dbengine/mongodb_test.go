@@ -45,7 +45,7 @@ func TestMongoDBCommandsAuthenticateConditionally(t *testing.T) {
 // the throwaway database name, remapped to the one the application expects.
 func TestMongoDBRestoreScriptRemapsTheDatabase(t *testing.T) {
 	eng, _ := ByName("mongodb")
-	script := eng.RestoreScript("myapp")
+	script := eng.RestoreScript("myapp", nil)
 	for _, want := range []string{
 		"/db-snapshot/myapp.dump",
 		`--nsFrom='myapp_snapshot_tmp.*'`,

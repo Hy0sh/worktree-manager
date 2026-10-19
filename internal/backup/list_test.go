@@ -41,7 +41,8 @@ func TestRemoveDeletesFilesAndIsSoftWhenAbsent(t *testing.T) {
 	if err := os.MkdirAll(filepath.Dir(m.DumpPath("alpha")), 0o755); err != nil {
 		t.Fatal(err)
 	}
-	for _, p := range []string{m.DumpPath("alpha"), m.MetaPath("alpha")} {
+	extra := ExtraDumpPath(m.Root, "alpha", "auth")
+	for _, p := range []string{m.DumpPath("alpha"), m.MetaPath("alpha"), extra} {
 		if err := os.WriteFile(p, []byte("x"), 0o644); err != nil {
 			t.Fatal(err)
 		}
@@ -50,8 +51,10 @@ func TestRemoveDeletesFilesAndIsSoftWhenAbsent(t *testing.T) {
 	if err != nil || !removed {
 		t.Fatalf("Remove: removed=%v err=%v", removed, err)
 	}
-	if _, err := os.Stat(m.DumpPath("alpha")); !os.IsNotExist(err) {
-		t.Fatal("dump should be gone")
+	for _, p := range []string{m.DumpPath("alpha"), extra} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Fatalf("%s should be gone", p)
+		}
 	}
 	removed, err = m.Remove("alpha")
 	if err != nil {

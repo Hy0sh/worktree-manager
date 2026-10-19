@@ -41,7 +41,10 @@ func (m *Manager) List(cfg *config.Config) ([]Info, error) {
 // error; the boolean says whether anything was actually deleted.
 func (m *Manager) Remove(name string) (bool, error) {
 	var removed bool
-	for _, path := range []string{m.DumpPath(name), m.MetaPath(name)} {
+	// The extra databases are globbed, not read from the project: the setting
+	// may have changed since they were dumped, or the project be gone already.
+	extras, _ := filepath.Glob(ExtraDumpPath(m.Root, name, "*"))
+	for _, path := range append([]string{m.DumpPath(name), m.MetaPath(name)}, extras...) {
 		err := os.Remove(path)
 		switch {
 		case err == nil:

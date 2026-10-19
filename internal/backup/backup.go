@@ -43,6 +43,12 @@ func DumpPath(root, name string) string {
 	return filepath.Join(root, name, name+".dump")
 }
 
+// ExtraDumpPath is where an extra database's dump lives, next to the main one:
+// the restore script reaches it through the same mount.
+func ExtraDumpPath(root, name, db string) string {
+	return filepath.Join(root, name, name+"."+db+".dump")
+}
+
 func (m *Manager) MetaPath(name string) string {
 	return m.DumpPath(name) + ".meta"
 }

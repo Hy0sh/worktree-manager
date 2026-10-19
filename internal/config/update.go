@@ -35,6 +35,8 @@ type ProjectUpdate struct {
 	MigrateCommand    *string
 	StartDependencies *bool
 	MigrationsPath    *string
+	// ExtraDatabases replaces the whole list when given, an empty one included.
+	ExtraDatabases []string
 	// Env replaces the whole set when given: a map merged field by field
 	// would leave no way to drop a variable.
 	Env map[string]string
@@ -113,6 +115,11 @@ func (u ProjectUpdate) Apply(p Project) (Project, []FieldChange) {
 	str("migrate_command", &b.MigrateCommand, u.MigrateCommand)
 	boolean("start_dependencies", &b.StartDependencies, u.StartDependencies)
 	str("migrations_path", &b.MigrationsPath, u.MigrationsPath)
+	if u.ExtraDatabases != nil && !slices.Equal(b.ExtraDatabases, u.ExtraDatabases) {
+		changes = append(changes, FieldChange{"extra_databases",
+			strings.Join(b.ExtraDatabases, ", "), strings.Join(u.ExtraDatabases, ", ")})
+		b.ExtraDatabases = u.ExtraDatabases
+	}
 	if u.Env != nil && !maps.Equal(b.Env, u.Env) {
 		// Keys only: a DATABASE_URL carries its password, and agents run wtm
 		// with their transcripts recording everything it prints.
@@ -128,5 +135,5 @@ func (u ProjectUpdate) touchesBackup() bool {
 	return u.DBService != nil || u.DBUser != nil || u.DBEngine != nil ||
 		u.DBPath != nil || u.AppService != nil || u.DepsCommand != nil ||
 		u.MigrateCommand != nil || u.StartDependencies != nil ||
-		u.MigrationsPath != nil || u.Env != nil
+		u.MigrationsPath != nil || u.ExtraDatabases != nil || u.Env != nil
 }

@@ -108,6 +108,7 @@ var flagForSetting = map[string]string{
 	"migrate_command":      "migrate",
 	"profiles":             "profile-set",
 	"profile_descriptions": "profile-description",
+	"extra_databases":      "extra-database",
 }
 
 // settingsWithoutAFlag are the fields the command line deliberately leaves

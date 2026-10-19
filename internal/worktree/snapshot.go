@@ -34,7 +34,7 @@ func ensureSnapshotAssets(o Options, dest string) error {
 	if err != nil {
 		return err
 	}
-	if err := writeRestoreScript(o.BackupsDir, o.Name, eng); err != nil {
+	if err := writeRestoreScript(o.BackupsDir, o.Name, eng, cfg.ExtraDatabases); err != nil {
 		return fmt.Errorf("writing the restore script: %w", err)
 	}
 	if err := writeSnapshotOverride(dest, cfg.DBService); err != nil {
@@ -62,18 +62,21 @@ func ensureDBFileCopy(o Options, dest string, cfg config.Backup) error {
 
 // writeRestoreScript puts the script next to the dump, where the worktree's
 // .db-snapshot symlink makes it reachable from the container.
-func writeRestoreScript(backupsDir, project string, eng dbengine.Engine) error {
-	// The name is interpolated into a shell script that runs inside the
-	// database container, so it is checked here too and not only at
+func writeRestoreScript(backupsDir, project string, eng dbengine.Engine, extras []string) error {
+	// The names are interpolated into a shell script that runs inside the
+	// database container, so they are checked here too and not only at
 	// registration: config.json can be hand-edited.
 	if err := config.ValidateIdentifier("project name", project); err != nil {
+		return err
+	}
+	if err := config.ValidateExtraDatabases(extras); err != nil {
 		return err
 	}
 	dir, err := backup.ProjectDir(backupsDir, project)
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(filepath.Join(dir, backup.RestoreScriptName), []byte(eng.RestoreScript(project)), 0o755)
+	return os.WriteFile(filepath.Join(dir, backup.RestoreScriptName), []byte(eng.RestoreScript(project, extras)), 0o755)
 }
 
 func writeSnapshotOverride(dest, dbService string) error {

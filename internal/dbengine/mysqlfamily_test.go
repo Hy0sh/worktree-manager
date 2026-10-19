@@ -64,7 +64,7 @@ func TestMariaDBUsesItsOwnBinariesAndPasswordVariable(t *testing.T) {
 
 func TestMySQLFamilyRestoreScripts(t *testing.T) {
 	mysqlEng, _ := ByName("mysql")
-	script := mysqlEng.RestoreScript("myapp")
+	script := mysqlEng.RestoreScript("myapp", nil)
 	for _, want := range []string{
 		"/db-snapshot/myapp.dump",
 		`mysql -uroot "${MYSQL_DATABASE:-mysql}"`,
@@ -75,7 +75,7 @@ func TestMySQLFamilyRestoreScripts(t *testing.T) {
 		}
 	}
 	mariaEng, _ := ByName("mariadb")
-	script = mariaEng.RestoreScript("myapp")
+	script = mariaEng.RestoreScript("myapp", nil)
 	for _, want := range []string{
 		`mariadb -uroot "${MARIADB_DATABASE:-${MYSQL_DATABASE:-mysql}}"`,
 		`MYSQL_PWD="${MARIADB_ROOT_PASSWORD:-$MYSQL_ROOT_PASSWORD}"`,

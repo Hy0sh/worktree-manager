@@ -27,7 +27,8 @@ type Engine interface {
 	// at zero, which is the only way to tell that dump from a real one.
 	ObjectCountArgs(user, db string) []string
 	// RestoreScript is the docker-entrypoint-initdb.d body restoring the dump.
-	RestoreScript(project string) string
+	// Only postgres restores extras; config validation keeps them off the rest.
+	RestoreScript(project string, extras []string) string
 }
 
 var engines = []Engine{postgres{}, newMySQL(), newMariaDB(), mongodb{}}

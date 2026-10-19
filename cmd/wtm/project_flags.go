@@ -38,6 +38,7 @@ type projectFlags struct {
 	profiles      []string
 	profileDescs  []string
 	copy          []string
+	extraDBs      []string
 	noInput       bool
 }
 
@@ -62,6 +63,7 @@ func (f *projectFlags) bind(cmd *cobra.Command) {
 	cmd.Flags().StringArrayVar(&f.profiles, "profile-set", nil, "subset of compose services `wtm start --profile` may bring up, repeatable, replaces the whole set (e.g. --profile-set light=db,backend)")
 	cmd.Flags().StringArrayVar(&f.profileDescs, "profile-description", nil, "when to pick a profile, shown by `wtm project profiles`, repeatable, replaces the whole set (e.g. --profile-description 'async=Celery tasks')")
 	cmd.Flags().StringArrayVar(&f.copy, "copy", nil, "file git does not track that each worktree gets a copy of, as a pattern relative to the project, repeatable, replaces the whole set, --copy '' clears it (e.g. --copy .env.local --copy 'config/*.local.json'); *.env files are copied anyway")
+	cmd.Flags().StringArrayVar(&f.extraDBs, "extra-database", nil, "other database of the same postgres server to dump and restore with the main one, as the refresh leaves it, repeatable, replaces the whole set, --extra-database '' clears it (e.g. --extra-database auth)")
 	cmd.Flags().BoolVar(&f.noInput, "no-input", false, "fail instead of asking, for scripts and CI")
 }
 
@@ -141,6 +143,14 @@ func (f *projectFlags) update(cmd *cobra.Command) (config.ProjectUpdate, error) 
 			}
 		}
 	}
+	if changed("extra-database") {
+		u.ExtraDatabases = []string{}
+		for _, db := range f.extraDBs {
+			if db != "" {
+				u.ExtraDatabases = append(u.ExtraDatabases, db)
+			}
+		}
+	}
 	return u, validateUpdate(u)
 }
 
@@ -170,6 +180,9 @@ func validateUpdate(u config.ProjectUpdate) error {
 		if err := config.ValidateCopyPattern(pattern); err != nil {
 			return err
 		}
+	}
+	if err := config.ValidateExtraDatabases(u.ExtraDatabases); err != nil {
+		return err
 	}
 	// A create must not discover a malformed duration halfway through, once the
 	// worktree and its stack are already up.

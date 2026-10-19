@@ -132,11 +132,29 @@ func TestPostgresCommands(t *testing.T) {
 	if eng.CreateTempDBArgs("postgres", "x_tmp") == nil {
 		t.Fatal("postgres must create the temporary database")
 	}
-	script := eng.RestoreScript("myapp")
+	script := eng.RestoreScript("myapp", nil)
 	for _, want := range []string{"/db-snapshot/myapp.dump", "pg_restore", "POSTGRES_DB"} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("restore script must contain %q:\n%s", want, script)
 		}
+	}
+}
+
+func TestPostgresRestoresTheExtraDatabases(t *testing.T) {
+	eng, _ := ByName("postgres")
+	script := eng.RestoreScript("myapp", []string{"auth"})
+	for _, want := range []string{
+		`extra="/db-snapshot/myapp.auth.dump"`,
+		"datname = 'auth'",
+		`|| createdb -U "${POSTGRES_USER:-postgres}" "auth"`,
+		`-d "auth" "$extra"`,
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("restore script must contain %q:\n%s", want, script)
+		}
+	}
+	if strings.Contains(eng.RestoreScript("myapp", nil), "extra=") {
+		t.Fatal("without extras the script must not change")
 	}
 }
 
@@ -163,7 +181,7 @@ func TestRestoreScriptRefusesAnUnreadableSnapshot(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		script := eng.RestoreScript("myapp")
+		script := eng.RestoreScript("myapp", nil)
 		for _, want := range []string{
 			"[ ! -r /db-snapshot ]",
 			`[ ! -r "$dump" ]`,
