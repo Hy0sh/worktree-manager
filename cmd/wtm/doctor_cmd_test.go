@@ -366,3 +366,50 @@ func TestDoctorTellsABranchSwitchFromAVanishedWorktree(t *testing.T) {
 		t.Fatalf("a genuinely vanished worktree must still be named:\n%s", got)
 	}
 }
+
+// `backup list` and `create` were the only ones to say a dump had fallen
+// behind its migrations, so a machine checked with doctor alone never learnt it.
+func TestDoctorReportsDumpsBehindTheirMigrations(t *testing.T) {
+	for _, tc := range []struct {
+		name, log, want string
+	}{
+		{"behind", "abc123 add a column\ndef456 drop a table\n", "myapp: 2 commits behind, `wtm backup refresh myapp`"},
+		{"up to date", "", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := &config.Config{Projects: map[string]config.Project{"myapp": {Dir: t.TempDir(), Dump: true}}}
+			a, _, out := newTestApp(t, cfg, "", func(c execx.Cmd) (execx.Result, error) {
+				if strings.Contains(c.String(), "log --oneline") {
+					return execx.Result{Stdout: tc.log}, nil
+				}
+				return execx.Result{}, errors.New("unavailable")
+			})
+			dump := filepath.Join(a.backups, "myapp", "myapp.dump")
+			if err := os.MkdirAll(filepath.Dir(dump), 0o700); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(dump, nil, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.WriteFile(dump+".meta", []byte(`{"git_rev":"0123abc"}`), 0o600); err != nil {
+				t.Fatal(err)
+			}
+
+			cmd := newDoctorCmd(a)
+			if err := cmd.RunE(cmd, nil); err != nil {
+				t.Fatalf("doctor: %v", err)
+			}
+
+			got := out.String()
+			if tc.want == "" {
+				if strings.Contains(got, "dumps behind") {
+					t.Fatalf("an up-to-date dump has nothing to report:\n%s", got)
+				}
+				return
+			}
+			if !strings.Contains(got, tc.want) {
+				t.Fatalf("want %q in:\n%s", tc.want, got)
+			}
+		})
+	}
+}
