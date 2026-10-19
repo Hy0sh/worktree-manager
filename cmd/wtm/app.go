@@ -28,6 +28,9 @@ type app struct {
 	// latestURL is the module proxy `wtm doctor` asks for the published
 	// version. Empty in tests, which keeps every one of them offline.
 	latestURL string
+	// releaseURL is where `wtm update` downloads release assets from, empty
+	// in tests like latestURL.
+	releaseURL string
 }
 
 func (a *app) load() error {

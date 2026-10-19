@@ -9,8 +9,11 @@ rather than a public issue, and allow some time for a fix before disclosing.
 ## What this tool does on your machine
 
 `wtm` is a local developer tool. It runs `git` and `docker` on your behalf. Its
-only network request of its own is `wtm doctor` asking the Go module proxy
-(`proxy.golang.org`) for the latest published version.
+only network requests of its own ask the Go module proxy (`proxy.golang.org`)
+for the latest published version, from `wtm doctor` and `wtm update`, and fetch
+that release's archive and `SHA256SUMS` from GitHub, from `wtm update` only.
+Both come from the same origin: the checksum catches a corrupted download, not
+a compromised release.
 
 Two files are treated as trusted input, because whoever can write them already
 controls the machine:

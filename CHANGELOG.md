@@ -7,6 +7,19 @@ behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Added
+
+- `wtm update` replaces the running binary with the latest release built for
+  its platform, once the archive matches its `SHA256SUMS` line and the binary
+  inside reports the published tag; `--check` only says whether one is out.
+  It needs neither Go nor `gh`, and a symbolic link to wtm is kept.
+
+### Changed
+
+- `wtm doctor` points at `wtm update` when a newer release is published. The
+  hint about where `go install` writes is gone with it: the update replaces the
+  binary being run, wherever it lives.
+
 ## [1.1.0] - 2026-10-19
 
 ### Added

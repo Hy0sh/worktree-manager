@@ -68,6 +68,12 @@ mv wtm ~/.local/bin/
 Those are built by `go install` from the tag itself, so they report their
 version exactly like an installed one.
 
+Once installed, `wtm update` replaces the binary being run with the latest
+release for its platform, after checking it against `SHA256SUMS`; neither Go nor
+`gh` is needed for that, and `wtm update --check` only says whether one is out.
+A symbolic link is kept, the file it points to is what gets replaced. Versions
+before it have no such command: upgrade them once the way they were installed.
+
 From a clone, for hacking on it: `go install ./cmd/wtm`, or `go build -o wtm
 ./cmd/wtm` to build without installing. Rerun it after each change to refresh
 the installed binary.
@@ -631,8 +637,7 @@ wtm doctor
 ```
 
 Reports, in order: the version running and whether a newer one is published,
-with the `go install` that fetches it and, when the binary running is not the
-one that command replaces, the link to put in its place; the config and
+with the `wtm update` that installs it; the config and
 backups paths, the memory actually used by the Docker VM, the size of the build
 cache, then per project its port stride, offset and, when its backup is
 enabled, database engine. Below that come the problems nothing else mentions: the ports two
