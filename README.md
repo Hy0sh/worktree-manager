@@ -653,6 +653,10 @@ refuse their branch. `wtm clean` deliberately leaves them, because their git
 metadata is gone and nothing can say any more whether they hold uncommitted
 work: `wtm remove <project> <branch> --force` deletes one.
 
+Then the dumps that commits to the migrations have overtaken, as `backup list`
+counts them, each with its `wtm backup refresh`. A stale dump still restores,
+the application migrates on top of it, so this is advice and never a blocker.
+
 Last come the anonymous volumes no container mounts, left by images that name
 their own data directory: those belong to no project, so they are counted even
 with an empty registry, with the command that drops them.
@@ -666,8 +670,9 @@ wtm clean -y         # do not ask, for a script
 `wtm clean` plays those commands for you, on the four findings that are
 leftovers rather than advice: the recorded indices, and the stacks, volumes and
 images of worktrees that no longer exist. It prints what it found and asks
-once. Port clashes stay out, being a configuration matter; so do the anonymous
-volumes and the build cache, which belong to no project, and the directories
+once. Port clashes stay out, being a configuration matter, and stale dumps,
+whose refresh starts a database; so do the anonymous volumes and the build
+cache, which belong to no project, and the directories
 git has forgotten, which no check can declare expendable. The last two are
 named at the end of the run anyway, with the command that settles each: a
 finding reported by `doctor` and unmentioned by `clean` reads as the two
