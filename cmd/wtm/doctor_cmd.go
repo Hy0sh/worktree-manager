@@ -215,6 +215,28 @@ func (a *app) reportAbandonedWorktrees(rws []repoWorktrees) {
 			"(no one can tell any more whether they hold uncommitted work)", strings.Join(cmds, "`, `")))
 }
 
+// reportStaleBackups names the dumps commits to the migrations have overtaken,
+// as `backup list` reads them. Advice rather than a leftover: a refresh starts a
+// database, so `clean` never plays it.
+func (a *app) reportStaleBackups(ctx context.Context) {
+	infos, err := a.manager().List(a.cfg)
+	if err != nil {
+		return
+	}
+	var lines []string
+	for _, i := range infos {
+		// A file left after the dump was turned off is no backup to refresh.
+		p, err := a.cfg.Get(i.Name)
+		if !i.Present || err != nil || !p.Dump {
+			continue
+		}
+		if st := a.manager().Check(ctx, i.Name, p); st.Behind() {
+			lines = append(lines, fmt.Sprintf("%s: %s, `wtm backup refresh %s`", i.Name, st.Describe(), i.Name))
+		}
+	}
+	a.section("dumps behind their migrations (each create replays the delta, never blocks on it):", lines)
+}
+
 // reportOrphanVolumes lists the volumes of worktrees that no longer exist.
 // They squat the indices their stacks were created at, which pushes every new
 // worktree further out, and nothing else ever mentions them.
@@ -341,6 +363,7 @@ func newDoctorCmd(a *app) *cobra.Command {
 				}
 				// Last, and outside that sentence: clean does not touch these.
 				a.reportAbandonedWorktrees(rws)
+				a.reportStaleBackups(cmd.Context())
 			}
 			// Anonymous volumes are machine-wide, not tied to a registered
 			// project: the only report an empty registry still has an answer for.

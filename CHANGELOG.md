@@ -7,6 +7,12 @@ behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Added
+
+- `wtm doctor` reports the dumps commits to the migrations have overtaken,
+  with the `wtm backup refresh` that catches each one up. Only `backup list`
+  and `create` used to say so.
+
 ## [1.0.0] - 2026-10-16
 
 The commands, their flags and the `config.json` format are now stable: from
