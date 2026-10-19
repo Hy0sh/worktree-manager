@@ -7,6 +7,8 @@ behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-19
+
 ### Added
 
 - `wtm update` replaces the running binary with the latest release built for
@@ -1303,7 +1305,8 @@ First tagged release. The whole worktree lifecycle behind one binary:
   identical so worktrees created with it keep working.
 - A project without a compose file is not an error, there is simply no stack.
 
-[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/Hy0sh/worktree-manager/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/Hy0sh/worktree-manager/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.28.0...v1.0.0
 [0.28.0]: https://github.com/Hy0sh/worktree-manager/compare/v0.27.1...v0.28.0
