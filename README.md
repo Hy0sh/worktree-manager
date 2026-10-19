@@ -115,6 +115,7 @@ wtm project create                                        # asks, the name inclu
 wtm project create my-app                                 # asks for the rest
 wtm project create my-app --dir ~/dev/projects/my-app --base develop
 wtm project list
+wtm project remove my-app                                 # refused while it has worktrees: the next project would reuse its port offset
 
 # change a registered project, its backup settings included
 wtm project edit my-app                                   # asks, step by step
@@ -182,7 +183,9 @@ wtm backup remove my-app
 ```
 
 If the first argument is a registered project, it's treated as such;
-otherwise it's a branch of the current directory's project.
+otherwise it's a branch of the current directory's project. `create` puts the
+worktree under the repository's own `.worktrees/` directory; anything outside
+it is a worktree to adopt.
 
 Creation deliberately sits behind the `create` verb. It used to be the bare
 form, `wtm <branch>`, until a mistyped `wtm list` created a branch called
@@ -208,7 +211,7 @@ being created is ever fetched. So a create says when that ref trails its
 remote, and does not move the cut:
 
 ```
-note: develop is 12 commits behind origin/develop, this worktree starts from the local ref
+note: develop is 12 commit(s) behind origin/develop, this worktree starts from the local ref
 ```
 
 Starting from the tracking ref instead cannot conflict, but it moves the
@@ -243,7 +246,8 @@ nothing is fetched. A branch that never diverged sits on the base's
 first-parent line exactly like a fast-forwarded one, so both are kept, and a
 squashed or rebased branch is kept too, its commits being no longer the ones
 the base holds. Switched, detached and locked worktrees are kept as well. The
-branch itself survives, as with any `remove`.
+branch itself survives, as with any `remove`. It picks the worktrees itself and
+never forces, so it refuses `--all` and `--force`.
 
 `exec` and `run` are deliberately distinct: `exec` enters the stack's
 container, `run` stays on your machine with the worktree as working
@@ -431,6 +435,7 @@ The project answers what it can, and each answer becomes the default offered:
 | database service | the service running a database image, whatever it is called |
 | database engine | that image |
 | database user | `POSTGRES_USER` in its compose environment; not asked for the other engines, which connect as root |
+| database file | asked instead of the user for SQLite, `db.sqlite3` by default |
 | service running the migrations | the one service built from the repository (`build:`), with the others listed |
 | migration command and pathspec | the framework, from `manage.py`, `bin/console`, `artisan`, `bin/rails`, `prisma/schema.prisma` or `alembic.ini` at the root |
 | services besides the database | only asked when the service depends on others, named in the question |
@@ -479,8 +484,8 @@ every dump would be reported as up to date forever.
 ## Starting part of a stack
 
 A worktree rarely needs every service its project declares. `profiles` names
-the subsets worth starting, and `--profile` picks one on `create`, `adopt` or
-`start`:
+the subsets worth starting, and `--profile` picks one on `create`, `adopt`,
+`switch` or `start`:
 
 ```json
 "profiles": {
@@ -563,6 +568,11 @@ together than the stride: with the default stride of 1, a project publishing
 port. The line `index N skipped: ...` names the port and the neighbour holding
 it, and the next index is tried.
 
+The stride is read from `portStride` in the project's `.wtcrc.json`, or
+`wtc.portStride` in its `package.json`, the files worktree-compose used, so an
+existing setup keeps its ports. Raise it above the spread of your closest
+ports, then recreate the worktrees, whose `.env` carry the old ones.
+
 Three details earned their place the hard way. The reference is the project's
 *merged* compose configuration, not just the base file: a project already
 remapping a port on purpose keeps that mapping. The project offset exists
@@ -621,9 +631,11 @@ wtm doctor
 ```
 
 Reports, in order: the version running and whether a newer one is published,
-the config and backups paths, the memory actually used by the Docker VM, the
-size of the build cache, then per project its port stride, offset and database
-engine. Below that come the problems nothing else mentions: the ports two
+with the `go install` that fetches it and, when the binary running is not the
+one that command replaces, the link to put in its place; the config and
+backups paths, the memory actually used by the Docker VM, the size of the build
+cache, then per project its port stride, offset and, when its backup is
+enabled, database engine. Below that come the problems nothing else mentions: the ports two
 projects would both publish, the ports two worktrees of one project would both
 publish (with the `portStride` remedy), the recorded indices no worktree stands
 behind — each pushing new worktrees one index further out — the worktrees whose
@@ -673,8 +685,8 @@ images of worktrees that no longer exist. It prints what it found and asks
 once. Port clashes stay out, being a configuration matter, and stale dumps,
 whose refresh starts a database; so do the anonymous volumes and the build
 cache, which belong to no project, and the directories
-git has forgotten, which no check can declare expendable. The last two are
-named at the end of the run anyway, with the command that settles each: a
+git has forgotten, which no check can declare expendable. The forgotten
+directories and the anonymous volumes are named at the end of the run anyway, with the command that settles each: a
 finding reported by `doctor` and unmentioned by `clean` reads as the two
 disagreeing.
 
@@ -697,7 +709,7 @@ project, so only you can decide it is expendable.
 Before a stack goes up, wtm measures what the memory it has to fit into already
 holds and says when one more would not. On a native Linux docker that pool is
 the whole machine, session and browser included; Docker Desktop gives the
-containers a budget of their own. When it is tight, a create or a start asks
+containers a budget of their own. When it is tight, a create, an adopt, a switch or a start asks
 whether to go ahead, and answering no leaves the worktree without its stack, to
 be started later with `wtm start`. The question only comes on a terminal: the
 estimate is an average over the running stacks, worth a person's judgement and
@@ -822,12 +834,13 @@ Publishing a version is a changelog entry and a tag:
 
 ```sh
 # CHANGELOG.md: turn Unreleased into the version being cut, then commit it
-git tag -a v0.4.0 -m "One line on what this version brings"
-git push origin v0.4.0
+git tag -a v1.1.0 -m "One line on what this version brings"
+git push origin v1.1.0
 ```
 
-The tag is what publishes: the module proxy resolves it, so `go install
-...@v0.4.0` works straight away. Pushing it also runs the release workflow,
+From 1.0.0, breaking a command, a flag or the `config.json` format takes a
+major version. The tag is what publishes: the module proxy resolves it, so `go
+install ...@v1.1.0` works straight away. Pushing it also runs the release workflow,
 which creates the GitHub release with that version's changelog section as its
 notes and the tag annotation as its title. A tag with no section in the
 changelog fails the workflow rather than getting notes invented from the commit
