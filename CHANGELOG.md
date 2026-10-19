@@ -7,6 +7,14 @@ behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Added
+
+- `wtm remove --merged` removes the clean worktrees whose branch a merge commit
+  brought into the base, after printing why each one goes or stays. A
+  fast-forwarded branch is kept, since nothing tells it from one created a
+  minute ago; so are squashed and rebased ones, whose commits the base does not
+  hold.
+
 ## [1.0.0] - 2026-10-16
 
 The commands, their flags and the `config.json` format are now stable: from

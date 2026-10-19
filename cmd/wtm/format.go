@@ -30,13 +30,15 @@ func needArgs(min, max int, missing string) cobra.PositionalArgs {
 	}
 }
 
-// allArgs accepts the `--all` form, which names a project and no branch, and
-// falls back to the branch form otherwise. cobra parses the flags before it
-// validates the positionals, so the flag is already read here.
-func allArgs(all *bool, branchForm cobra.PositionalArgs) cobra.PositionalArgs {
+// allArgs accepts the `--all` and `--merged` forms, which name a project and no
+// branch, and falls back to the branch form otherwise. cobra parses the flags
+// before it validates the positionals, so the selectors are already read here.
+func allArgs(branchForm cobra.PositionalArgs, selectors ...*bool) cobra.PositionalArgs {
 	return func(cmd *cobra.Command, given []string) error {
-		if *all {
-			return cobra.RangeArgs(0, 1)(cmd, given)
+		for _, selected := range selectors {
+			if *selected {
+				return cobra.RangeArgs(0, 1)(cmd, given)
+			}
 		}
 		return branchForm(cmd, given)
 	}

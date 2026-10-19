@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"text/tabwriter"
 
 	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/gitx"
@@ -310,8 +311,8 @@ func newStopCmd(a *app) *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "stop [project] <branch>",
 		Short: "Stops the worktree's stack, without removing it",
-		Args: allArgs(&all,
-			needArgs(1, 2, "name the branch to stop, as in `wtm stop feat/my-branch`")),
+		Args: allArgs(needArgs(1, 2, "name the branch to stop, as in `wtm stop feat/my-branch`"),
+			&all),
 		ValidArgsFunction: a.completeTargets,
 		SilenceUsage:      true,
 		SilenceErrors:     true,
@@ -335,16 +336,35 @@ func newStopCmd(a *app) *cobra.Command {
 }
 
 func newRemoveCmd(a *app) *cobra.Command {
-	var force, all, assumeYes bool
+	var force, all, merged, assumeYes bool
 	cmd := &cobra.Command{
 		Use:   "remove [project] <branch>",
 		Short: "Stops the stack then removes the worktree (branch kept)",
-		Args: allArgs(&all,
-			needArgs(1, 2, "name the branch to remove, as in `wtm remove feat/my-branch`")),
+		Args: allArgs(needArgs(1, 2, "name the branch to remove, as in `wtm remove feat/my-branch`"),
+			&all, &merged),
 		ValidArgsFunction: a.completeTargets,
 		SilenceUsage:      true,
 		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if merged {
+				if all || force {
+					return fmt.Errorf("--merged picks the worktrees itself and never forces: drop --all and --force")
+				}
+				name, p, entries, err := a.allWorktrees(cmd.Context(), args)
+				if err != nil || len(entries) == 0 {
+					return err
+				}
+				o := a.options(name, p, "")
+				o.Base = a.cfg.BaseBranchFor(p)
+				safe, err := a.mergedWorktrees(cmd.Context(), o, entries)
+				if err != nil || len(safe) == 0 {
+					return err
+				}
+				if !assumeYes && !confirm(a.in, a.out, removeAllQuestion(safe)) {
+					return fmt.Errorf("cancelled: nothing was removed (pass --yes to answer for a script)")
+				}
+				return a.eachWorktree(cmd.Context(), o, safe, "removed", worktree.Remove)
+			}
 			if all {
 				name, p, entries, err := a.allWorktrees(cmd.Context(), args)
 				if err != nil || len(entries) == 0 {
@@ -372,8 +392,36 @@ func newRemoveCmd(a *app) *cobra.Command {
 	}
 	cmd.Flags().BoolVar(&force, "force", false, "remove even if tracked files are modified or the worktree is locked")
 	cmd.Flags().BoolVar(&all, "all", false, "every worktree of the project, instead of one branch")
-	cmd.Flags().BoolVarP(&assumeYes, "yes", "y", false, "do not ask for confirmation (--all)")
+	cmd.Flags().BoolVar(&merged, "merged", false,
+		"the clean worktrees whose branch a merge commit brought into the base, after a report")
+	cmd.Flags().BoolVarP(&assumeYes, "yes", "y", false, "do not ask for confirmation (--all, --merged)")
 	return cmd
+}
+
+// mergedWorktrees prints the verdict on every worktree, the kept ones included,
+// so that a script passing --yes still leaves a record, and returns those that
+// may go. Nothing safe ends the command there, with no question asked.
+func (a *app) mergedWorktrees(ctx context.Context, o worktree.Options,
+	entries []worktree.Entry) ([]worktree.Entry, error) {
+	var safe []worktree.Entry
+	w := tabwriter.NewWriter(a.out, 0, 0, 2, ' ', 0)
+	for _, e := range entries {
+		v := worktree.InspectMerge(ctx, o, e.Worktree)
+		verdict := "KEEP"
+		if v.Safe {
+			verdict = "REMOVE"
+			safe = append(safe, e)
+		}
+		fmt.Fprintf(w, "  %s\t%s\t%s\n", verdict, e.BranchLabel(), v.Reason)
+	}
+	if err := w.Flush(); err != nil {
+		return nil, err
+	}
+	if len(safe) == 0 {
+		fmt.Fprintf(a.out, "nothing safe to remove: only a clean worktree whose branch a merge commit "+
+			"brought into %s qualifies\n", o.Base)
+	}
+	return safe, nil
 }
 
 // removeAllQuestion says what --all is about to do. "remove 4 worktrees" stopped

@@ -415,3 +415,105 @@ func TestAllLeavesTheWorktreesLeftToAdoptAlone(t *testing.T) {
 		}
 	}
 }
+
+func runRemoveMerged(f *allFixture, args ...string) error {
+	cmd := newRemoveCmd(f.app)
+	cmd.SetArgs(append([]string{"myapp", "--merged"}, args...))
+	cmd.SetOut(f.out)
+	return cmd.Execute()
+}
+
+func (f *allFixture) removed() []string {
+	var out []string
+	for _, l := range f.fake.Lines() {
+		if strings.Contains(l, "worktree remove") {
+			out = append(out, l)
+		}
+	}
+	return out
+}
+
+// The fixture's git answers every head is in develop and off its first-parent
+// line: a merge commit brought all three in.
+func TestRemoveMergedReportsEvenUnderYes(t *testing.T) {
+	f := newAllFixture(t, "")
+	if err := runRemoveMerged(f, "--yes"); err != nil {
+		t.Fatalf("remove --merged --yes: %v", err)
+	}
+	if !strings.Contains(f.out.String(), "REMOVE  feat/b  merged into develop") {
+		t.Fatalf("--yes skips the question, never the report:\n%s", f.out.String())
+	}
+	if got := f.removed(); len(got) != 3 {
+		t.Fatalf("want the three worktrees removed, got:\n%s", strings.Join(got, "\n"))
+	}
+}
+
+func TestRemoveMergedAsksAfterTheReport(t *testing.T) {
+	f := newAllFixture(t, "n\n")
+	if err := runRemoveMerged(f); err == nil {
+		t.Fatal("a refused confirmation must fail the command")
+	}
+	out := f.out.String()
+	if i, j := strings.Index(out, "REMOVE"), strings.Index(out, "[y/N]"); i < 0 || j < i {
+		t.Fatalf("the report comes before the question:\n%s", out)
+	}
+	if got := f.removed(); len(got) > 0 {
+		t.Fatalf("nothing may be removed after a no, got:\n%s", strings.Join(got, "\n"))
+	}
+}
+
+func TestRemoveMergedAsksNothingWhenNothingIsSafe(t *testing.T) {
+	f := newAllFixture(t, "y\n")
+	inner := f.fake.Handler
+	f.fake.Handler = func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(c.String(), "--is-ancestor") {
+			return execx.Result{ExitCode: 1}, errors.New("exit status 1")
+		}
+		return inner(c)
+	}
+	if err := runRemoveMerged(f); err != nil {
+		t.Fatalf("nothing safe is not a failure: %v", err)
+	}
+	out := f.out.String()
+	if strings.Contains(out, "[y/N]") || !strings.Contains(out, "nothing safe to remove") ||
+		!strings.Contains(out, "KEEP") {
+		t.Fatalf("want the report and no question:\n%s", out)
+	}
+	if got := f.removed(); len(got) > 0 {
+		t.Fatalf("nothing was safe, got:\n%s", strings.Join(got, "\n"))
+	}
+}
+
+func TestRemoveMergedRefusesWhatWouldWidenIt(t *testing.T) {
+	for _, args := range [][]string{{"--force"}, {"--all"}, {"feat/a"}} {
+		f := newAllFixture(t, "")
+		if err := runRemoveMerged(f, append(args, "--yes")...); err == nil {
+			t.Fatalf("--merged %v must be refused", args)
+		}
+		if got := f.removed(); len(got) > 0 {
+			t.Fatalf("--merged %v removed:\n%s", args, strings.Join(got, "\n"))
+		}
+	}
+}
+
+func TestRemoveMergedCarriesOnAfterAFailure(t *testing.T) {
+	f := newAllFixture(t, "")
+	b := filepath.Join(f.dir, ".worktrees", "feat/b")
+	inner := f.fake.Handler
+	f.fake.Handler = func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(c.String(), "worktree remove --force "+b) {
+			return execx.Result{ExitCode: 1}, errors.New("permission denied")
+		}
+		return inner(c)
+	}
+	err := runRemoveMerged(f, "--yes")
+	if err == nil || !strings.Contains(err.Error(), "1 of 3") || !strings.Contains(err.Error(), "feat/b: ") {
+		t.Fatalf("the summary must count and name the failure, got %v", err)
+	}
+	lines := strings.Join(f.fake.Lines(), "\n")
+	for _, br := range []string{"feat/a", "feat/c"} {
+		if !strings.Contains(lines, "worktree remove --force "+filepath.Join(f.dir, ".worktrees", br)) {
+			t.Fatalf("the walk must carry on past feat/b to %s:\n%s", br, lines)
+		}
+	}
+}
