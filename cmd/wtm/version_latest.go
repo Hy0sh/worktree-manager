@@ -3,15 +3,13 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
-	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/Hy0sh/worktree-manager/internal/execx"
 )
 
 // The Go module proxy answers with what `go install ...@latest` would resolve,
@@ -34,27 +32,38 @@ func (a *app) newerRelease(ctx context.Context) string {
 	local, _, _ := strings.Cut(version(), " ")
 	ctx, cancel := context.WithTimeout(ctx, latestTimeout)
 	defer cancel()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.latestURL, nil)
-	if err != nil {
+	published, err := latestVersion(ctx, a.latestURL)
+	if err != nil || !olderVersion(local, published) {
 		return ""
+	}
+	return published
+}
+
+// latestVersion asks the module proxy at url for the published tag, which is
+// only ever returned as a bare "vX.Y.Z": it ends up printed, in a URL and in a
+// file name.
+func latestVersion(ctx context.Context, url string) (string, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return "", err
 	}
 	res, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return ""
+		return "", err
 	}
 	defer res.Body.Close()
 	if res.StatusCode != http.StatusOK {
-		return ""
+		return "", fmt.Errorf("%s answered %s", url, res.Status)
 	}
 	var answer struct{ Version string }
 	// The proxy answers a few dozen bytes: past that it is not the proxy.
 	if err := json.NewDecoder(io.LimitReader(res.Body, 64<<10)).Decode(&answer); err != nil {
-		return ""
+		return "", fmt.Errorf("reading the answer of %s: %w", url, err)
 	}
-	if !olderVersion(local, answer.Version) {
-		return ""
+	if !releaseTag.MatchString(answer.Version) {
+		return "", fmt.Errorf("%s answered %q, not a release tag", url, answer.Version)
 	}
-	return answer.Version
+	return answer.Version, nil
 }
 
 // olderVersion compares two "vX.Y.Z" tags, plus the pre-release shape a build
@@ -79,41 +88,6 @@ func olderVersion(local, published string) bool {
 	// Same numbers: semver puts a pre-release before the release it leads to,
 	// which is how a build installed from a commit is told the tag is out.
 	return localPre
-}
-
-// installedElsewhere returns where `go install` writes when exe, the binary
-// running, lives somewhere else, and "" otherwise or when go cannot say. A copy
-// on the PATH ahead of that directory made every upgrade exit 0 and change nothing.
-func (a *app) installedElsewhere(ctx context.Context, exe string) string {
-	ctx, cancel := context.WithTimeout(ctx, latestTimeout)
-	defer cancel()
-	res, err := a.runner.Run(ctx, execx.Cmd{Name: "go", Args: []string{"env", "GOBIN", "GOPATH"}})
-	if err != nil {
-		return ""
-	}
-	// An unset GOBIN prints as an empty first line, which trimming first would eat.
-	gobin, gopath, _ := strings.Cut(res.Stdout, "\n")
-	dir := strings.TrimSpace(gobin)
-	if dir == "" {
-		// go install writes to the first entry of a GOPATH list.
-		first, _, _ := strings.Cut(strings.TrimSpace(gopath), string(filepath.ListSeparator))
-		if first == "" {
-			return ""
-		}
-		dir = filepath.Join(first, "bin")
-	}
-	resolvedExe, err := filepath.EvalSymlinks(exe)
-	if err != nil {
-		return ""
-	}
-	resolvedDir, err := filepath.EvalSymlinks(dir)
-	if err != nil {
-		resolvedDir = dir
-	}
-	if filepath.Dir(resolvedExe) == resolvedDir {
-		return ""
-	}
-	return dir
 }
 
 var releaseTag = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+$`)

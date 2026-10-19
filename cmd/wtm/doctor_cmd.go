@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"maps"
-	"os"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -294,14 +293,7 @@ func newDoctorCmd(a *app) *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(a.out, "version  %s\n", version())
 			if latest := a.newerRelease(cmd.Context()); latest != "" {
-				fmt.Fprintf(a.out, "         %s is published, upgrade with "+
-					"`go install github.com/Hy0sh/worktree-manager/cmd/wtm@latest`\n", latest)
-				if exe, err := os.Executable(); err == nil {
-					if dir := a.installedElsewhere(cmd.Context(), exe); dir != "" {
-						fmt.Fprintf(a.out, "         but it writes to %s and this binary is %s: "+
-							"replace it with a link to %s\n", dir, exe, filepath.Join(dir, "wtm"))
-					}
-				}
+				fmt.Fprintf(a.out, "         %s is published, upgrade with `wtm update`\n", latest)
 			}
 			fmt.Fprintf(a.out, "config   %s\n", a.cfgPath)
 			fmt.Fprintf(a.out, "backups  %s\n", a.backups)

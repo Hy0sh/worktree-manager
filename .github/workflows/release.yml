@@ -108,6 +108,8 @@ jobs:
             staging=$(mktemp -d)
             cp "$binary" "$staging/wtm"
             cp LICENSE README.md "$staging/"
+            # `wtm update` in every installed binary builds this name and reads
+            # SHA256SUMS below: renaming either breaks their upgrade.
             tar -czf "dist/wtm_${TAG}_${goos}_${goarch}.tar.gz" -C "$staging" wtm LICENSE README.md
           done
 

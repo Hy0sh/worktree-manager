@@ -6,7 +6,6 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
-	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -91,49 +90,5 @@ func TestDoctorAlwaysReportsTheRunningVersion(t *testing.T) {
 	}
 	if !strings.Contains(out.String(), "version  ") {
 		t.Fatalf("doctor should open on the version:\n%s", out.String())
-	}
-}
-
-// A copy of wtm ahead of GOPATH/bin on the PATH made `go install` exit 0 and
-// change nothing; a link to the installed binary is the healthy setup.
-func TestInstalledElsewhereSpotsACopyOutsideTheInstallDir(t *testing.T) {
-	gopath, other := t.TempDir(), t.TempDir()
-	bin := filepath.Join(gopath, "bin")
-	installed := filepath.Join(bin, "wtm")
-	copied := filepath.Join(other, "wtm")
-	linked := filepath.Join(other, "wtm-link")
-	if err := os.MkdirAll(bin, 0o755); err != nil {
-		t.Fatal(err)
-	}
-	for _, p := range []string{installed, copied} {
-		if err := os.WriteFile(p, nil, 0o755); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if err := os.Symlink(installed, linked); err != nil {
-		t.Fatal(err)
-	}
-	goEnv := func(stdout string, err error) *app {
-		return &app{runner: &execx.Fake{Handler: func(execx.Cmd) (execx.Result, error) {
-			return execx.Result{Stdout: stdout}, err
-		}}}
-	}
-
-	for _, tc := range []struct {
-		name string
-		a    *app
-		exe  string
-		want string
-	}{
-		{"copy", goEnv("\n"+gopath+"\n", nil), copied, bin},
-		{"link", goEnv("\n"+gopath+"\n", nil), linked, ""},
-		{"installed", goEnv("\n"+gopath+"\n", nil), installed, ""},
-		{"GOBIN wins", goEnv(other+"\n"+gopath+"\n", nil), copied, ""},
-		{"GOPATH list", goEnv("\n"+gopath+string(filepath.ListSeparator)+other+"\n", nil), copied, bin},
-		{"no go", goEnv("", errors.New("go is not installed")), copied, ""},
-	} {
-		if got := tc.a.installedElsewhere(context.Background(), tc.exe); got != tc.want {
-			t.Errorf("%s: got %q, want %q", tc.name, got, tc.want)
-		}
 	}
 }
