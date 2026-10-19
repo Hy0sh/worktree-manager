@@ -153,6 +153,7 @@ wtm stop --all                              # every worktree of the project
 wtm remove feat/my-branch                   # stack, volumes and built images go, branch kept
 wtm remove feat/my-branch --force           # despite modified tracked files, or a lock
 wtm remove --all                            # lists them, asks once, -y answers for a script
+wtm remove --merged                         # the clean ones merged into the base, after a report
 
 # inside the worktree's containers
 wtm exec feat/my-branch -- python manage.py seed_data
@@ -232,6 +233,17 @@ matter, and `--run` runs on the host with your rights, in a checkout of a
 branch that may not be yours: creating someone else's branch and playing its
 `package.json` scripts in one line is exactly as trusting as it sounds.
 `--exec` is bounded by the container.
+
+`remove --merged` prints every worktree with `REMOVE` or `KEEP` and the
+reason, then asks once for the `REMOVE` ones; `-y` skips the question and never
+the report, and nothing to remove asks nothing. A worktree qualifies only when
+`git status` shows nothing, untracked files included, and a merge commit
+brought its branch into the base, local or its tracking ref as they stand:
+nothing is fetched. A branch that never diverged sits on the base's
+first-parent line exactly like a fast-forwarded one, so both are kept, and a
+squashed or rebased branch is kept too, its commits being no longer the ones
+the base holds. Switched, detached and locked worktrees are kept as well. The
+branch itself survives, as with any `remove`.
 
 `exec` and `run` are deliberately distinct: `exec` enters the stack's
 container, `run` stays on your machine with the worktree as working
