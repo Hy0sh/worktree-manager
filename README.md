@@ -79,7 +79,9 @@ stderr, under its own output. The published version is looked up at most once
 a day, in the background, and kept in `latest.json` next to `config.json`; a
 command never waits for it. Nothing is printed, nor looked up, when stdout or
 stderr is not a terminal, so scripts and agents never see it.
-`WTM_NO_UPDATE_CHECK=1` turns it off.
+`wtm tui` shows the same line under its keys, in green, and asks the cache
+again with each refresh, so a release out while it is open shows up there.
+`WTM_NO_UPDATE_CHECK=1` turns both off.
 
 From a clone, for hacking on it: `go install ./cmd/wtm`, or `go build -o wtm
 ./cmd/wtm` to build without installing. Rerun it after each change to refresh

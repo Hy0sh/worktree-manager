@@ -15,6 +15,8 @@ behaviour, a patch bump carries fixes.
   `config.json`, so no command waits on the network. Nothing is printed or
   looked up when stdout or stderr is not a terminal, which keeps scripts and
   agents untouched; `WTM_NO_UPDATE_CHECK=1` turns it off.
+- `wtm tui` shows the same line under its keys, asked again with each
+  refresh: a dashboard left open all day sees a release come out.
 
 ## [1.3.0] - 2026-10-19
 

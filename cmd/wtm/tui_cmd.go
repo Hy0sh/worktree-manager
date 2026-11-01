@@ -7,7 +7,10 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
+	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/spf13/cobra"
@@ -64,6 +67,11 @@ func newTUICmd(a *app) *cobra.Command {
 					opener = "open"
 				}
 				return exec.Command(opener, url).Run()
+			}
+			if os.Getenv(EnvNoUpdateCheck) == "" {
+				local, _, _ := strings.Cut(version(), " ")
+				cache := filepath.Join(filepath.Dir(a.cfgPath), "latest.json")
+				src.Update = func() string { return a.updateNotice(cache, local, time.Now()) }
 			}
 			m := tui.New(cmd.Context(), name, src)
 			_, err = tea.NewProgram(m, tea.WithContext(cmd.Context())).Run()

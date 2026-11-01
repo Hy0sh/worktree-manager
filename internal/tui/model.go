@@ -28,6 +28,9 @@ type Source struct {
 	// it is not. A start in the panel has no terminal to ask from, so the
 	// dashboard asks before it runs.
 	Memory func(ctx context.Context) (string, error)
+	// Update is the line saying a newer wtm is published, empty otherwise. Asked
+	// with each listing: a dashboard stays open all day, a release comes out in it.
+	Update func() string
 }
 
 // refreshEvery is also the floor between two listings: a docker slower than
@@ -46,6 +49,7 @@ type Model struct {
 	// selected is a path and not a row: a refresh can reorder the rows, and a
 	// worktree is where it stands.
 	selected string
+	update   string
 	loading  bool
 	// again asks for one more listing once the running one answers: it may
 	// have started before the action it would otherwise be taken to reflect.
@@ -85,6 +89,7 @@ type snapshotMsg struct {
 	entries []worktree.Entry
 	err     error
 	at      time.Time
+	update  string
 }
 
 type tickMsg struct{}
@@ -109,10 +114,14 @@ func tick() tea.Cmd {
 }
 
 func (m Model) list() tea.Cmd {
-	ctx, list := m.ctx, m.src.List
+	ctx, list, update := m.ctx, m.src.List, m.src.Update
 	return func() tea.Msg {
 		entries, err := list(ctx)
-		return snapshotMsg{entries: entries, err: err, at: time.Now()}
+		msg := snapshotMsg{entries: entries, err: err, at: time.Now()}
+		if update != nil {
+			msg.update = update()
+		}
+		return msg
 	}
 }
 
@@ -197,7 +206,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case removalMsg:
 		m.ask(msg)
 	case snapshotMsg:
-		m.loading, m.at = false, msg.at
+		m.loading, m.at, m.update = false, msg.at, msg.update
 		var next tea.Cmd
 		if m.again {
 			m.again = false
