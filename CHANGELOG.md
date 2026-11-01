@@ -7,6 +7,15 @@ behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Added
+
+- A command run in a terminal prints, on stderr under its output, the
+  `wtm update` to run when a newer release is published. The lookup happens at
+  most once a day in the background and is cached in `latest.json` next to
+  `config.json`, so no command waits on the network. Nothing is printed or
+  looked up when stdout or stderr is not a terminal, which keeps scripts and
+  agents untouched; `WTM_NO_UPDATE_CHECK=1` turns it off.
+
 ## [1.3.0] - 2026-10-19
 
 ### Added
