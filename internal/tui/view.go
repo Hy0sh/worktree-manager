@@ -92,6 +92,9 @@ func (m Model) render() string {
 	for _, l := range wrapKeys(keys, m.width) {
 		tail.WriteString("\n" + faint.Render(l))
 	}
+	if m.update != "" {
+		tail.WriteString("\n" + statuses["up"].Render(m.update))
+	}
 
 	// The detail gives way, never the keys: a stack behind a proxy lists two
 	// dozen addresses, more than a split terminal has rows for.

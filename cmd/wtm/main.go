@@ -7,6 +7,9 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
+	"strings"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -33,6 +36,7 @@ func reportError(w io.Writer, err error) {
 
 func newRootCmd() *cobra.Command {
 	a := &app{}
+	var notice string
 	root := &cobra.Command{
 		Use:   "wtm",
 		Short: "Manages git worktrees and the docker stack of each one",
@@ -45,7 +49,21 @@ func newRootCmd() *cobra.Command {
 		SilenceUsage:  true,
 		SilenceErrors: true,
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			return a.load()
+			if err := a.load(); err != nil {
+				return err
+			}
+			// Both streams a terminal: scripts and agents parse stdout, wrappers
+			// copy stderr into their own errors. doctor has its own, live, line.
+			if isTerminal(os.Stdout) && isTerminal(os.Stderr) && os.Getenv(EnvNoUpdateCheck) == "" && cmd.Name() != "doctor" {
+				local, _, _ := strings.Cut(version(), " ")
+				notice = a.updateNotice(filepath.Join(filepath.Dir(a.cfgPath), "latest.json"), local, time.Now())
+			}
+			return nil
+		},
+		PersistentPostRun: func(*cobra.Command, []string) {
+			if notice != "" {
+				fmt.Fprintln(os.Stderr, notice)
+			}
 		},
 	}
 	root.AddCommand(

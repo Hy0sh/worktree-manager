@@ -258,3 +258,20 @@ func TestTheDetailGivesWayToTheKeysInAShortTerminal(t *testing.T) {
 		t.Fatalf("a tall terminal shows every address:\n%s", view)
 	}
 }
+
+func TestUpdateLineFollowsTheListing(t *testing.T) {
+	line := ""
+	src := (&source{}).Source()
+	src.Update = func() string { return line }
+	var m tea.Model = New(context.Background(), "repo", src)
+	line = "v9.9.9 is published, this is v1.3.0: `wtm update` installs it"
+	m, _ = m.Update(m.(Model).list()())
+	if !strings.Contains(m.(Model).render(), line) {
+		t.Fatalf("the update line is missing:\n%s", m.(Model).render())
+	}
+	line = ""
+	m, _ = m.Update(m.(Model).list()())
+	if strings.Contains(m.(Model).render(), "is published") {
+		t.Fatalf("the update line outlived the update:\n%s", m.(Model).render())
+	}
+}
