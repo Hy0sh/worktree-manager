@@ -7,6 +7,8 @@ behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+## [1.4.1] - 2026-11-06
+
 ### Fixed
 
 - A root compose file that only pulls its services in through `include:` got
@@ -1339,7 +1341,8 @@ First tagged release. The whole worktree lifecycle behind one binary:
   identical so worktrees created with it keep working.
 - A project without a compose file is not an error, there is simply no stack.
 
-[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v1.4.0...HEAD
+[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v1.4.1...HEAD
+[1.4.1]: https://github.com/Hy0sh/worktree-manager/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/Hy0sh/worktree-manager/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/Hy0sh/worktree-manager/compare/v1.2.0...v1.3.0
 [1.2.0]: https://github.com/Hy0sh/worktree-manager/compare/v1.1.0...v1.2.0
