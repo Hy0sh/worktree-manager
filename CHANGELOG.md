@@ -7,6 +7,15 @@ behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Fixed
+
+- A root compose file that only pulls its services in through `include:` got
+  no port remapped: wtm read the root file's `services:` alone, so a worktree
+  published the main stack's ports and failed with "port is already
+  allocated". Included files are now read too, nested ones and both `include`
+  forms, each path resolved from the file that includes it; so are the
+  stepper's service list, `depends_on` and the `container_name` check.
+
 ## [1.4.0] - 2026-11-02
 
 ### Added
