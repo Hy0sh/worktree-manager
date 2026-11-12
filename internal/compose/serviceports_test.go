@@ -1,6 +1,9 @@
 package compose
 
 import (
+	"os"
+	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -218,5 +221,52 @@ func TestMergedServicePortsLetsTheOverrideWin(t *testing.T) {
 	}
 	if len(ports) != 3 {
 		t.Fatalf("expected one port per service, got %+v", ports)
+	}
+}
+
+// A root file that only includes others is a common monorepo layout; its
+// services, nested includes and both include forms must all be read, and an
+// include cycle or a remote path must not stop the walk.
+func TestMergedServicePortsFollowsInclude(t *testing.T) {
+	dir := t.TempDir()
+	for _, sub := range []string{"backend", "frontend"} {
+		if err := os.Mkdir(filepath.Join(dir, sub), 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+	write(t, dir, "compose.yaml", `include:
+  - backend/docker-compose.yaml
+  - path: frontend/docker-compose.yaml
+  - oci://registry.example/stack:1
+`)
+	write(t, dir, "backend/docker-compose.yaml", `include:
+  - ../compose.yaml
+  - db.yaml
+services:
+  api:
+    ports:
+      - "8000:8000"
+`)
+	write(t, dir, "backend/db.yaml", `services:
+  db:
+    ports:
+      - "5432:5432"
+`)
+	write(t, dir, "frontend/docker-compose.yaml", `services:
+  web:
+    ports:
+      - "4200:4200"
+`)
+	ports, err := MergedServicePorts(dir)
+	if err != nil {
+		t.Fatalf("MergedServicePorts: %v", err)
+	}
+	got := map[string]string{}
+	for _, sp := range ports {
+		got[sp.Service] = sp.Host
+	}
+	want := map[string]string{"api": "8000", "db": "5432", "web": "4200"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %v, want %v", got, want)
 	}
 }

@@ -2,6 +2,7 @@ package compose
 
 import (
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -60,10 +61,19 @@ func ServicePorts(path string) ([]ServicePort, error) {
 	return out, nil
 }
 
-// servicesMapping is one file's `services:` block, nil when it declares none.
-// The file is walked as a YAML tree rather than decoded into structs, so
-// compose's own tags (!override, !reset) and anchors pass through.
+// servicesMapping is one file's `services:` block, those of the files it pulls
+// in through `include:` appended, nil when none declares any. The file is
+// walked as a YAML tree rather than decoded into structs, so compose's own tags
+// (!override, !reset) and anchors pass through.
 func servicesMapping(path string) (*yaml.Node, error) {
+	return collectServices(path, map[string]bool{})
+}
+
+// collectServices simply concatenates: compose refuses a service declared both
+// in a file and in what it includes, and resolves an include path against the
+// including file's directory.
+func collectServices(path string, visited map[string]bool) (*yaml.Node, error) {
+	visited[path] = true
 	data, err := os.ReadFile(path)
 	if err != nil {
 		return nil, err
@@ -76,11 +86,57 @@ func servicesMapping(path string) (*yaml.Node, error) {
 	if root.Kind == yaml.DocumentNode && len(root.Content) > 0 {
 		root = deref(root.Content[0])
 	}
-	services := mapValue(root, "services")
-	if services == nil || services.Kind != yaml.MappingNode {
+	merged := &yaml.Node{Kind: yaml.MappingNode}
+	if services := mapValue(root, "services"); services != nil && services.Kind == yaml.MappingNode {
+		merged.Content = append(merged.Content, services.Content...)
+	}
+	for _, inc := range includePaths(root) {
+		if !filepath.IsAbs(inc) {
+			inc = filepath.Join(filepath.Dir(path), inc)
+		}
+		// A remote (git, oci) or interpolated path is no file here: skipped.
+		if visited[inc] || !exists(inc) {
+			continue
+		}
+		sub, err := collectServices(inc, visited)
+		if err != nil {
+			return nil, err
+		}
+		if sub != nil {
+			merged.Content = append(merged.Content, sub.Content...)
+		}
+	}
+	if len(merged.Content) == 0 {
 		return nil, nil
 	}
-	return services, nil
+	return merged, nil
+}
+
+// includePaths reads both `include:` forms: a bare path, or a mapping whose
+// `path` is one file or a list.
+// ponytail: a list's later files are overrides of the first, read here as plain
+// additions; a port redeclared there shows twice, merge them if a project does.
+func includePaths(root *yaml.Node) []string {
+	include := mapValue(root, "include")
+	if include == nil || include.Kind != yaml.SequenceNode {
+		return nil
+	}
+	var paths []string
+	for _, entry := range include.Content {
+		entry = deref(entry)
+		if p := mapValue(entry, "path"); p != nil {
+			entry = p
+		}
+		switch entry.Kind {
+		case yaml.ScalarNode:
+			paths = append(paths, entry.Value)
+		case yaml.SequenceNode:
+			for _, p := range entry.Content {
+				paths = append(paths, deref(p).Value)
+			}
+		}
+	}
+	return paths
 }
 
 func mapValue(n *yaml.Node, key string) *yaml.Node {
