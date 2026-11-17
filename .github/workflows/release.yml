@@ -1,10 +1,8 @@
 name: Release
 
-# A tag is what publishes a version: the module proxy resolves tags, so
-# `go install ...@vX.Y.Z` works the moment it is pushed. This turns that tag
-# into a GitHub release too, with the changelog section as its notes and a
-# binary per platform attached, so the two never drift apart and nobody has to
-# remember the second step.
+# A tag publishes a version: the module proxy resolves it, so `go install
+# ...@vX.Y.Z` works at once. This also turns it into a GitHub release, with the
+# changelog section as notes and a binary per platform.
 on:
   push:
     tags:
@@ -59,9 +57,8 @@ jobs:
             exit 0
           fi
 
-          # The changelog is the source of truth: a version nobody documented
-          # is a version nobody can read about, so this fails rather than
-          # inventing notes from the commit log.
+          # The changelog is the source of truth: fail rather than invent notes
+          # from the commit log.
           version="${TAG#v}"
           notes=$(mktemp)
           python3 - "$version" > "$notes" <<'PY'
