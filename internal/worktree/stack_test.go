@@ -53,13 +53,18 @@ func TestRemoveDropsTheStackImages(t *testing.T) {
 	f := newFixture(t)
 	inner := f.fake.Handler
 	f.fake.Handler = func(c execx.Cmd) (execx.Result, error) {
+		// The dependency image every stack on one lockfile runs, which this
+		// stack happened to build last.
+		if strings.Contains(c.String(), "images -q --filter label=wtm.shared") {
+			return execx.Result{Stdout: "5c0ffee5c0ff\n"}, nil
+		}
 		if strings.Contains(c.String(), "images -q") {
 			want := "--filter label=com.docker.compose.project=" +
 				stack.ProjectName(filepath.Base(f.root), 1, "feat/x")
 			if !strings.Contains(c.String(), want) {
 				t.Errorf("the listing is not scoped to the stack:\n  %s\nwant %s", c.String(), want)
 			}
-			return execx.Result{Stdout: "a18a04d19ffe\n836699db4129\n"}, nil
+			return execx.Result{Stdout: "a18a04d19ffe\n5c0ffee5c0ff\n836699db4129\n"}, nil
 		}
 		return inner(c)
 	}
@@ -74,6 +79,9 @@ func TestRemoveDropsTheStackImages(t *testing.T) {
 	}
 	if !strings.Contains(removal, "a18a04d19ffe") || !strings.Contains(removal, "836699db4129") {
 		t.Fatalf("both images should be removed, got %q", removal)
+	}
+	if strings.Contains(removal, "5c0ffee5c0ff") {
+		t.Fatalf("an image labelled wtm.shared must outlive the stack that built it, got %q", removal)
 	}
 }
 

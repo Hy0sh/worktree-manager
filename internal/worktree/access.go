@@ -151,5 +151,5 @@ func composeEnv(o Options, wt stack.Worktree) []string {
 	return append([]string{
 		"COMPOSE_PROJECT_NAME=" + o.projectName(wt),
 		"COMPOSE_FILE=" + strings.Join(files, string(os.PathListSeparator)),
-	}, portEnv(o, wt)...)
+	}, stackEnv(o, wt, wt.Path)...)
 }

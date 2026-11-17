@@ -25,7 +25,8 @@ func TestUpTargetsTheWorktreeProject(t *testing.T) {
 	if err := c.Up(context.Background(), "myapp-wt-1-feat-x", "/wt", files, []string{"API_PORT=20087"}, nil); err != nil {
 		t.Fatalf("Up: %v", err)
 	}
-	line := f.Lines()[0]
+	last := len(f.Calls) - 1
+	line := f.Lines()[last]
 	for _, want := range []string{
 		"-p myapp-wt-1-feat-x", "--project-directory /wt",
 		"-f /wt/compose.yaml", "-f /wt/.wtm-snapshot.yaml", "up -d --build",
@@ -34,11 +35,40 @@ func TestUpTargetsTheWorktreeProject(t *testing.T) {
 			t.Fatalf("up call %q should contain %q", line, want)
 		}
 	}
-	if f.Calls[0].Dir != "/wt" {
-		t.Fatalf("must run from the worktree, got %q", f.Calls[0].Dir)
+	if f.Calls[last].Dir != "/wt" {
+		t.Fatalf("must run from the worktree, got %q", f.Calls[last].Dir)
 	}
-	if !slices.Contains(f.Calls[0].Env, "API_PORT=20087") {
-		t.Fatalf("the port variables must reach compose's interpolation, got %q", f.Calls[0].Env)
+	if !slices.Contains(f.Calls[last].Env, "API_PORT=20087") {
+		t.Fatalf("the port variables must reach compose's interpolation, got %q", f.Calls[last].Env)
+	}
+}
+
+// A volume shared across stacks is external: compose refuses to start without
+// it and never creates it, so Up does, and only that one.
+func TestUpCreatesTheExternalVolumes(t *testing.T) {
+	f := &execx.Fake{Handler: func(c execx.Cmd) (execx.Result, error) {
+		if strings.Contains(c.String(), "config --format json") {
+			return execx.Result{Stdout: `{"volumes":{
+				"deps":{"name":"app-deps-1a2b3c","external":true},
+				"db":{"name":"myapp-wt-1-feat-x_db"}}}`}, nil
+		}
+		return execx.Result{}, nil
+	}}
+	c, _ := newClient(t, f)
+	if err := c.Up(context.Background(), "myapp-wt-1-feat-x", "/wt", nil, []string{"WTM_DEPS_KEY=1a2b3c"}, nil); err != nil {
+		t.Fatalf("Up: %v", err)
+	}
+	if !slices.Contains(f.Calls[0].Env, "WTM_DEPS_KEY=1a2b3c") {
+		t.Fatalf("the config must interpolate like the up, got %q", f.Calls[0].Env)
+	}
+	var created []string
+	for _, l := range f.Lines() {
+		if after, ok := strings.CutPrefix(l, "docker volume create "); ok {
+			created = append(created, after)
+		}
+	}
+	if !slices.Equal(created, []string{"app-deps-1a2b3c"}) {
+		t.Fatalf("only the external volume should be created, got %q", created)
 	}
 }
 
