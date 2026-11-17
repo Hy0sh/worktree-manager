@@ -318,10 +318,9 @@ func TestDoctorReportsWorktreeDirectoriesGitNoLongerLists(t *testing.T) {
 	}
 }
 
-// Switching branches inside a worktree takes its old name out of `git worktree
-// list`, which used to read as a worktree that vanished — and `wtm create`
-// releases those, taking their stack down with --volumes. The recorded path is
-// what tells the two apart: the worktree is still there, holding another name.
+// A branch switch drops the old name from `git worktree list`, and `wtm create`
+// releases vanished worktrees with --volumes. The recorded path tells the two
+// apart: the worktree is still there, under another name.
 func TestDoctorTellsABranchSwitchFromAVanishedWorktree(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "my-app")
 	drifted := dir + "/.worktrees/feat/renamed"

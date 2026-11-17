@@ -6,10 +6,9 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// ServiceEnvironment is a service's `environment:` across the compose files, a
-// later file winning, in either syntax (a mapping, or a list of KEY=VALUE).
-// "${VAR:-default}" reads as its default; "${VAR}" is kept as written, since
-// its value lives in a shell or an .env file wtm does not read.
+// ServiceEnvironment is a service's `environment:` across the compose files (a
+// later one wins), as a mapping or KEY=VALUE list. "${VAR:-default}" reads as
+// its default; "${VAR}" stays as written, its value living where wtm does not look.
 func ServiceEnvironment(dir, service string) map[string]string {
 	files, err := Files(dir)
 	if err != nil {

@@ -59,11 +59,9 @@ func (c *Client) Up(ctx context.Context, project, worktreeDir string, files, env
 	return err
 }
 
-// createExternalVolumes creates the `external: true` volumes the stack names
-// and docker lacks. An external volume is shared across stacks (dependencies
-// named after WTM_DEPS_KEY): compose never removes it on `down --volumes`, but
-// refuses to start without it. docker seeds an empty one from the image on first
-// mount, so creating it bare is enough; `volume create` keeps an existing one.
+// createExternalVolumes creates the `external: true` volumes docker lacks.
+// compose never removes them on `down --volumes` yet refuses to start without
+// them; docker seeds an empty one from the image, so a bare create is enough.
 func (c *Client) createExternalVolumes(ctx context.Context, dir string, base, env []string) error {
 	res, err := c.Runner.Run(ctx, execx.Cmd{
 		Name: "docker",

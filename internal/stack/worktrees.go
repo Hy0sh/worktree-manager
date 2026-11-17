@@ -24,10 +24,9 @@ type Worktree struct {
 	// carry no reason, so the flag cannot be inferred from LockReason.
 	Locked     bool
 	LockReason string
-	// Detached says HEAD points straight at Head instead of at a branch. git
-	// then names no branch, so Branch is derived from the path: under
-	// WorktreesRoot wtm always creates <root>/<branch>, and elsewhere only the
-	// registry's recorded path can say which branch stood there.
+	// Detached says HEAD points straight at Head, not at a branch, so Branch comes
+	// from the path: <root>/<branch> under WorktreesRoot, elsewhere only the
+	// registry's recorded path says which branch stood there.
 	Detached bool
 	Head     string
 	// UnderRoot says the worktree sits where wtm creates its own. An adopted
@@ -244,10 +243,9 @@ func (c *Client) RecordedAt(wt Worktree) string {
 	return recorded[0]
 }
 
-// Abandoned lists the directories under WorktreesRoot that still carry a
-// worktree's .git pointer file while `git worktree list` no longer names them:
-// what a pruned or hand-deleted administrative directory leaves on disk. Every
-// other command keys off git's listing, so nothing else can see them.
+// Abandoned lists the directories under WorktreesRoot that carry a worktree's
+// .git pointer file while `git worktree list` no longer names them: what a
+// pruned administrative directory leaves behind, invisible to every other command.
 func (c *Client) Abandoned(ctx context.Context) ([]string, error) {
 	root := WorktreesRoot(c.Dir)
 	if _, err := os.Stat(root); err != nil {

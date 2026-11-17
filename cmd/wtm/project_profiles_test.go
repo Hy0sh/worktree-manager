@@ -111,10 +111,9 @@ var flagForSetting = map[string]string{
 	"extra_databases":      "extra-database",
 }
 
-// settingsWithoutAFlag are the fields the command line deliberately leaves
-// out, with the reason. Anything else added to the registry is expected to be
-// settable without opening config.json: `profiles` shipped without a flag for
-// two releases, which this test exists to catch.
+// settingsWithoutAFlag are the fields the command line deliberately leaves out,
+// with the reason. Any other registry field must be settable without editing
+// config.json: `profiles` once shipped without a flag, which this catches.
 var settingsWithoutAFlag = map[string]string{
 	"port_offset":      "an edit must not renumber the stacks already running",
 	"worktree_indices": "state wtm records, not a setting",

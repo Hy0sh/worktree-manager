@@ -33,10 +33,8 @@ func newProjectCreateCmd(a *app) *cobra.Command {
 			if err != nil {
 				return err
 			}
-			// The repository is the one thing a project cannot do without, so
-			// its absence is what tells a scripted call from a bare one.
-			// One prompter for the whole session: a second one would lose what
-			// the first buffered.
+			// A missing repository is what tells a bare call from a scripted one.
+			// One prompter per session: a second would lose what the first buffered.
 			in := newPrompter(a.in, a.out)
 			p, _ := u.Apply(config.Project{})
 			var review []config.FieldChange

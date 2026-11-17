@@ -16,10 +16,9 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/gitx"
 )
 
-// runProjectStepper asks for what a project needs one question at a time, each
-// answer defaulting to what it already carries. inheritedBase is what applies
-// while the project names no base of its own: default_base_branch, or fallback.
-// runner checks answers against the repository; nil skips those checks.
+// runProjectStepper asks for what a project needs, each answer defaulting to
+// what it carries. inheritedBase applies while the project names no base of its
+// own. A nil runner skips the checks against the repository.
 func runProjectStepper(runner execx.Runner, p *prompter, current config.Project, inheritedBase string) (config.ProjectUpdate, error) {
 	var u config.ProjectUpdate
 

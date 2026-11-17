@@ -10,10 +10,9 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
 
-// Switch moves the adopted worktree of the current directory to o.Branch and
-// gives it a fresh stack, keeping its index and so its ports. Git goes first: a
-// refused checkout leaves the old stack untouched. Rerunning finishes a switch
-// that failed halfway, since the recorded path still names the old branch.
+// Switch moves the current directory's adopted worktree to o.Branch with a fresh
+// stack, keeping its index and ports. Git goes first, so a refused checkout leaves
+// the old stack untouched; rerunning finishes a switch that failed halfway.
 func Switch(ctx context.Context, o Options) error {
 	if err := refuseBadBranch(o); err != nil {
 		return err

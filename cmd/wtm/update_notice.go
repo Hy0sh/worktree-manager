@@ -20,10 +20,9 @@ type latestCache struct {
 	Version string    `json:"version"`
 }
 
-// updateNotice returns the line to print under a command when the cache at path
-// knows of a release newer than local, and refreshes a cache older than a day
-// in the background. A command shorter than the lookup leaves the cache as it
-// was: the next longer one refreshes it, no command ever waits on the network.
+// updateNotice returns the line to print when the cache at path knows a release
+// newer than local, and refreshes a cache older than a day in the background.
+// A command shorter than the lookup leaves it stale: none ever waits on the network.
 func (a *app) updateNotice(path, local string, now time.Time) string {
 	if _, _, ok := semverFields(local); !ok {
 		return ""

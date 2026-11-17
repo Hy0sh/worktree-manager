@@ -127,10 +127,9 @@ func TestADriftedWorktreeIsNeitherAdoptableNorListedAsSuch(t *testing.T) {
 	t.Fatalf("the worktree is not listed: %+v", entries)
 }
 
-// Switching branches inside a worktree takes its old name out of `git worktree
-// list` while its containers keep carrying it, so the branch reads as vanished.
-// releaseStale runs on every create: taking that stack down with --volumes
-// would delete the database of a worktree somebody is working in.
+// A branch switch drops the old name from `git worktree list` while the
+// containers keep it, so the branch reads as vanished. releaseStale runs on every
+// create: tearing that stack down with --volumes would delete a live database.
 func TestAStaleIndexWhoseStackStillRunsIsNotTornDown(t *testing.T) {
 	f := newFixture(t)
 	inner := f.fake.Handler

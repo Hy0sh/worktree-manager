@@ -90,10 +90,9 @@ func (j *job) interrupt() (killed bool) {
 	return false
 }
 
-// scanLines ends a line on \r as well as \n: a progress bar redraws itself
-// with a carriage return, and each redraw is worth a line of its own here.
-// Separators are skipped in the same call: a Scanner at EOF stops on a call
-// that advances without a token, and the last line would be lost.
+// scanLines ends a line on \r as well as \n: a progress bar redraws with a
+// carriage return. Separators are skipped in the same call, since a Scanner at
+// EOF stops on a call that advances without a token and would lose the last line.
 func scanLines(data []byte, atEOF bool) (int, []byte, error) {
 	start := 0
 	for start < len(data) && (data[start] == '\r' || data[start] == '\n') {

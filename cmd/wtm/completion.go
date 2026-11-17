@@ -186,10 +186,9 @@ func (a *app) completionProject(name string) (config.Project, error) {
 	return p, err
 }
 
-// completeProfiles suggests what the project declares under `profiles`. The
-// project is the one named in the first position when it is one, and the
-// current directory's otherwise: both `wtm start myapp feat/x --profile <TAB>`
-// and `wtm start feat/x --profile <TAB>` have to answer.
+// completeProfiles suggests the project's `profiles`, serving both
+// `wtm start myapp feat/x --profile <TAB>` and `wtm start feat/x --profile <TAB>`:
+// the project is the first argument when it names one, else the current directory's.
 func (a *app) completeProfiles(_ *cobra.Command, args []string, _ string) ([]string, cobra.ShellCompDirective) {
 	if !a.ensureLoaded() {
 		return nil, cobra.ShellCompDirectiveNoFileComp

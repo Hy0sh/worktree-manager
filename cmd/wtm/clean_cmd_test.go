@@ -39,10 +39,9 @@ func TestCleanRemovesNothingWhenNothingWasLeftBehind(t *testing.T) {
 	}
 }
 
-// The volumes and images of a stale index go with the index: releasing it runs
-// a `compose down` and the labelled sweeps. Dropping a list scanned before that
-// would re-issue a `docker volume rm` on names docker no longer holds, and
-// report the failure as if the cleanup had gone wrong.
+// Releasing a stale index runs a `compose down` and the labelled sweeps, so a
+// list scanned before that would `docker volume rm` names docker no longer holds
+// and report a failed cleanup.
 func TestCleanRescansDockerAfterReleasingTheIndices(t *testing.T) {
 	dir := filepath.Join(t.TempDir(), "my-app")
 	if err := os.MkdirAll(dir, 0o755); err != nil {

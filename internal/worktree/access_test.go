@@ -35,10 +35,9 @@ func TestExecTargetsTheWorktreeStack(t *testing.T) {
 	}
 }
 
-// `wtm run` exports COMPOSE_FILE so a project's own scripts reach its stack,
-// and what runs in such a session calls wtm again. compose reads that variable
-// ahead of the directory it runs from, so an exec without one of its own
-// addressed the files of the worktree the session was opened on, gone by then.
+// `wtm run` exports COMPOSE_FILE and what runs there calls wtm again. compose
+// reads that variable ahead of its directory, so an exec without its own would
+// address the files of the worktree the session was opened on.
 func TestExecNamesTheWorktreeComposeFilesItself(t *testing.T) {
 	f := newFixture(t)
 	o := f.opts("feat/x")

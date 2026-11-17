@@ -33,9 +33,8 @@ func (m *Manager) dump(ctx context.Context, name string, p config.Project, cfg c
 }
 
 // publish writes each file through a .tmp neighbour and renames them only once
-// all are written, so a failed refresh never leaves a partial dump behind, nor
-// a main dump paired with extra ones from another run. The mode matches the
-// directory's: the database container reads these files as its own user.
+// all are written, so a failed refresh leaves no partial or mixed dump. The mode
+// matches the directory's: the database container reads them as its own user.
 func (m *Manager) publish(name string, finals []string, write func(w io.Writer, i int) error) error {
 	if _, err := ProjectDir(m.Root, name); err != nil {
 		return err
