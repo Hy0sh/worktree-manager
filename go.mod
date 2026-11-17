@@ -1,14 +1,14 @@
 module github.com/Hy0sh/worktree-manager
 
-go 1.26.0
+go 1.26.7
 
 require (
 	charm.land/bubbletea/v2 v2.1.1
-	charm.land/lipgloss/v2 v2.0.6
-	github.com/gofrs/flock v0.13.1
+	charm.land/lipgloss/v2 v2.1.0
+	github.com/gofrs/flock v0.13.2
 	github.com/spf13/cobra v1.10.2
-	github.com/spf13/pflag v1.0.10
-	golang.org/x/term v0.47.0
+	github.com/spf13/pflag v1.1.0
+	golang.org/x/term v0.48.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -28,5 +28,5 @@ require (
 	github.com/rivo/uniseg v0.4.7 // indirect
 	github.com/xo/terminfo v1.0.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
-	golang.org/x/sys v0.49.0 // indirect
+	golang.org/x/sys v0.50.0 // indirect
 )
