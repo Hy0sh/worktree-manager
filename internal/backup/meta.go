@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -35,7 +34,7 @@ func (m *Manager) writeMeta(ctx context.Context, name string, p config.Project) 
 }
 
 func (m *Manager) writeMetaFile(name string, meta Meta) error {
-	if err := os.MkdirAll(filepath.Dir(m.MetaPath(name)), 0o700); err != nil {
+	if _, err := ProjectDir(m.Root, name); err != nil {
 		return err
 	}
 	data, err := json.MarshalIndent(meta, "", "  ")
