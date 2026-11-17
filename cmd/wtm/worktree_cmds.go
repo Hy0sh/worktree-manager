@@ -338,37 +338,10 @@ func newRemoveCmd(a *app) *cobra.Command {
 				if all || force {
 					return fmt.Errorf("--merged picks the worktrees itself and never forces: drop --all and --force")
 				}
-				name, p, entries, err := a.allWorktrees(cmd.Context(), args)
-				if err != nil || len(entries) == 0 {
-					return err
-				}
-				o := a.options(name, p, "")
-				o.Base = a.cfg.BaseBranchFor(p)
-				safe, err := a.mergedWorktrees(cmd.Context(), o, entries)
-				if err != nil || len(safe) == 0 {
-					return err
-				}
-				if !assumeYes && !confirm(a.in, a.out, removeAllQuestion(safe)) {
-					return fmt.Errorf("cancelled: nothing was removed (pass --yes to answer for a script)")
-				}
-				return a.eachWorktree(cmd.Context(), o, safe, "removed", worktree.Remove)
+				return a.removeMerged(cmd.Context(), args, assumeYes)
 			}
 			if all {
-				name, p, entries, err := a.allWorktrees(cmd.Context(), args)
-				if err != nil || len(entries) == 0 {
-					return err
-				}
-				for _, e := range entries {
-					fmt.Fprintf(a.out, "  %s  %s (%s)\n", e.Branch, e.Path, e.Status)
-				}
-				// A closed input answers no, which is right for a person and
-				// wrong for a script, so the way out is part of the message.
-				if !assumeYes && !confirm(a.in, a.out, removeAllQuestion(entries)) {
-					return fmt.Errorf("cancelled: nothing was removed (pass --yes to answer for a script)")
-				}
-				o := a.options(name, p, "")
-				o.Force = force
-				return a.eachWorktree(cmd.Context(), o, entries, "removed", worktree.Remove)
+				return a.removeAll(cmd.Context(), args, force, assumeYes)
 			}
 			o, err := a.optionsFor(args)
 			if err != nil {
@@ -384,6 +357,48 @@ func newRemoveCmd(a *app) *cobra.Command {
 		"the clean worktrees whose branch a merge commit brought into the base, after a report")
 	cmd.Flags().BoolVarP(&assumeYes, "yes", "y", false, "do not ask for confirmation (--all, --merged)")
 	return cmd
+}
+
+func (a *app) removeMerged(ctx context.Context, args []string, assumeYes bool) error {
+	name, p, entries, err := a.allWorktrees(ctx, args)
+	if err != nil || len(entries) == 0 {
+		return err
+	}
+	o := a.options(name, p, "")
+	o.Base = a.cfg.BaseBranchFor(p)
+	safe, err := a.mergedWorktrees(ctx, o, entries)
+	if err != nil || len(safe) == 0 {
+		return err
+	}
+	if err := a.confirmRemoval(safe, assumeYes); err != nil {
+		return err
+	}
+	return a.eachWorktree(ctx, o, safe, "removed", worktree.Remove)
+}
+
+func (a *app) removeAll(ctx context.Context, args []string, force, assumeYes bool) error {
+	name, p, entries, err := a.allWorktrees(ctx, args)
+	if err != nil || len(entries) == 0 {
+		return err
+	}
+	for _, e := range entries {
+		fmt.Fprintf(a.out, "  %s  %s (%s)\n", e.Branch, e.Path, e.Status)
+	}
+	if err := a.confirmRemoval(entries, assumeYes); err != nil {
+		return err
+	}
+	o := a.options(name, p, "")
+	o.Force = force
+	return a.eachWorktree(ctx, o, entries, "removed", worktree.Remove)
+}
+
+// confirmRemoval: a closed input answers no, which is right for a person and
+// wrong for a script, so the way out is part of the message.
+func (a *app) confirmRemoval(entries []worktree.Entry, assumeYes bool) error {
+	if !assumeYes && !confirm(a.in, a.out, removeAllQuestion(entries)) {
+		return fmt.Errorf("cancelled: nothing was removed (pass --yes to answer for a script)")
+	}
+	return nil
 }
 
 // mergedWorktrees prints the verdict on every worktree, the kept ones included,
