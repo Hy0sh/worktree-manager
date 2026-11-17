@@ -10,10 +10,17 @@ rather than a public issue, and allow some time for a fix before disclosing.
 
 `wtm` is a local developer tool. It runs `git` and `docker` on your behalf. Its
 only network requests of its own ask the Go module proxy (`proxy.golang.org`)
-for the latest published version, from `wtm doctor` and `wtm update`, and fetch
-that release's archive and `SHA256SUMS` from GitHub, from `wtm update` only.
-Both come from the same origin: the checksum catches a corrupted download, not
-a compromised release.
+for the latest published version, and fetch that release's archive and
+`SHA256SUMS` from GitHub, from `wtm update` only. The version lookup runs from
+`wtm doctor` and `wtm update`, and also in the background from any command run
+in a terminal, at most once a day; setting `WTM_NO_UPDATE_CHECK` to a non-empty
+value turns the background one off.
+
+The archive and `SHA256SUMS` come from the same origin: the checksum catches a
+corrupted download, not a compromised release. Archives released after 1.5.0
+also carry a build provenance attestation, which ties each one to the workflow
+run that built it and can be checked with `gh attestation verify`; `wtm update`
+does not check it.
 
 Two files are treated as trusted input, because whoever can write them already
 controls the machine:
