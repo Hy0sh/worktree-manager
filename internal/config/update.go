@@ -25,6 +25,8 @@ type ProjectUpdate struct {
 	ProfileDescriptions map[string]string
 	// Copy replaces the whole list when given, an empty one included.
 	Copy []string
+	// RunEnv replaces the whole set when given, like Env.
+	RunEnv map[string]string
 
 	DBService         *string
 	DBUser            *string
@@ -48,7 +50,7 @@ func (u ProjectUpdate) IsEmpty() bool {
 	return u.Dir == nil && u.BaseBranch == nil && u.Dump == nil &&
 		u.GitContainer == nil && u.PostCreate == nil && u.ReadyTimeout == nil &&
 		u.ReadyInterval == nil && u.Profiles == nil && u.ProfileDescriptions == nil &&
-		u.Copy == nil && !u.touchesBackup()
+		u.Copy == nil && u.RunEnv == nil && !u.touchesBackup()
 }
 
 type FieldChange struct {
@@ -95,6 +97,12 @@ func (u ProjectUpdate) Apply(p Project) (Project, []FieldChange) {
 	if u.Copy != nil && !slices.Equal(p.Copy, u.Copy) {
 		changes = append(changes, FieldChange{"copy", strings.Join(p.Copy, ", "), strings.Join(u.Copy, ", ")})
 		p.Copy = u.Copy
+	}
+	if u.RunEnv != nil && !maps.Equal(p.RunEnv, u.RunEnv) {
+		// Keys only, for the same reason as env.
+		changes = append(changes, FieldChange{"run_env",
+			fmt.Sprint(slices.Sorted(maps.Keys(p.RunEnv))), fmt.Sprint(slices.Sorted(maps.Keys(u.RunEnv)))})
+		p.RunEnv = u.RunEnv
 	}
 
 	if !u.touchesBackup() {

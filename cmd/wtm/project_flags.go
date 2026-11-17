@@ -35,6 +35,7 @@ type projectFlags struct {
 	readyTimeout  string
 	readyInterval string
 	env           []string
+	runEnv        []string
 	profiles      []string
 	profileDescs  []string
 	copy          []string
@@ -60,6 +61,7 @@ func (f *projectFlags) bind(cmd *cobra.Command) {
 	cmd.Flags().StringVar(&f.readyTimeout, "ready-timeout", "", "how long a service may take to answer before post_create runs, e.g. 2m (default: 1m for the database, 10m for the application)")
 	cmd.Flags().StringVar(&f.readyInterval, "ready-interval", "", "how often it is asked, e.g. 10s (default: 1s)")
 	cmd.Flags().StringArrayVar(&f.env, "env", nil, "variable passed to the migration container, repeatable, replaces the whole set (e.g. --env DB_NAME="+config.DatabasePlaceholder+"); a value given here shows in `ps` and the shell history, the stepper keeps it off both")
+	cmd.Flags().StringArrayVar(&f.runEnv, "run-env", nil, "variable `wtm run`, `create --run` and `wtm env` set for host commands, repeatable, replaces the whole set, --run-env '' clears it; {{port:<service>:<container port>}} becomes the worktree's host port (e.g. --run-env DB_URL=postgresql://localhost:{{port:db:5432}}/app); a value given here shows in `ps` and the shell history")
 	cmd.Flags().StringArrayVar(&f.profiles, "profile-set", nil, "subset of compose services `wtm start --profile` may bring up, repeatable, replaces the whole set (e.g. --profile-set light=db,backend)")
 	cmd.Flags().StringArrayVar(&f.profileDescs, "profile-description", nil, "when to pick a profile, shown by `wtm project profiles`, repeatable, replaces the whole set (e.g. --profile-description 'async=Celery tasks')")
 	cmd.Flags().StringArrayVar(&f.copy, "copy", nil, "file git does not track that each worktree gets a copy of, as a pattern relative to the project, repeatable, replaces the whole set, --copy '' clears it (e.g. --copy .env.local --copy 'config/*.local.json'); *.env files are copied anyway")
@@ -120,6 +122,21 @@ func (f *projectFlags) update(cmd *cobra.Command) (config.ProjectUpdate, error) 
 			return u, err
 		}
 		u.Env = env
+	}
+	if changed("run-env") {
+		var pairs []string
+		for _, pair := range f.runEnv {
+			if pair != "" {
+				pairs = append(pairs, pair)
+			}
+		}
+		u.RunEnv = map[string]string{}
+		if len(pairs) > 0 {
+			var err error
+			if u.RunEnv, err = parsePairs("--run-env", "KEY=VALUE", pairs); err != nil {
+				return u, err
+			}
+		}
 	}
 	if changed("profile-set") {
 		profiles, err := parseProfiles(f.profiles)
@@ -183,6 +200,9 @@ func validateUpdate(u config.ProjectUpdate) error {
 		}
 	}
 	if err := config.ValidateExtraDatabases(u.ExtraDatabases); err != nil {
+		return err
+	}
+	if err := config.ValidateRunEnv(u.RunEnv); err != nil {
 		return err
 	}
 	// A create must not discover a malformed duration halfway through, once the

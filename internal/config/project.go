@@ -44,8 +44,12 @@ type Project struct {
 	// Copy lists the files git leaves out that a worktree still needs, as
 	// patterns relative to the project root (".env.local", "config/*.local.json").
 	// The *.env files are copied without being named here.
-	Copy   []string `json:"copy,omitempty"`
-	Backup *Backup  `json:"backup,omitempty"`
+	Copy []string `json:"copy,omitempty"`
+	// RunEnv is what `wtm run` and `wtm env` set for host commands, as
+	// {"DATABASE_URL": "postgresql://u:p@localhost:{{port:db:5432}}/app"}: a
+	// literal port has no variable name, so a script cannot find its new port.
+	RunEnv map[string]string `json:"run_env,omitempty"`
+	Backup *Backup           `json:"backup,omitempty"`
 }
 
 const (
