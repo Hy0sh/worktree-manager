@@ -7,10 +7,9 @@ import (
 	"strings"
 )
 
-// nginxProxy reads VIRTUAL_HOST, a comma-separated list, of each service. The
-// proxy listens on 80 and 443 unless its HTTP_PORT or HTTPS_PORT move them;
-// https is only served once a certificate is mounted, which the compose file
-// does not show, so the http port is preferred when both are published.
+// nginxProxy reads each service's VIRTUAL_HOST, a comma-separated list. The proxy
+// listens on 80 and 443 unless HTTP_PORT or HTTPS_PORT move them. The http port
+// wins when both are published: a mounted certificate is invisible in compose.
 func nginxProxy(p Service, services map[string]Service, out map[string][]string) {
 	ports := published(p)
 	target := func(name string, standard int) int {

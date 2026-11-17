@@ -303,9 +303,8 @@ func TestAllHoldsWhatWorktreesHides(t *testing.T) {
 }
 
 // A worktree whose administrative directory was pruned keeps its checkout and
-// its .git pointer file, and drops out of `git worktree list`. Every command
-// keys off that listing, so nothing could see the directory: `wtm create`
-// refused the branch, `wtm remove` said no such worktree, doctor said nothing.
+// .git pointer file but drops out of `git worktree list`, which every command
+// keys off: create refused the branch, remove said no such worktree.
 func TestAbandonedSeesOnlyWhatGitNoLongerLists(t *testing.T) {
 	root := t.TempDir()
 	live := filepath.Join(root, ".worktrees", "feat", "live")

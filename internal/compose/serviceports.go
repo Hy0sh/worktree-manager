@@ -11,7 +11,7 @@ import (
 
 type ServicePort struct {
 	Service string
-	// Var is the environment variable wtc overrides, empty when the port is
+	// Var is the environment variable wtm overrides, empty when the port is
 	// hardcoded and therefore not isolatable.
 	Var       string
 	HostIP    string // interface the project binds to (IPv4), empty when unset
@@ -61,10 +61,9 @@ func ServicePorts(path string) ([]ServicePort, error) {
 	return out, nil
 }
 
-// servicesMapping is one file's `services:` block, those of the files it pulls
-// in through `include:` appended, nil when none declares any. The file is
-// walked as a YAML tree rather than decoded into structs, so compose's own tags
-// (!override, !reset) and anchors pass through.
+// servicesMapping is one file's `services:` block with those of its `include:`
+// files appended, nil when none declares any. Walked as a YAML tree, not decoded
+// into structs, so compose's tags (!override, !reset) and anchors pass through.
 func servicesMapping(path string) (*yaml.Node, error) {
 	return collectServices(path, map[string]bool{})
 }
@@ -113,9 +112,8 @@ func collectServices(path string, visited map[string]bool) (*yaml.Node, error) {
 }
 
 // includePaths reads both `include:` forms: a bare path, or a mapping whose
-// `path` is one file or a list.
-// ponytail: a list's later files are overrides of the first, read here as plain
-// additions; a port redeclared there shows twice, merge them if a project does.
+// `path` is a file or a list. ponytail: a list's later files override the first
+// but are read as additions, so a redeclared port shows twice; merge if it matters.
 func includePaths(root *yaml.Node) []string {
 	include := mapValue(root, "include")
 	if include == nil || include.Kind != yaml.SequenceNode {

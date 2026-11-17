@@ -1,9 +1,9 @@
-# binaire compilé
+# compiled binary
 /wtm
 
-# dumps volumineux et régénérables, si le stockage est redirigé ici
-# (par défaut ils vivent dans ~/.config/wtm/backups)
+# large, regenerable dumps, if storage is redirected here
+# (by default they live in ~/.config/wtm/backups)
 /backups/
 
-#superpowers
+# superpowers
 docs/superpowers/

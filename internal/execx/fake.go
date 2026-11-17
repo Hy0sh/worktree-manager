@@ -10,9 +10,8 @@ type Call struct {
 	Args []string
 	Dir  string
 	Env  []string
-	// Bounded says the context carried a deadline. A command asking docker
-	// something must never be able to hang wtm, and nothing could assert that
-	// before: the fake used to drop the context on the floor.
+	// Bounded says the context carried a deadline: a command asking docker
+	// something must never be able to hang wtm, and tests assert it here.
 	Bounded bool
 	// Cancelled says the context was already done: such a command fails before
 	// it starts, which a cleanup must never do.

@@ -11,7 +11,6 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/stack"
 )
 
-// wtIndex spots the index a compose project label encodes.
 var wtIndex = regexp.MustCompile(`-wt-(\d+)-`)
 
 // MatchBranch finds the label belonging to this repo and branch among compose

@@ -29,14 +29,12 @@ type Project struct {
 	// which its services alone do not; `wtm project profiles` shows them.
 	ProfileDescriptions map[string]string `json:"profile_descriptions,omitempty"`
 	// WorktreePaths is where each of those branches stood when its index was
-	// recorded. Switching branches inside a worktree takes its old name out of
-	// `git worktree list`, which reads as a worktree that vanished; the path is
-	// what tells that apart from one that really did.
+	// recorded. A branch switch drops the old name from `git worktree list`; the
+	// path tells that apart from a worktree that really vanished.
 	WorktreePaths map[string]string `json:"worktree_paths,omitempty"`
 	// PostCreate runs in the application container once a new worktree's stack
-	// answers, e.g. "python manage.py seed_data". It is where a seed belongs
-	// when it has to be replayed per worktree; one that can live in the dump
-	// goes in migrate_command instead and costs nothing per create.
+	// answers, e.g. "python manage.py seed_data". For a seed replayed per
+	// worktree; one that can live in the dump goes in migrate_command instead.
 	PostCreate string `json:"post_create,omitempty"`
 	// ReadyTimeout is how long a new worktree waits for a service before
 	// post_create runs, ReadyInterval how often it asks, both as durations
@@ -50,7 +48,6 @@ type Project struct {
 	Backup *Backup  `json:"backup,omitempty"`
 }
 
-// Defaults for the most common docker compose layout.
 const (
 	DefaultDBService = "db"
 	DefaultDBUser    = "postgres"

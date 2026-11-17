@@ -168,8 +168,8 @@ func (a *app) reportStaleIndices(stale []staleIndex) {
 }
 
 // reportUnindexed names the worktrees the registry holds no index for. Every
-// leftover report holds back for their whole project, which used to happen
-// without a word: doctor answered "nothing" where it meant "cannot tell".
+// leftover report holds back for their whole project, so doctor must say
+// "cannot tell" rather than "nothing".
 func (a *app) reportUnindexed(rws []repoWorktrees) {
 	var lines []string
 	for _, rw := range rws {
@@ -183,8 +183,8 @@ func (a *app) reportUnindexed(rws []repoWorktrees) {
 }
 
 // reportOrphanStacks lists the containers of worktrees that no longer exist.
-// The index allocator sees them and refuses their index; until this report,
-// nothing told the developer, so `wtm clean` said "done" and left them running.
+// The index allocator sees them and refuses their index, so `wtm clean` leaves
+// them running: this report is what tells the developer.
 func (a *app) reportOrphanStacks(orphans []orphanStack) {
 	var lines, cmds []string
 	for _, o := range orphans {

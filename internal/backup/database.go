@@ -44,10 +44,9 @@ func (m *Manager) ensureUp(ctx context.Context, name string, p config.Project, c
 	return m.cleanupStarted(ctx, p, cfg, existing, running), nil
 }
 
-// cleanupStarted undoes only what wtm itself started. A stack a developer had
-// merely downed keeps its data in named volumes, so even when no container was
-// there only the containers wtm brought up, their anonymous volumes and the
-// network are wtm's.
+// cleanupStarted undoes only what wtm itself started: the containers it brought
+// up, their anonymous volumes and the network. Named volumes stay, since a stack
+// a developer merely downed keeps its data there.
 func (m *Manager) cleanupStarted(ctx context.Context, p config.Project, cfg config.Backup, existing, wasRunning map[string]bool) func() {
 	return func() {
 		// An interrupted refresh still takes down what it started.

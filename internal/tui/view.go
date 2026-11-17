@@ -296,7 +296,6 @@ func (m Model) keys() string {
 	return "↑/↓ move · s start · x stop · d remove · enter shell · l logs" + open + " · r refresh · q quit" + closing
 }
 
-// panel is the job's output under a header saying where it stands.
 func (m Model) panel() []string {
 	j := m.job
 	state := faint.Render("running…")

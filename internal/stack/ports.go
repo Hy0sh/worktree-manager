@@ -11,9 +11,8 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/compose"
 )
 
-// baseOffset, the formula and the fallback are taken verbatim from
-// worktree-compose. Keeping them identical is not a detail: worktrees created
-// before this tool stopped shelling out to it must keep the exact same ports.
+// baseOffset, the formula and the fallback match worktree-compose exactly:
+// worktrees it created must keep the same ports.
 const baseOffset = 20000
 
 const DefaultStride = 1

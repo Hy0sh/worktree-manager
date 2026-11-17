@@ -34,10 +34,9 @@ func repoWithComposeBody(t *testing.T, body string) string {
 	return dir
 }
 
-// stepperAnswers names each question the stepper asks, so a fixture states only
-// what it answers and a new question renumbers nothing. An empty field is a
-// plain enter, which keeps the offered default; a field holding a newline
-// answers a question the stepper asks twice, rejecting then correcting.
+// stepperAnswers names each question, so a fixture states only what it answers
+// and a new question renumbers nothing. An empty field is a plain enter; a field
+// holding a newline answers a question asked twice, rejecting then correcting.
 type stepperAnswers struct {
 	dir, base, dump                     string
 	dbService, dbEngine, dbUser, dbPath string
@@ -220,10 +219,9 @@ func TestStepperOffersTheComposeServicesForTheMigrations(t *testing.T) {
 	}
 }
 
-// What the compose file and the repository already say is offered, so a
-// Symfony project is registered on enters: the user its postgres image
-// creates, the one service built from the repository, the Doctrine command,
-// the DATABASE_URL it reads, and start_dependencies only because of a redis.
+// What the compose file and repository already say is offered, so a Symfony
+// project registers on enters: the postgres user, the one built service, the
+// Doctrine command, the DATABASE_URL, and start_dependencies only for a redis.
 func TestStepperOffersWhatTheProjectAlreadySays(t *testing.T) {
 	dir := repoWithComposeBody(t, `services:
   php:

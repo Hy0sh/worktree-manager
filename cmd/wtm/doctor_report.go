@@ -223,8 +223,8 @@ func unclaimedProjects(all []string, repoName string, live []string) []string {
 }
 
 // intraProjectClashes reports the ports two worktrees of the same project would
-// both publish. Until the allocator learnt to skip clashing indices, worktrees
-// recorded before can still overlap; portStride spreads them.
+// both publish. The allocator skips clashing indices, but worktrees recorded
+// before it did can still overlap; portStride spreads them.
 func intraProjectClashes(holders []portHolder) []string {
 	type key struct {
 		project string

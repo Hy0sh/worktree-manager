@@ -56,10 +56,9 @@ func TestOSRunnerFailurePropagatesStderr(t *testing.T) {
 	}
 }
 
-// Cmd.Env is appended to the environment, so a variable set twice relies on
-// os/exec keeping the last one. wtm's `docker compose` calls restate
-// COMPOSE_FILE for that reason: the caller's session may carry another
-// worktree's, and compose would follow it.
+// Cmd.Env is appended, so a variable set twice relies on os/exec keeping the
+// last. `docker compose` calls restate COMPOSE_FILE because the caller's session
+// may carry another worktree's.
 func TestEnvOverridesAnInheritedVariable(t *testing.T) {
 	t.Setenv("COMPOSE_FILE", "/gone/compose.yaml")
 	res, err := OSRunner{}.Run(context.Background(), Cmd{
