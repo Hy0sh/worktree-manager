@@ -62,7 +62,6 @@ func startJob(verb, branch string, c *exec.Cmd) (*job, error) {
 	return &job{verb: verb, branch: branch, cmd: c, events: events, running: true}, nil
 }
 
-// next waits for the job's next line, or its end.
 func (j *job) next() tea.Cmd {
 	events := j.events
 	return func() tea.Msg { return <-events }

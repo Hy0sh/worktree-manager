@@ -322,7 +322,6 @@ func (m *Model) answerMemory(key string) tea.Cmd {
 	return nil
 }
 
-// launch runs a verb in the panel.
 func (m *Model) launch(verb, branch string, args ...string) tea.Cmd {
 	j, err := startJob(verb, branch, m.src.Wtm(args...))
 	if err != nil {

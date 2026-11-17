@@ -21,8 +21,7 @@ type Source struct {
 	// Wtm runs this very binary. The lifecycle verbs are handed the terminal
 	// rather than called in-process: docker streams straight to stdout, and a
 	// start may ask about memory.
-	Wtm func(args ...string) *exec.Cmd
-	// Open hands a URL to the desktop's browser.
+	Wtm  func(args ...string) *exec.Cmd
 	Open func(url string) error
 	// Memory is the warning `wtm start` prints when memory is tight, empty when
 	// it is not. A start in the panel has no terminal to ask from, so the

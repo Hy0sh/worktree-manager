@@ -48,7 +48,6 @@ type Project struct {
 	Backup *Backup  `json:"backup,omitempty"`
 }
 
-// Defaults for the most common docker compose layout.
 const (
 	DefaultDBService = "db"
 	DefaultDBUser    = "postgres"

@@ -38,7 +38,6 @@ func suggestMigrations(dir string) (migrate, migrations string) {
 	return "", ""
 }
 
-// databaseVars are the names applications commonly read their database from.
 var databaseVars = []string{"DATABASE_URL", "DB_NAME", "DB_DATABASE", "DATABASE_NAME", "POSTGRES_DB", "MYSQL_DATABASE"}
 
 // suggestEnv turns the database variables the application service already sets
