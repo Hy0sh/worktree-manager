@@ -28,8 +28,6 @@ func newProjectProfilesCmd(a *app) *cobra.Command {
 		ValidArgsFunction: a.completeProjects,
 		Short:             "Lists the profiles `--profile` accepts, with what each one starts and leaves out",
 		Args:              cobra.MaximumNArgs(1),
-		SilenceUsage:      true,
-		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := ""
 			if len(args) == 1 {
@@ -105,11 +103,9 @@ func refuseIfWorktreesRemain(ctx context.Context, a *app, name string, p config.
 
 func newProjectListCmd(a *app) *cobra.Command {
 	return &cobra.Command{
-		Use:           "list",
-		Short:         "Lists the registered projects",
-		Args:          cobra.NoArgs,
-		SilenceUsage:  true,
-		SilenceErrors: true,
+		Use:   "list",
+		Short: "Lists the registered projects",
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(a.cfg.Projects) == 0 {
 				fmt.Fprintf(a.out, "no registered project (%s)\n", a.cfgPath)
@@ -133,8 +129,6 @@ func newProjectRemoveCmd(a *app) *cobra.Command {
 		ValidArgsFunction: a.completeProjects,
 		Short:             "Removes a project from the registry (worktrees and repository untouched)",
 		Args:              needArgs(1, 1, "name the project to remove, as in `wtm project remove my-app`"),
-		SilenceUsage:      true,
-		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 			p, err := a.cfg.Get(name)

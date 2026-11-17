@@ -36,8 +36,6 @@ func newTUICmd(a *app) *cobra.Command {
 			"r refreshes at once, q quits.",
 		Args:              cobra.RangeArgs(0, 1),
 		ValidArgsFunction: a.completeProjects,
-		SilenceUsage:      true,
-		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name, _, err := a.projectArg(args)
 			if err != nil {

@@ -18,9 +18,7 @@ func newProjectCreateCmd(a *app) *cobra.Command {
 			"one question at a time instead of expecting every flag to be known;\n" +
 			"any flag already given becomes the answer offered by default. The\n" +
 			"name is one of the questions, and defaults to the directory's own.",
-		Args:          needArgs(0, 1, "name the project, as in `wtm project create my-app`"),
-		SilenceUsage:  true,
-		SilenceErrors: true,
+		Args: needArgs(0, 1, "name the project, as in `wtm project create my-app`"),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := ""
 			if len(args) == 1 {

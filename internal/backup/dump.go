@@ -8,7 +8,6 @@ import (
 
 	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/dbengine"
-	"github.com/Hy0sh/worktree-manager/internal/execx"
 )
 
 // dump writes the throwaway database as the main dump, and each extra database
@@ -20,12 +19,9 @@ func (m *Manager) dump(ctx context.Context, name string, p config.Project, cfg c
 		paths = append(paths, ExtraDumpPath(m.Root, name, extra))
 	}
 	return m.publish(name, paths, func(w io.Writer, i int) error {
-		if _, err := m.Runner.Run(ctx, execx.Cmd{
-			Name:   "docker",
-			Args:   append([]string{"compose", "exec", "-T", cfg.DBService}, eng.DumpArgs(cfg.DBUser, dbs[i])...),
-			Dir:    p.Dir,
-			Stdout: w,
-		}); err != nil {
+		cmd := dbExec(p, cfg, eng.DumpArgs(cfg.DBUser, dbs[i]))
+		cmd.Stdout = w
+		if _, err := m.Runner.Run(ctx, cmd); err != nil {
 			return fmt.Errorf("dumping %s: %w", dbs[i], err)
 		}
 		return nil

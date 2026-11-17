@@ -15,8 +15,6 @@ func newListCmd(a *app) *cobra.Command {
 		Short:             "Lists the worktrees of a project",
 		Args:              cobra.RangeArgs(0, 1),
 		ValidArgsFunction: a.completeProjects,
-		SilenceUsage:      true,
-		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name, p, err := a.projectArg(args)
 			if err != nil {
