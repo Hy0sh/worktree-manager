@@ -7,6 +7,8 @@ behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+## [1.5.0] - 2026-11-17
+
 ### Added
 
 - Every compose call of a stack gets `WTM_DEPS_KEY`, a hash of the lockfiles
@@ -1351,7 +1353,8 @@ First tagged release. The whole worktree lifecycle behind one binary:
   identical so worktrees created with it keep working.
 - A project without a compose file is not an error, there is simply no stack.
 
-[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v1.4.1...HEAD
+[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v1.5.0...HEAD
+[1.5.0]: https://github.com/Hy0sh/worktree-manager/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/Hy0sh/worktree-manager/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/Hy0sh/worktree-manager/compare/v1.3.0...v1.4.0
 [1.3.0]: https://github.com/Hy0sh/worktree-manager/compare/v1.2.0...v1.3.0
