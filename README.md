@@ -65,6 +65,10 @@ tar -xzf wtm_<version>_darwin_arm64.tar.gz wtm
 mv wtm ~/.local/bin/
 ```
 
+Archives released after 1.5.0 also carry a build provenance attestation, which
+ties each one to the workflow run that built it, independently of `SHA256SUMS`:
+`gh attestation verify wtm_<version>_darwin_arm64.tar.gz --repo Hy0sh/worktree-manager`.
+
 Those are built by `go install` from the tag itself, so they report their
 version exactly like an installed one.
 
@@ -417,10 +421,11 @@ exists to skip. Seed only.
 
 Postgres, MySQL, MariaDB, MongoDB and SQLite are supported. The engine is
 read from the database service's image in the compose file and offered as the
-default at registration, then recorded as `db_engine` (`--db-engine`
-overrides it). Database credentials are never stored by wtm: every engine
-command reads them from the container's own environment (`POSTGRES_*`,
-`MYSQL_ROOT_PASSWORD`, `MONGO_INITDB_*`).
+default at registration, then recorded as `backup.db_engine` (`--db-engine`
+overrides it). Every engine command (the probe, the dump, the restore) reads
+the database credentials from the container's own environment (`POSTGRES_*`,
+`MYSQL_ROOT_PASSWORD`, `MONGO_INITDB_*`). What `--env` passes is stored,
+though, in `~/.config/wtm/config.json`, which is created `0600`.
 
 SQLite has no database service, so it is chosen explicitly with
 `--db-engine sqlite` (there is no image to detect it from). Its snapshot is
