@@ -98,8 +98,9 @@ func hostsOf(rule string) []string {
 }
 
 // routerPort is the host port of the first entrypoint the router listens on
-// that the proxy publishes; a router naming none listens on all. Entrypoints in
-// a mounted traefik.yml are invisible, so 80 (443 for tls) stands in without any.
+// that the proxy publishes; a router naming none listens on all. A mounted
+// traefik.yml is invisible here, so with no entrypoint on the command line the
+// conventional 80, or 443 for tls, stands in.
 func routerPort(named string, entrypoints map[string]*entrypoint, published map[int]string, tls *bool) (string, bool) {
 	if len(entrypoints) == 0 {
 		target := 80

@@ -32,8 +32,8 @@ type sweep struct {
 var (
 	volumeSweep = sweep{noun: "volume", list: []string{"volume", "ls", "-q"}, rm: []string{"volume", "rm"}}
 	// Only what compose built: a pulled image carries no project label, so the
-	// main stack's postgres is never caught. spare protects the image shared by
-	// every stack on one lockfile, which carries whichever built it last's label.
+	// main stack's postgres is never caught. spare keeps the image every stack on
+	// one lockfile shares: dropping it would cost the next stack a full unpack.
 	imageSweep = sweep{noun: "image", list: []string{"images", "-q"}, rm: []string{"rmi"}, spare: "wtm.shared"}
 	// Listed, never dropped: a worktree that vanished leaves stopped containers
 	// at most, one that only switched branches leaves them running.
