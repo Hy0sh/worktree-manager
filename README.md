@@ -181,8 +181,9 @@ wtm exec feat/my-branch -- bash
 wtm exec feat/my-branch --service db -- psql -U postgres
 
 # on your machine, from the worktree directory, with COMPOSE_PROJECT_NAME
-# and COMPOSE_FILE pointing at this worktree's stack, and the port variables
-# (a generic PORT included) set to this worktree's ports
+# and COMPOSE_FILE pointing at this worktree's stack. Ports written as
+# ${VAR:-default} get their variable set to this worktree's port; ports written
+# as literals are reached through run_env (see "How ports are isolated")
 wtm run feat/my-branch -- claude
 wtm run feat/my-branch -- git status
 wtm run feat/my-branch -- scripts/some-compose-script.sh
@@ -643,6 +644,37 @@ worktree. The port variables still reach compose through the environment of
 every call wtm makes, which compose reads ahead of `.env`: an
 `environment: API_URL: http://localhost:${API_PORT}` gets the worktree's port
 either way.
+
+### Host commands: `run_env`
+
+A script run on your machine has no compose file to read: for a port published
+as a literal, wtm exports no variable, so the script falls back to its default
+port, which is the main stack's (it fails when that stack is stopped, and
+writes into it when it runs). `run_env` is a per-project set of variables whose
+values may name a port of the stack:
+
+```sh
+wtm project edit my-app \
+  --run-env 'AUTH_ADMIN_URL=http://localhost:{{port:auth:4434}}' \
+  --run-env 'DATABASE_URL=postgresql://app:secret@localhost:{{port:db:5432}}/my_app'
+
+wtm run feat/my-branch -- pnpm some-script   # gets both, on this worktree's ports
+eval "$(wtm env feat/my-branch)"             # the same, for a shell
+```
+
+`{{port:<service>:<container port>}}` is the host port this worktree publishes
+for that container port, whether the compose file wrote it as a literal or as a
+variable. A template that does not resolve (the service does not publish that
+port on this branch) is an error and the command does not run: a variable left
+out would send the script back to the main stack. `--run-env` replaces the
+whole set, and `--run-env ''` clears it.
+
+Only commands started with `wtm run`, `wtm create --run` or `wtm env` receive
+these variables, and never a `docker compose` call, whose environment would
+carry a host URL into a container. A command typed bare in the worktree still
+aims at the default ports. A variable of the same name in your own environment
+is overridden. Values can hold a password: they live in `config.json`, and a
+value given on the command line shows in `ps` and the shell history.
 
 ### Addresses behind a proxy
 

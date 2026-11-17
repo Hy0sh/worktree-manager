@@ -27,7 +27,7 @@ controls the machine:
 
 - `~/.config/wtm/config.json`, whose `migrate_command` and `deps_command` are
   executed inside a container by design. It may also hold a connection string
-  with a password, so it is created with `0600` permissions, in a `0700`
+  with a password, in `backup.env` or in `run_env`, so it is created with `0600` permissions, in a `0700`
   directory.
 - The target project's compose files, which are read to know which ports to
   rebase, and then handed to `docker compose`. A compose file is code running

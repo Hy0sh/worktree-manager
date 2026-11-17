@@ -3,10 +3,13 @@ package worktree
 import (
 	"context"
 	"fmt"
+	"maps"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/Hy0sh/worktree-manager/internal/compose"
+	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 	"github.com/Hy0sh/worktree-manager/internal/index"
 	"github.com/Hy0sh/worktree-manager/internal/stack"
@@ -69,8 +72,8 @@ func Run(ctx context.Context, o Options, command []string) error {
 		return err
 	}
 	if compose.Has(o.Project.Dir) && composeEnv(o, wt) == nil {
-		o.logf("warning: no stack index is recorded for %s, so COMPOSE_PROJECT_NAME and COMPOSE_FILE "+
-			"are not set: run `wtm start %s` first", o.Branch, o.Branch)
+		o.logf("warning: no stack index is recorded for %s, so COMPOSE_PROJECT_NAME, COMPOSE_FILE "+
+			"and run_env are not set: run `wtm start %s` first", o.Branch, o.Branch)
 	}
 	return runIn(ctx, o, wt, execx.Cmd{Name: command[0], Args: command[1:]})
 }
@@ -90,15 +93,63 @@ func Env(ctx context.Context, o Options) ([]string, error) {
 	if env == nil {
 		return nil, fmt.Errorf("no stack index is recorded for %s: run `wtm start %s` first", o.Branch, o.Branch)
 	}
-	return env, nil
+	extra, err := runEnv(o, wt)
+	if err != nil {
+		return nil, err
+	}
+	return append(env, extra...), nil
 }
 
 func runIn(ctx context.Context, o Options, wt stack.Worktree, c execx.Cmd) error {
 	c.Dir = wt.Path
 	c.Env = composeEnv(o, wt)
+	if c.Env != nil {
+		extra, err := runEnv(o, wt)
+		if err != nil {
+			return err
+		}
+		c.Env = append(c.Env, extra...)
+	}
 	c.Interactive = true
 	_, err := o.Runner.Run(ctx, c)
 	return err
+}
+
+// runEnv stays out of composeEnv, which also feeds `docker compose`, where a
+// host URL would land in a container. An unresolved template is an error: a
+// variable silently absent sends the script back to the main stack.
+func runEnv(o Options, wt stack.Worktree) ([]string, error) {
+	if len(o.Project.RunEnv) == 0 {
+		return nil, nil
+	}
+	if err := config.ValidateRunEnv(o.Project.RunEnv); err != nil {
+		return nil, err
+	}
+	if wt.Index <= 0 {
+		wt.Index = o.Project.WorktreeIndices[o.Branch]
+	}
+	allocs, err := allocations(o, wt)
+	if err != nil {
+		return nil, err
+	}
+	port := func(service, container string) (int, bool) {
+		for _, a := range allocs {
+			if a.Service == service && a.Container == container {
+				return a.Port, true
+			}
+		}
+		return 0, false
+	}
+	var env []string
+	for _, key := range slices.Sorted(maps.Keys(o.Project.RunEnv)) {
+		value, err := config.ExpandRunEnv(o.Project.RunEnv[key], port)
+		if err != nil {
+			return nil, fmt.Errorf("run_env %s: %w on this branch: fix it with `wtm project edit %s --run-env`",
+				key, err, o.Name)
+		}
+		env = append(env, key+"="+value)
+	}
+	return env, nil
 }
 
 // runAfter plays the command of `create --run` on the host, once everything
