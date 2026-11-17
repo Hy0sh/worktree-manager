@@ -11,7 +11,7 @@ import (
 
 type ServicePort struct {
 	Service string
-	// Var is the environment variable wtc overrides, empty when the port is
+	// Var is the environment variable wtm overrides, empty when the port is
 	// hardcoded and therefore not isolatable.
 	Var       string
 	HostIP    string // interface the project binds to (IPv4), empty when unset

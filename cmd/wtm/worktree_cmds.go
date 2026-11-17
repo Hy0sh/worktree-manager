@@ -424,9 +424,8 @@ func (a *app) mergedWorktrees(ctx context.Context, o worktree.Options,
 	return safe, nil
 }
 
-// removeAllQuestion says what --all is about to do. "remove 4 worktrees" stopped
-// being true once adopted ones joined the listing: those keep their directory,
-// and only their stack goes.
+// removeAllQuestion says what --all is about to do. Adopted worktrees keep their
+// directory and only lose their stack, so a bare "remove N worktrees" would be false.
 func removeAllQuestion(entries []worktree.Entry) string {
 	adopted := 0
 	for _, e := range entries {

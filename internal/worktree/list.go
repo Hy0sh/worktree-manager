@@ -55,9 +55,8 @@ func (e Entry) BranchLabel() string {
 	return e.Branch
 }
 
-// List answers about every linked worktree, adopted or not: a worktree wtm has
-// not adopted is precisely the one somebody has to name to adopt it, and it
-// used to be the one the listing left out.
+// List answers about every linked worktree, adopted or not: one wtm has not
+// adopted is precisely the one somebody has to name to adopt it.
 func List(ctx context.Context, o Options) ([]Entry, error) {
 	worktrees, err := o.Stack.All(ctx)
 	if err != nil {

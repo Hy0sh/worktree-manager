@@ -75,7 +75,7 @@ func ProjectDir(root, name string) (string, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
-	// Same MkdirAll caveat: every install before this created it 0700.
+	// Chmod again: MkdirAll leaves an existing directory's mode alone.
 	return dir, os.Chmod(dir, 0o755)
 }
 
