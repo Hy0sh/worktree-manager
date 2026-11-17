@@ -333,8 +333,8 @@ worktree.
 Everything `create` offers once the worktree stands is offered here too, from
 the same declaration so the two verbs cannot drift apart: `--no-start` leaves
 the stack down and still records the adoption, `--no-post-create` skips the
-seed, `--run` and `--exec` play a shell line on your machine and in the
-application container. Only how the worktree appears differs; what happens to
+seed, and `--run` and `--exec` behave as described under [Usage](#usage).
+Only how the worktree appears differs; what happens to
 it next does not.
 
 A worktree on a detached HEAD cannot be adopted: wtm keys a worktree by its
@@ -399,7 +399,7 @@ defaults to `db` and `--db-user` defaults to `postgres`.
 The dump carries what the migrations create and never seed data, so a new
 worktree comes up migrated and empty. `--post-create` is the command that makes
 it usable, played in the application service once the database answers and that
-service reports itself healthy:
+service reports itself healthy (or seed it by hand through `wtm exec`):
 
 ```sh
 wtm project edit my-app --post-create 'python manage.py seed_data && python manage.py create_dev_users'
@@ -767,8 +767,8 @@ metadata is gone and nothing can say any more whether they hold uncommitted
 work: `wtm remove <project> <branch> --force` deletes one.
 
 Then the dumps that commits to the migrations have overtaken, as `backup list`
-counts them, each with its `wtm backup refresh`. A stale dump still restores,
-the application migrates on top of it, so this is advice and never a blocker.
+counts them, each with its `wtm backup refresh`: advice, never a blocker, for
+the reason given under [Seeding a fresh worktree](#seeding-a-fresh-worktree).
 
 Last come the anonymous volumes no container mounts, left by images that name
 their own data directory: those belong to no project, so they are counted even
@@ -831,10 +831,9 @@ The dump holds the database exactly as `migrate` left it, data included: not
 just the schema, but everything the migrations create, permissions and
 reference data among them. It stops there. Seed data is not in it, because
 seeds change far more often than migrations and are quick to replay, whereas
-the migration history is not. A fresh worktree therefore starts with a
-migrated database and still gets seeded, by its `post_create` or by hand
-through `wtm exec`. Measured on a real project, seeding took 33 seconds against
-the twenty minutes the migration history costs.
+the migration history is not: measured on a real project, seeding took 33
+seconds against the twenty minutes the migration history costs. How a fresh
+worktree gets seeded is in [Seeding a fresh worktree](#seeding-a-fresh-worktree).
 
 A project whose seed is slow can put it in the dump anyway: `migrate_command`
 is a shell line, so `manage.py migrate && manage.py seed_data` seeds the
