@@ -7,6 +7,14 @@ behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Added
+
+- `run_env`, set with `wtm project edit --run-env`: variables that `wtm run`,
+  `wtm create --run` and `wtm env` set for host commands, whose values can name
+  a port of the worktree as `{{port:<service>:<container port>}}`. A script
+  reaches a literal port, which has no variable of its own, without falling
+  back to the main stack's. A template that does not resolve stops the command.
+
 ## [1.5.0] - 2026-11-17
 
 ### Added
