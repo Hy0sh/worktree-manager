@@ -107,8 +107,6 @@ func newCreateCmd(a *app) *cobra.Command {
 		Args: flags.args(
 			needArgs(1, 3, "name the branch to create, as in `wtm create feat/my-branch`")),
 		ValidArgsFunction: a.completeCreate,
-		SilenceUsage:      true,
-		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := flags.refuse(); err != nil {
 				return err
@@ -187,8 +185,6 @@ func newStartCmd(a *app) *cobra.Command {
 		Short:             "Starts the stack of an existing worktree",
 		Args:              needArgs(1, 2, "name the branch to start, as in `wtm start feat/my-branch`"),
 		ValidArgsFunction: a.completeTargets,
-		SilenceUsage:      true,
-		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			o, err := a.optionsFor(args)
 			if err != nil {
@@ -229,8 +225,6 @@ func newAdoptCmd(a *app) *cobra.Command {
 		Args: flags.args(
 			needArgs(0, 2, "adopt takes at most `[project] [branch]`")),
 		ValidArgsFunction: a.completeAdoptable,
-		SilenceUsage:      true,
-		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := flags.refuse(); err != nil {
 				return err
@@ -282,8 +276,6 @@ func newSwitchCmd(a *app) *cobra.Command {
 			"  wtm switch feat/next-task --from origin/main",
 		Args: flags.args(
 			needArgs(1, 2, "name the branch to switch to, as in `wtm switch feat/my-branch`")),
-		SilenceUsage:  true,
-		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := flags.refuse(); err != nil {
 				return err
@@ -314,8 +306,6 @@ func newStopCmd(a *app) *cobra.Command {
 		Args: allArgs(needArgs(1, 2, "name the branch to stop, as in `wtm stop feat/my-branch`"),
 			&all),
 		ValidArgsFunction: a.completeTargets,
-		SilenceUsage:      true,
-		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if all {
 				name, p, entries, err := a.allWorktrees(cmd.Context(), args)
@@ -343,8 +333,6 @@ func newRemoveCmd(a *app) *cobra.Command {
 		Args: allArgs(needArgs(1, 2, "name the branch to remove, as in `wtm remove feat/my-branch`"),
 			&all, &merged),
 		ValidArgsFunction: a.completeTargets,
-		SilenceUsage:      true,
-		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if merged {
 				if all || force {

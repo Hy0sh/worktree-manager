@@ -51,9 +51,7 @@ func newUpdateCmd(a *app) *cobra.Command {
 		Long: "Downloads the latest release built for this platform, checks it against\n" +
 			"the SHA256SUMS published with it, and puts it in place of the wtm being\n" +
 			"run. A symbolic link is kept: the file it points to is what gets replaced.",
-		Args:          cobra.NoArgs,
-		SilenceUsage:  true,
-		SilenceErrors: true,
+		Args: cobra.NoArgs,
 		// Skips the registry: a config.json this build cannot read must not
 		// stand between the user and the build that can.
 		PersistentPreRunE: func(*cobra.Command, []string) error {
