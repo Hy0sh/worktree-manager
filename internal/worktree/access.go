@@ -115,10 +115,9 @@ func runIn(ctx context.Context, o Options, wt stack.Worktree, c execx.Cmd) error
 	return err
 }
 
-// runEnv is kept out of composeEnv, which also feeds `docker compose`: a host
-// URL interpolated into a compose file would land inside a container. An
-// unresolved template is an error, since a variable silently absent sends the
-// script back to the main stack, which is what run_env exists to prevent.
+// runEnv stays out of composeEnv, which also feeds `docker compose`, where a
+// host URL would land in a container. An unresolved template is an error: a
+// variable silently absent sends the script back to the main stack.
 func runEnv(o Options, wt stack.Worktree) ([]string, error) {
 	if len(o.Project.RunEnv) == 0 {
 		return nil, nil
