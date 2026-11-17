@@ -61,13 +61,13 @@ which carries one per platform (darwin and linux, arm64 and amd64) plus a
 `SHA256SUMS` to check them against:
 
 ```sh
-tar -xzf wtm_<version>_darwin_arm64.tar.gz wtm
+tar -xzf wtm_v1.5.0_darwin_arm64.tar.gz wtm   # the tag, v included
 mv wtm ~/.local/bin/
 ```
 
 Archives released after 1.5.0 also carry a build provenance attestation, which
 ties each one to the workflow run that built it, independently of `SHA256SUMS`:
-`gh attestation verify wtm_<version>_darwin_arm64.tar.gz --repo Hy0sh/worktree-manager`.
+`gh attestation verify wtm_<tag>_darwin_arm64.tar.gz --repo Hy0sh/worktree-manager`.
 
 Those are built by `go install` from the tag itself, so they report their
 version exactly like an installed one.
@@ -75,6 +75,8 @@ version exactly like an installed one.
 Once installed, `wtm update` replaces the binary being run with the latest
 release for its platform, after checking it against `SHA256SUMS`; neither Go nor
 `gh` is needed for that, and `wtm update --check` only says whether one is out.
+`wtm update --force` installs the latest release even when the running build
+is not behind it, a build from a working copy for instance.
 A symbolic link is kept, the file it points to is what gets replaced. Versions
 before it have no such command: upgrade them once the way they were installed.
 
@@ -135,6 +137,7 @@ wtm project create my-app                                 # asks for the rest
 wtm project create my-app --dir ~/dev/projects/my-app --base develop
 wtm project list
 wtm project remove my-app                                 # refused while it has worktrees: the next project would reuse its port offset
+wtm project remove my-app -y                              # without the confirmation
 
 # change a registered project, its backup settings included
 wtm project edit my-app                                   # asks, step by step
@@ -166,6 +169,9 @@ wtm tui                                     # the same, live, with the selected 
                                             # enter shell · l logs, both in the terminal
                                             # o picks one of its urls, enter opens it in the browser
                                             # a adopts a worktree left to adopt, asking first
+                                            # j/k or ↑/↓ move · r refresh · q or esc quit
+                                            # while a job runs: esc hides its output, p shows it,
+                                            # ctrl+c interrupts it (twice kills); esc closes a finished one
 wtm start feat/my-branch                    # bring a stopped stack back up
 wtm start feat/my-branch --profile light    # only the services that profile names
 wtm stop feat/my-branch                     # containers kept stopped, start brings them back
@@ -182,15 +188,20 @@ wtm exec feat/my-branch --service db -- psql -U postgres
 
 # on your machine, from the worktree directory, with COMPOSE_PROJECT_NAME
 # and COMPOSE_FILE pointing at this worktree's stack. Ports written as
-# ${VAR:-default} get their variable set to this worktree's port; ports written
-# as literals are reached through run_env (see "How ports are isolated")
+# ${VAR:-default} get their variable set to this worktree's port (a generic PORT
+# included); ports written as literals are reached through run_env (see "How
+# ports are isolated")
 wtm run feat/my-branch -- claude
 wtm run feat/my-branch -- git status
 wtm run feat/my-branch -- scripts/some-compose-script.sh
 wtm logs feat/my-branch              # follows the stack's logs, from the last 200 lines
 cd $(wtm path feat/my-branch)       # a bare `docker compose` there reaches the worktree's
                                      # stack too, through a generated compose.override.yaml,
-                                     # unless the project has an override of its own
+                                     # unless the project has an override of its own: wtm
+                                     # then leaves it alone and warns, and the rebased ports
+                                     # live only in .wtm-ports.yaml, written either way. A
+                                     # script reading ports from compose.override.yaml
+                                     # finds none there, .wtm-ports.yaml is the stable place
 eval "$(wtm env feat/my-branch)"     # the same environment as run, for a shell or direnv:
                                      # the only way a bare compose interpolates ${PORT}s right
 wtm ports                            # typed from a worktree, ports, path, env, exec, run and logs take its branch
@@ -199,7 +210,7 @@ wtm ports feat/my-branch             # the addresses `start` printed, one servic
 # database backup
 wtm backup refresh my-app            # starts the db if needed, and stops it again after
 wtm backup list
-wtm backup remove my-app
+wtm backup remove my-app             # asks first, -y answers for a script
 ```
 
 If the first argument is a registered project, it's treated as such;
@@ -322,8 +333,8 @@ worktree.
 Everything `create` offers once the worktree stands is offered here too, from
 the same declaration so the two verbs cannot drift apart: `--no-start` leaves
 the stack down and still records the adoption, `--no-post-create` skips the
-seed, `--run` and `--exec` play a shell line on your machine and in the
-application container. Only how the worktree appears differs; what happens to
+seed, and `--run` and `--exec` behave as described under [Usage](#usage).
+Only how the worktree appears differs; what happens to
 it next does not.
 
 A worktree on a detached HEAD cannot be adopted: wtm keys a worktree by its
@@ -388,7 +399,7 @@ defaults to `db` and `--db-user` defaults to `postgres`.
 The dump carries what the migrations create and never seed data, so a new
 worktree comes up migrated and empty. `--post-create` is the command that makes
 it usable, played in the application service once the database answers and that
-service reports itself healthy:
+service reports itself healthy (or seed it by hand through `wtm exec`):
 
 ```sh
 wtm project edit my-app --post-create 'python manage.py seed_data && python manage.py create_dev_users'
@@ -638,7 +649,8 @@ remapping a port on purpose keeps that mapping. The project offset exists
 because the formula otherwise knows nothing about the project, so two projects
 whose database listens on 5432 would land on the same host port; it is assigned
 at registration, and the first project keeps 0 so its existing worktrees are
-untouched. And a `.env` tracked by git is left alone, the generated compose
+untouched. It is recorded as the project's `port_offset` in `config.json`, the
+key to raise by hand when two projects still clash. And a `.env` tracked by git is left alone, the generated compose
 file carrying the ports instead, so starting a stack never dirties the
 worktree. The port variables still reach compose through the environment of
 every call wtm makes, which compose reads ahead of `.env`: an
@@ -755,8 +767,8 @@ metadata is gone and nothing can say any more whether they hold uncommitted
 work: `wtm remove <project> <branch> --force` deletes one.
 
 Then the dumps that commits to the migrations have overtaken, as `backup list`
-counts them, each with its `wtm backup refresh`. A stale dump still restores,
-the application migrates on top of it, so this is advice and never a blocker.
+counts them, each with its `wtm backup refresh`: advice, never a blocker, for
+the reason given under [Seeding a fresh worktree](#seeding-a-fresh-worktree).
 
 Last come the anonymous volumes no container mounts, left by images that name
 their own data directory: those belong to no project, so they are counted even
@@ -819,10 +831,9 @@ The dump holds the database exactly as `migrate` left it, data included: not
 just the schema, but everything the migrations create, permissions and
 reference data among them. It stops there. Seed data is not in it, because
 seeds change far more often than migrations and are quick to replay, whereas
-the migration history is not. A fresh worktree therefore starts with a
-migrated database and still gets seeded, by its `post_create` or by hand
-through `wtm exec`. Measured on a real project, seeding took 33 seconds against
-the twenty minutes the migration history costs.
+the migration history is not: measured on a real project, seeding took 33
+seconds against the twenty minutes the migration history costs. How a fresh
+worktree gets seeded is in [Seeding a fresh worktree](#seeding-a-fresh-worktree).
 
 A project whose seed is slow can put it in the dump anyway: `migrate_command`
 is a shell line, so `manage.py migrate && manage.py seed_data` seeds the
@@ -943,7 +954,7 @@ From 1.0.0, breaking a command, a flag or the `config.json` format takes a
 major version. The tag is what publishes: the module proxy resolves it, so `go
 install ...@v1.1.0` works straight away. Pushing it also runs the release workflow,
 which creates the GitHub release with that version's changelog section as its
-notes and the tag annotation as its title. A tag with no section in the
+notes and `<tag>: <annotation>` as its title (the tag alone without one). A tag with no section in the
 changelog fails the workflow rather than getting notes invented from the commit
 log; document it, then replay the run from the Actions tab.
 
