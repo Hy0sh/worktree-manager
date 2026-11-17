@@ -136,22 +136,23 @@ func (f *projectFlags) update(cmd *cobra.Command) (config.ProjectUpdate, error) 
 		u.ProfileDescriptions = descs
 	}
 	if changed("copy") {
-		u.Copy = []string{}
-		for _, pattern := range f.copy {
-			if pattern != "" {
-				u.Copy = append(u.Copy, pattern)
-			}
-		}
+		u.Copy = nonEmpty(f.copy)
 	}
 	if changed("extra-database") {
-		u.ExtraDatabases = []string{}
-		for _, db := range f.extraDBs {
-			if db != "" {
-				u.ExtraDatabases = append(u.ExtraDatabases, db)
-			}
-		}
+		u.ExtraDatabases = nonEmpty(f.extraDBs)
 	}
 	return u, validateUpdate(u)
+}
+
+// nonEmpty never returns nil: in a ProjectUpdate, nil means "leave as is".
+func nonEmpty(values []string) []string {
+	kept := []string{}
+	for _, v := range values {
+		if v != "" {
+			kept = append(kept, v)
+		}
+	}
+	return kept
 }
 
 // validateUpdate rejects what would break a generated file: both names end up
