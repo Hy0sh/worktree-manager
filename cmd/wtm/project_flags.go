@@ -124,14 +124,8 @@ func (f *projectFlags) update(cmd *cobra.Command) (config.ProjectUpdate, error) 
 		u.Env = env
 	}
 	if changed("run-env") {
-		var pairs []string
-		for _, pair := range f.runEnv {
-			if pair != "" {
-				pairs = append(pairs, pair)
-			}
-		}
 		u.RunEnv = map[string]string{}
-		if len(pairs) > 0 {
+		if pairs := nonEmpty(f.runEnv); len(pairs) > 0 {
 			var err error
 			if u.RunEnv, err = parsePairs("--run-env", "KEY=VALUE", pairs); err != nil {
 				return u, err
