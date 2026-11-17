@@ -141,18 +141,25 @@ func portClash(o Options) func(c *config.Config, n int) string {
 				if err != nil {
 					continue
 				}
-				for _, a := range mine {
-					for _, b := range theirs {
-						if a.Port == b.Port {
-							return fmt.Sprintf("%s would publish %d, which %s already publishes for %s (%s)",
-								a.Service, a.Port, prefix+branch, b.Service, remedy)
-						}
-					}
+				if a, b, ok := firstClash(mine, theirs); ok {
+					return fmt.Sprintf("%s would publish %d, which %s already publishes for %s (%s)",
+						a.Service, a.Port, prefix+branch, b.Service, remedy)
 				}
 			}
 		}
 		return ""
 	}
+}
+
+func firstClash(mine, theirs []stack.Allocation) (a, b stack.Allocation, ok bool) {
+	for _, a := range mine {
+		for _, b := range theirs {
+			if a.Port == b.Port {
+				return a, b, true
+			}
+		}
+	}
+	return a, b, false
 }
 
 // startedServices names what the profile brought up, depends_on included, nil
