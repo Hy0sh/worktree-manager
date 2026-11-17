@@ -7,6 +7,16 @@ behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Added
+
+- Every compose call of a stack gets `WTM_DEPS_KEY`, a hash of the lockfiles
+  at the worktree root, and wtm creates the `external` volumes the stack names
+  before `up`. A compose file naming its dependency volumes after the key lets
+  every stack on one lockfile mount the same seeded copy: a fresh stack no
+  longer copies its dependency tree, which took minutes on a monorepo.
+- `wtm remove` keeps the images labelled `wtm.shared`, so the next stack does
+  not unpack a shared dependency image again.
+
 ## [1.4.1] - 2026-11-06
 
 ### Fixed

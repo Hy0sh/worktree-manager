@@ -4,10 +4,12 @@ package stack
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/Hy0sh/worktree-manager/internal/execx"
@@ -36,13 +38,17 @@ func (c *Client) Up(ctx context.Context, project, worktreeDir string, files, env
 	for _, f := range files {
 		args = append(args, "-f", f)
 	}
+	env = append([]string{"COMPOSE_PROJECT_NAME=" + project}, env...)
+	if err := c.createExternalVolumes(ctx, worktreeDir, args, env); err != nil {
+		return err
+	}
 	args = append(args, "up", "-d", "--build")
 	args = append(args, services...)
 	_, err := c.Runner.Run(ctx, execx.Cmd{
 		Name: "docker",
 		Args: args,
 		Dir:  worktreeDir,
-		Env:  append([]string{"COMPOSE_PROJECT_NAME=" + project}, env...),
+		Env:  env,
 		Live: true,
 	})
 	if err != nil {
@@ -51,6 +57,39 @@ func (c *Client) Up(ctx context.Context, project, worktreeDir string, files, env
 		}
 	}
 	return err
+}
+
+// createExternalVolumes creates the `external: true` volumes the stack names
+// and docker lacks. An external volume is shared across stacks (dependencies
+// named after WTM_DEPS_KEY): compose never removes it on `down --volumes`, but
+// refuses to start without it. docker seeds an empty one from the image on first
+// mount, so creating it bare is enough; `volume create` keeps an existing one.
+func (c *Client) createExternalVolumes(ctx context.Context, dir string, base, env []string) error {
+	res, err := c.Runner.Run(ctx, execx.Cmd{
+		Name: "docker",
+		Args: append(slices.Clone(base), "config", "--format", "json"),
+		Dir:  dir,
+		Env:  env,
+	})
+	// Unreadable config: skip, `up` reports the real error better than this would.
+	var cfg struct {
+		Volumes map[string]struct {
+			Name     string `json:"name"`
+			External bool   `json:"external"`
+		} `json:"volumes"`
+	}
+	if err != nil || json.Unmarshal([]byte(res.Stdout), &cfg) != nil {
+		return nil
+	}
+	for _, v := range cfg.Volumes {
+		if !v.External || v.Name == "" {
+			continue
+		}
+		if _, err := c.Runner.Run(ctx, execx.Cmd{Name: "docker", Args: []string{"volume", "create", v.Name}}); err != nil {
+			return fmt.Errorf("creating the shared volume %s: %w", v.Name, err)
+		}
+	}
+	return nil
 }
 
 // bindFailed is docker's phrasing when a host port is already published. It

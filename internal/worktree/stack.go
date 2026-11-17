@@ -25,13 +25,17 @@ type sweep struct {
 	noun string
 	list []string
 	rm   []string
+	// spare is a label whose bearers are kept, though they carry the project's.
+	spare string
 }
 
 var (
 	volumeSweep = sweep{noun: "volume", list: []string{"volume", "ls", "-q"}, rm: []string{"volume", "rm"}}
 	// Only what compose built: a pulled image carries no project label, so the
-	// postgres the main stack also runs can never be caught by this sweep.
-	imageSweep = sweep{noun: "image", list: []string{"images", "-q"}, rm: []string{"rmi"}}
+	// postgres the main stack also runs can never be caught by this sweep. An
+	// image tagged for every stack on one lockfile carries the label of whichever
+	// built it last, and dropping it costs the next stack a full unpack.
+	imageSweep = sweep{noun: "image", list: []string{"images", "-q"}, rm: []string{"rmi"}, spare: "wtm.shared"}
 	// Listed, never dropped: a worktree that vanished leaves stopped containers
 	// at most, one that only switched branches leaves them running.
 	runningSweep = sweep{noun: "container", list: []string{"ps", "-q"}}
@@ -56,7 +60,20 @@ func labelled(ctx context.Context, o Options, wt stack.Worktree, s sweep) []stri
 	if err != nil {
 		return nil
 	}
-	return strings.Fields(res.Stdout)
+	ids := strings.Fields(res.Stdout)
+	if s.spare == "" || len(ids) == 0 {
+		return ids
+	}
+	// docker has no negated label filter: list the spared ones and subtract.
+	spared, err := o.Runner.Run(ctx, execx.Cmd{
+		Name: "docker",
+		Args: append(slices.Clone(s.list), "--filter", "label="+s.spare),
+	})
+	if err != nil {
+		return nil
+	}
+	keep := strings.Fields(spared.Stdout)
+	return slices.DeleteFunc(ids, func(id string) bool { return slices.Contains(keep, id) })
 }
 
 // removeSwept drops what the listing of that kind returned. A failure is a
@@ -112,7 +129,7 @@ func start(ctx context.Context, o Options, dest string) error {
 	if err != nil {
 		return err
 	}
-	if err := o.Stack.Up(ctx, o.projectName(wt), dest, files, portEnv(o, wt), services); err != nil {
+	if err := o.Stack.Up(ctx, o.projectName(wt), dest, files, stackEnv(o, wt, dest), services); err != nil {
 		return fmt.Errorf("starting the stack: %w", err)
 	}
 	if o.Profile != "" {

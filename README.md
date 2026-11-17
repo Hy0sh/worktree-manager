@@ -557,6 +557,44 @@ caveats there: removing one needs a `wtm stop` first, and any service with a
 `build:` section is recreated by the `--build` every start passes, so widening
 restarts the application containers even though they were already up.
 
+## Sharing dependencies across stacks
+
+An image that installs the dependencies, mounted over named `node_modules`
+volumes, still makes every fresh stack copy that tree into its own empty
+volumes: on a JavaScript monorepo, minutes of `Creating` for 100k files. Every
+compose call of a stack gets `WTM_DEPS_KEY`, a short hash of the lockfiles at
+the worktree root (`pnpm-lock.yaml`, `package-lock.json`, `yarn.lock`,
+`composer.lock`, `poetry.lock`, `uv.lock`, `Gemfile.lock`, `go.sum`…), so the
+compose file can name those volumes after it and let every stack on the same
+lockfile mount one copy:
+
+```yaml
+services:
+  api:
+    image: shop-dev-api:${WTM_DEPS_KEY:-local}
+    build:
+      context: .
+      labels: [wtm.shared=true]
+    volumes:
+      - deps:/app/node_modules
+volumes:
+  deps:
+    external: true
+    name: shop-deps-${WTM_DEPS_KEY:-local}
+```
+
+- An `external` volume is created by wtm before `up` when docker lacks it, and
+  docker fills an empty one from the image on first mount: the first stack of a
+  lockfile pays the copy, the next ones none. Compose never removes an external
+  volume, so `wtm remove` keeps it.
+- An image labelled `wtm.shared` survives `wtm remove`, which otherwise drops
+  every image the stack built and makes the next one unpack it again.
+- A branch that changes its lockfile gets another key, hence its own volumes:
+  it never installs into a tree another stack is running on.
+- Keep a tree a running tool writes into (a bundler cache) per stack.
+- Nothing drops the volumes and images of a lockfile no worktree uses any more:
+  `docker volume rm` and `docker rmi` them by name.
+
 ## How ports are isolated
 
 Every published port is rebased so a worktree stack never fights the main one:
