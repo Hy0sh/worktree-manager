@@ -28,6 +28,20 @@ func TestCopyReplacesTheListAndAnEmptyOneClearsIt(t *testing.T) {
 	}
 }
 
+func TestEmptyExtraDatabaseClearsTheList(t *testing.T) {
+	f, cmd := parsedFlags(t, "--extra-database", "")
+	u, err := f.update(cmd)
+	if err != nil {
+		t.Fatalf("update: %v", err)
+	}
+	if u.ExtraDatabases == nil {
+		t.Fatal("--extra-database '' gave nil, which means leave as is")
+	}
+	if p, _ := u.Apply(config.Project{Backup: &config.Backup{ExtraDatabases: []string{"old"}}}); len(p.Backup.ExtraDatabases) != 0 {
+		t.Fatalf("extra databases = %v, want none", p.Backup.ExtraDatabases)
+	}
+}
+
 // The pattern is joined under the project root and under every worktree.
 func TestCopyRefusesAPatternLeavingTheProject(t *testing.T) {
 	for _, pattern := range []string{"../secrets.json", "/etc/passwd", "config/[.json"} {

@@ -147,10 +147,14 @@ func (m *Manager) assertPopulated(ctx context.Context, p config.Project, cfg con
 		db, cfg.MigrateCommand, config.DatabasePlaceholder, config.DatabasePlaceholder)
 }
 
-func (m *Manager) execInDB(ctx context.Context, p config.Project, cfg config.Backup, args []string) (execx.Result, error) {
-	return m.Runner.Run(ctx, execx.Cmd{
+func dbExec(p config.Project, cfg config.Backup, args []string) execx.Cmd {
+	return execx.Cmd{
 		Name: "docker",
 		Args: append([]string{"compose", "exec", "-T", cfg.DBService}, args...),
 		Dir:  p.Dir,
-	})
+	}
+}
+
+func (m *Manager) execInDB(ctx context.Context, p config.Project, cfg config.Backup, args []string) (execx.Result, error) {
+	return m.Runner.Run(ctx, dbExec(p, cfg, args))
 }

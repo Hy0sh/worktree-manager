@@ -16,11 +16,9 @@ func newBackupCmd(a *app) *cobra.Command {
 	cmd := &cobra.Command{Use: "backup", Short: "Manages the pre-migrated database backup of projects"}
 
 	list := &cobra.Command{
-		Use:           "list",
-		Short:         "Lists the backups",
-		Args:          cobra.NoArgs,
-		SilenceUsage:  true,
-		SilenceErrors: true,
+		Use:   "list",
+		Short: "Lists the backups",
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			infos, err := a.manager().List(a.cfg)
 			if err != nil {
@@ -53,8 +51,6 @@ func newBackupCmd(a *app) *cobra.Command {
 		ValidArgsFunction: a.completeProjects,
 		Short:             "Regenerates the backup (starts the stack if needed)",
 		Args:              cobra.RangeArgs(0, 1),
-		SilenceUsage:      true,
-		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name, p, err := a.projectArg(args)
 			if err != nil {
@@ -75,8 +71,6 @@ func newBackupCmd(a *app) *cobra.Command {
 		Short:             "Deletes a project's backup",
 		Args:              cobra.RangeArgs(0, 1),
 		ValidArgsFunction: a.completeProjects,
-		SilenceUsage:      true,
-		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name, _, err := a.projectArg(args)
 			if err != nil {

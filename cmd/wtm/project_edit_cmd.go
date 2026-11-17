@@ -20,8 +20,6 @@ func newProjectEditCmd(a *app) *cobra.Command {
 			"re-registering a project would renumber every stack it has running.",
 		Args:              needArgs(1, 1, "name the project to edit, as in `wtm project edit my-app`, or `wtm project list` to see the registered ones"),
 		ValidArgsFunction: a.completeProjects,
-		SilenceUsage:      true,
-		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			name := args[0]
 			current, err := a.cfg.Get(name)

@@ -107,8 +107,6 @@ func newCreateCmd(a *app) *cobra.Command {
 		Args: flags.args(
 			needArgs(1, 3, "name the branch to create, as in `wtm create feat/my-branch`")),
 		ValidArgsFunction: a.completeCreate,
-		SilenceUsage:      true,
-		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := flags.refuse(); err != nil {
 				return err
@@ -187,8 +185,6 @@ func newStartCmd(a *app) *cobra.Command {
 		Short:             "Starts the stack of an existing worktree",
 		Args:              needArgs(1, 2, "name the branch to start, as in `wtm start feat/my-branch`"),
 		ValidArgsFunction: a.completeTargets,
-		SilenceUsage:      true,
-		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			o, err := a.optionsFor(args)
 			if err != nil {
@@ -229,8 +225,6 @@ func newAdoptCmd(a *app) *cobra.Command {
 		Args: flags.args(
 			needArgs(0, 2, "adopt takes at most `[project] [branch]`")),
 		ValidArgsFunction: a.completeAdoptable,
-		SilenceUsage:      true,
-		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := flags.refuse(); err != nil {
 				return err
@@ -282,8 +276,6 @@ func newSwitchCmd(a *app) *cobra.Command {
 			"  wtm switch feat/next-task --from origin/main",
 		Args: flags.args(
 			needArgs(1, 2, "name the branch to switch to, as in `wtm switch feat/my-branch`")),
-		SilenceUsage:  true,
-		SilenceErrors: true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := flags.refuse(); err != nil {
 				return err
@@ -314,8 +306,6 @@ func newStopCmd(a *app) *cobra.Command {
 		Args: allArgs(needArgs(1, 2, "name the branch to stop, as in `wtm stop feat/my-branch`"),
 			&all),
 		ValidArgsFunction: a.completeTargets,
-		SilenceUsage:      true,
-		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if all {
 				name, p, entries, err := a.allWorktrees(cmd.Context(), args)
@@ -343,44 +333,15 @@ func newRemoveCmd(a *app) *cobra.Command {
 		Args: allArgs(needArgs(1, 2, "name the branch to remove, as in `wtm remove feat/my-branch`"),
 			&all, &merged),
 		ValidArgsFunction: a.completeTargets,
-		SilenceUsage:      true,
-		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if merged {
 				if all || force {
 					return fmt.Errorf("--merged picks the worktrees itself and never forces: drop --all and --force")
 				}
-				name, p, entries, err := a.allWorktrees(cmd.Context(), args)
-				if err != nil || len(entries) == 0 {
-					return err
-				}
-				o := a.options(name, p, "")
-				o.Base = a.cfg.BaseBranchFor(p)
-				safe, err := a.mergedWorktrees(cmd.Context(), o, entries)
-				if err != nil || len(safe) == 0 {
-					return err
-				}
-				if !assumeYes && !confirm(a.in, a.out, removeAllQuestion(safe)) {
-					return fmt.Errorf("cancelled: nothing was removed (pass --yes to answer for a script)")
-				}
-				return a.eachWorktree(cmd.Context(), o, safe, "removed", worktree.Remove)
+				return a.removeMerged(cmd.Context(), args, assumeYes)
 			}
 			if all {
-				name, p, entries, err := a.allWorktrees(cmd.Context(), args)
-				if err != nil || len(entries) == 0 {
-					return err
-				}
-				for _, e := range entries {
-					fmt.Fprintf(a.out, "  %s  %s (%s)\n", e.Branch, e.Path, e.Status)
-				}
-				// A closed input answers no, which is right for a person and
-				// wrong for a script, so the way out is part of the message.
-				if !assumeYes && !confirm(a.in, a.out, removeAllQuestion(entries)) {
-					return fmt.Errorf("cancelled: nothing was removed (pass --yes to answer for a script)")
-				}
-				o := a.options(name, p, "")
-				o.Force = force
-				return a.eachWorktree(cmd.Context(), o, entries, "removed", worktree.Remove)
+				return a.removeAll(cmd.Context(), args, force, assumeYes)
 			}
 			o, err := a.optionsFor(args)
 			if err != nil {
@@ -396,6 +357,48 @@ func newRemoveCmd(a *app) *cobra.Command {
 		"the clean worktrees whose branch a merge commit brought into the base, after a report")
 	cmd.Flags().BoolVarP(&assumeYes, "yes", "y", false, "do not ask for confirmation (--all, --merged)")
 	return cmd
+}
+
+func (a *app) removeMerged(ctx context.Context, args []string, assumeYes bool) error {
+	name, p, entries, err := a.allWorktrees(ctx, args)
+	if err != nil || len(entries) == 0 {
+		return err
+	}
+	o := a.options(name, p, "")
+	o.Base = a.cfg.BaseBranchFor(p)
+	safe, err := a.mergedWorktrees(ctx, o, entries)
+	if err != nil || len(safe) == 0 {
+		return err
+	}
+	if err := a.confirmRemoval(safe, assumeYes); err != nil {
+		return err
+	}
+	return a.eachWorktree(ctx, o, safe, "removed", worktree.Remove)
+}
+
+func (a *app) removeAll(ctx context.Context, args []string, force, assumeYes bool) error {
+	name, p, entries, err := a.allWorktrees(ctx, args)
+	if err != nil || len(entries) == 0 {
+		return err
+	}
+	for _, e := range entries {
+		fmt.Fprintf(a.out, "  %s  %s (%s)\n", e.Branch, e.Path, e.Status)
+	}
+	if err := a.confirmRemoval(entries, assumeYes); err != nil {
+		return err
+	}
+	o := a.options(name, p, "")
+	o.Force = force
+	return a.eachWorktree(ctx, o, entries, "removed", worktree.Remove)
+}
+
+// confirmRemoval: a closed input answers no, which is right for a person and
+// wrong for a script, so the way out is part of the message.
+func (a *app) confirmRemoval(entries []worktree.Entry, assumeYes bool) error {
+	if !assumeYes && !confirm(a.in, a.out, removeAllQuestion(entries)) {
+		return fmt.Errorf("cancelled: nothing was removed (pass --yes to answer for a script)")
+	}
+	return nil
 }
 
 // mergedWorktrees prints the verdict on every worktree, the kept ones included,

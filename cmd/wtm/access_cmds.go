@@ -22,8 +22,6 @@ func newExecCmd(a *app) *cobra.Command {
 			"  wtm exec feat/my-branch -- bash",
 		Args:              needArgs(1, -1, "name the command, as in `wtm exec feat/my-branch -- python manage.py shell`"),
 		ValidArgsFunction: a.completeTargets,
-		SilenceUsage:      true,
-		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dash := cmd.ArgsLenAtDash()
 			if dash < 0 || dash == len(args) {
@@ -59,8 +57,6 @@ func newRunCmd(a *app) *cobra.Command {
 			"  wtm run feat/my-branch -- scripts/some-compose-script.sh",
 		Args:              needArgs(1, -1, "name the command, as in `wtm run feat/my-branch -- claude`"),
 		ValidArgsFunction: a.completeTargets,
-		SilenceUsage:      true,
-		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			dash := cmd.ArgsLenAtDash()
 			if dash < 0 || dash == len(args) {
@@ -86,8 +82,6 @@ func newLogsCmd(a *app) *cobra.Command {
 			"--follow --tail 200`. Typed from a worktree, the branch is its own.",
 		Args:              needArgs(0, 2, ""),
 		ValidArgsFunction: a.completeTargets,
-		SilenceUsage:      true,
-		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			o, err := a.optionsFor(args)
 			if err != nil {
@@ -108,8 +102,6 @@ func newPortsCmd(a *app) *cobra.Command {
 			"Typed from a worktree, the branch is its own.",
 		Args:              needArgs(0, 2, ""),
 		ValidArgsFunction: a.completeTargets,
-		SilenceUsage:      true,
-		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			o, err := a.optionsFor(args)
 			if err != nil {
@@ -142,8 +134,6 @@ func newEnvCmd(a *app) *cobra.Command {
 			"  echo 'eval \"$(wtm env)\"' > .envrc   # direnv",
 		Args:              needArgs(0, 2, ""),
 		ValidArgsFunction: a.completeTargets,
-		SilenceUsage:      true,
-		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			o, err := a.optionsFor(args)
 			if err != nil {
@@ -171,8 +161,6 @@ func newPathCmd(a *app) *cobra.Command {
 		Long:              "Prints the path so a shell can compose with it: `cd $(wtm path feat/my-branch)`.",
 		Args:              needArgs(0, 2, ""),
 		ValidArgsFunction: a.completeTargets,
-		SilenceUsage:      true,
-		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			o, err := a.optionsFor(args)
 			if err != nil {

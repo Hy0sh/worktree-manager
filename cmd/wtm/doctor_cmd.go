@@ -285,11 +285,9 @@ func (a *app) buildCache(ctx context.Context) string {
 
 func newDoctorCmd(a *app) *cobra.Command {
 	return &cobra.Command{
-		Use:           "doctor",
-		Short:         "Diagnoses the configuration, the Docker VM and what removed worktrees left behind",
-		Args:          cobra.NoArgs,
-		SilenceUsage:  true,
-		SilenceErrors: true,
+		Use:   "doctor",
+		Short: "Diagnoses the configuration, the Docker VM and what removed worktrees left behind",
+		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			fmt.Fprintf(a.out, "version  %s\n", version())
 			if latest := a.newerRelease(cmd.Context()); latest != "" {

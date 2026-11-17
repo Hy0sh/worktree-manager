@@ -19,8 +19,6 @@ func newCleanCmd(a *app) *cobra.Command {
 		Short:             "Drops what removed worktrees left behind, as `wtm doctor` reports it",
 		Args:              cobra.RangeArgs(0, 1),
 		ValidArgsFunction: a.completeProjects,
-		SilenceUsage:      true,
-		SilenceErrors:     true,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			// Every registered project without an argument, where `list` would
 			// take the current one: this is the counterpart of `doctor`, which
