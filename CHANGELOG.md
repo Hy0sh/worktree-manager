@@ -7,6 +7,8 @@ behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+## [1.6.0] - 2026-11-17
+
 ### Added
 
 - `run_env`, set with `wtm project edit --run-env`: variables that `wtm run`,
@@ -14,6 +16,15 @@ behaviour, a patch bump carries fixes.
   a port of the worktree as `{{port:<service>:<container port>}}`. A script
   reaches a literal port, which has no variable of its own, without falling
   back to the main stack's. A template that does not resolve stops the command.
+- Release archives carry a build provenance attestation, checked with
+  `gh attestation verify`. `wtm update` still checks `SHA256SUMS` only.
+
+### Changed
+
+- Building from source takes Go 1.26.7 or later: lipgloss 2.1.0 requires it.
+- `--help` prints `[=true|false]` after every boolean flag, which pflag 1.1.0
+  does unconditionally. Parsing is unchanged.
+- A release is only published once the unit tests and `go vet` pass on the tag.
 
 ## [1.5.0] - 2026-11-17
 
@@ -1361,7 +1372,8 @@ First tagged release. The whole worktree lifecycle behind one binary:
   identical so worktrees created with it keep working.
 - A project without a compose file is not an error, there is simply no stack.
 
-[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v1.5.0...HEAD
+[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v1.6.0...HEAD
+[1.6.0]: https://github.com/Hy0sh/worktree-manager/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/Hy0sh/worktree-manager/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/Hy0sh/worktree-manager/compare/v1.4.0...v1.4.1
 [1.4.0]: https://github.com/Hy0sh/worktree-manager/compare/v1.3.0...v1.4.0
