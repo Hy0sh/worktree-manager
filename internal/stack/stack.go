@@ -105,6 +105,16 @@ func (c *Client) createExternalVolumes(ctx context.Context, dir string, base, en
 		return err
 	}
 	defer unlock()
+	// A file per volume being seeded: one left behind means a wtm was killed
+	// mid-copy, and docker never fills a non-empty volume again.
+	cfgDir, err := config.Dir()
+	if err != nil {
+		return err
+	}
+	pendingDir := filepath.Join(cfgDir, "seeding")
+	if err := os.MkdirAll(pendingDir, 0o700); err != nil {
+		return fmt.Errorf("creating %s: %w", pendingDir, err)
+	}
 
 	key := ""
 	for _, e := range env {
@@ -119,8 +129,17 @@ func (c *Client) createExternalVolumes(ctx context.Context, dir string, base, en
 		if !shared(v) {
 			continue
 		}
-		if _, err := c.Runner.Run(ctx, execx.Cmd{Name: "docker", Args: []string{"volume", "inspect", v.Name}}); err == nil {
+		pending := filepath.Join(pendingDir, v.Name)
+		if _, err := os.Stat(pending); err == nil {
+			fmt.Fprintf(c.Out, "dropping %s, left half-filled by an interrupted seeding\n", v.Name)
+			if _, err := c.Runner.Run(ctx, execx.Cmd{Name: "docker", Args: []string{"volume", "rm", "-f", v.Name}}); err != nil {
+				return fmt.Errorf("dropping the half-filled volume %s, stop the stacks mounting it first: %w", v.Name, err)
+			}
+		} else if _, err := c.Runner.Run(ctx, execx.Cmd{Name: "docker", Args: []string{"volume", "inspect", v.Name}}); err == nil {
 			continue
+		}
+		if err := os.WriteFile(pending, nil, 0o600); err != nil {
+			return err
 		}
 		args := []string{"volume", "create"}
 		// Only a name carrying the key is a dependency volume, the only kind
@@ -153,14 +172,23 @@ func (c *Client) createExternalVolumes(ctx context.Context, dir string, base, en
 		})
 		if err != nil {
 			// A half-seeded volume is never filled again: drop it so the next up
-			// starts over. ponytail: a killed wtm skips this, `docker volume rm` by hand.
+			// starts over; a killed wtm skips this, its pending files do it then.
 			cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 			defer cancel()
-			_, _ = c.Runner.Run(cctx, execx.Cmd{Name: "docker", Args: append([]string{"volume", "rm"}, fresh...)})
+			if _, rmErr := c.Runner.Run(cctx, execx.Cmd{Name: "docker", Args: append([]string{"volume", "rm"}, fresh...)}); rmErr == nil {
+				clearPending(pendingDir, fresh)
+			}
 			return fmt.Errorf("seeding the shared volumes from %s: %w", s, err)
 		}
 	}
+	clearPending(pendingDir, fresh)
 	return nil
+}
+
+func clearPending(dir string, volumes []string) {
+	for _, v := range volumes {
+		_ = os.Remove(filepath.Join(dir, v))
+	}
 }
 
 // lockSharedVolumes serialises creating and seeding shared volumes across every

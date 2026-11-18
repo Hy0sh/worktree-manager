@@ -180,6 +180,54 @@ func TestUpDropsAVolumeItFailedToSeed(t *testing.T) {
 	}
 }
 
+// A wtm killed mid-copy leaves its pending file: the next up drops the
+// half-filled volume and seeds it again instead of mounting it.
+func TestUpReseedsAVolumeAnInterruptedSeedingLeft(t *testing.T) {
+	f := dockerWith(seedCfg, []string{"app-deps-1a2b3c"}, "")
+	c, _ := newClient(t, f)
+	dir, _ := config.Dir()
+	pending := filepath.Join(dir, "seeding", "app-deps-1a2b3c")
+	if err := os.MkdirAll(filepath.Dir(pending), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(pending, nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := c.Up(context.Background(), "p", "/wt", nil, nil, nil); err != nil {
+		t.Fatalf("Up: %v", err)
+	}
+	lines := strings.Join(f.Lines(), "\n")
+	for _, want := range []string{"docker volume rm -f app-deps-1a2b3c", "volume create", "--entrypoint true api"} {
+		if !strings.Contains(lines, want) {
+			t.Fatalf("expected %q among the calls:\n%s", want, lines)
+		}
+	}
+	if _, err := os.Stat(pending); !os.IsNotExist(err) {
+		t.Fatalf("a completed seeding must clear its pending file, stat: %v", err)
+	}
+}
+
+// A volume still mounted by a running stack cannot be dropped: say so rather
+// than seed over it.
+func TestUpStopsOnAHalfFilledVolumeStillInUse(t *testing.T) {
+	f := dockerWith(seedCfg, []string{"app-deps-1a2b3c"}, "volume rm -f")
+	c, _ := newClient(t, f)
+	dir, _ := config.Dir()
+	if err := os.MkdirAll(filepath.Join(dir, "seeding"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "seeding", "app-deps-1a2b3c"), nil, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := c.Up(context.Background(), "p", "/wt", nil, nil, nil)
+	if err == nil || !strings.Contains(err.Error(), "stop the stacks mounting it") {
+		t.Fatalf("expected the in-use error, got %v", err)
+	}
+	if slices.ContainsFunc(f.Lines(), func(l string) bool { return strings.Contains(l, "up -d") }) {
+		t.Fatal("no up on a half-filled volume")
+	}
+}
+
 // A second wtm waits for the first to finish seeding instead of mounting the
 // volume halfway through.
 func TestUpWaitsForAnotherSeeding(t *testing.T) {
