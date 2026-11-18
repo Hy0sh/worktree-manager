@@ -7,6 +7,18 @@ behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+## [1.7.1] - 2026-11-18
+
+### Fixed
+
+- A shared external volume wtm creates is now filled before any container
+  mounts it: a throwaway `docker compose run` of the first service mounting it
+  copies the image content, under a lock every wtm on the machine shares.
+  Docker used to fill it on first mount, a copy of minutes on a big
+  `node_modules`, and a second stack of the same lockfile starting meanwhile
+  mounted a partial tree (`Cannot find module` on a file copied late). A
+  failed fill drops the volume, which docker would never fill again.
+
 ## [1.7.0] - 2026-11-18
 
 ### Added
@@ -1389,7 +1401,8 @@ First tagged release. The whole worktree lifecycle behind one binary:
   identical so worktrees created with it keep working.
 - A project without a compose file is not an error, there is simply no stack.
 
-[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v1.7.0...HEAD
+[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v1.7.1...HEAD
+[1.7.1]: https://github.com/Hy0sh/worktree-manager/compare/v1.7.0...v1.7.1
 [1.7.0]: https://github.com/Hy0sh/worktree-manager/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/Hy0sh/worktree-manager/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/Hy0sh/worktree-manager/compare/v1.4.1...v1.5.0

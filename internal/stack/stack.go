@@ -8,10 +8,17 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
+	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
+	"time"
 
+	"github.com/gofrs/flock"
+
+	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 )
 
@@ -61,7 +68,9 @@ func (c *Client) Up(ctx context.Context, project, worktreeDir string, files, env
 
 // createExternalVolumes creates the `external: true` volumes docker lacks.
 // compose never removes them on `down --volumes` yet refuses to start without
-// them; docker seeds an empty one from the image, so a bare create is enough.
+// them. Docker seeds an empty one from the image on first mount, a copy that
+// takes minutes on a big node_modules, during which another stack mounting it
+// sees a partial tree: a fresh volume is seeded here, under a lock every wtm shares.
 func (c *Client) createExternalVolumes(ctx context.Context, dir string, base, env []string) error {
 	res, err := c.Runner.Run(ctx, execx.Cmd{
 		Name: "docker",
@@ -70,23 +79,47 @@ func (c *Client) createExternalVolumes(ctx context.Context, dir string, base, en
 		Env:  env,
 	})
 	// Unreadable config: skip, `up` reports the real error better than this would.
+	type mount struct {
+		Type   string `json:"type"`
+		Source string `json:"source"` // the volume's key in the compose file
+	}
+	type volume struct {
+		Name     string `json:"name"`
+		External bool   `json:"external"`
+	}
 	var cfg struct {
-		Volumes map[string]struct {
-			Name     string `json:"name"`
-			External bool   `json:"external"`
-		} `json:"volumes"`
+		Services map[string]struct {
+			Volumes []mount `json:"volumes"`
+		} `json:"services"`
+		Volumes map[string]volume `json:"volumes"`
 	}
 	if err != nil || json.Unmarshal([]byte(res.Stdout), &cfg) != nil {
 		return nil
 	}
+	shared := func(v volume) bool { return v.External && v.Name != "" }
+	if !slices.ContainsFunc(slices.Collect(maps.Values(cfg.Volumes)), shared) {
+		return nil
+	}
+	unlock, err := c.lockSharedVolumes(ctx)
+	if err != nil {
+		return err
+	}
+	defer unlock()
+
 	key := ""
 	for _, e := range env {
 		if v, ok := strings.CutPrefix(e, "WTM_DEPS_KEY="); ok {
 			key = v
 		}
 	}
-	for _, v := range cfg.Volumes {
-		if !v.External || v.Name == "" {
+	var fresh []string           // docker names of the volumes created here
+	seeders := map[string]bool{} // services mounting one of them
+	for _, k := range slices.Sorted(maps.Keys(cfg.Volumes)) {
+		v := cfg.Volumes[k]
+		if !shared(v) {
+			continue
+		}
+		if _, err := c.Runner.Run(ctx, execx.Cmd{Name: "docker", Args: []string{"volume", "inspect", v.Name}}); err == nil {
 			continue
 		}
 		args := []string{"volume", "create"}
@@ -98,8 +131,58 @@ func (c *Client) createExternalVolumes(ctx context.Context, dir string, base, en
 		if _, err := c.Runner.Run(ctx, execx.Cmd{Name: "docker", Args: append(args, v.Name)}); err != nil {
 			return fmt.Errorf("creating the shared volume %s: %w", v.Name, err)
 		}
+		fresh = append(fresh, v.Name)
+		// One service per volume is enough: the first mount fills it.
+		for _, s := range slices.Sorted(maps.Keys(cfg.Services)) {
+			if slices.Contains(cfg.Services[s].Volumes, mount{Type: "volume", Source: k}) {
+				seeders[s] = true
+				break
+			}
+		}
+	}
+	for _, s := range slices.Sorted(maps.Keys(seeders)) {
+		fmt.Fprintf(c.Out, "seeding the shared volumes of %s from its image\n", s)
+		// The copy runs before the process starts, so `true` exiting means the
+		// volume is complete.
+		_, err := c.Runner.Run(ctx, execx.Cmd{
+			Name: "docker",
+			Args: append(slices.Clone(base), "run", "--rm", "--no-deps", "--build", "-T", "--entrypoint", "true", s),
+			Dir:  dir,
+			Env:  env,
+			Live: true,
+		})
+		if err != nil {
+			// A half-seeded volume is never filled again: drop it so the next up
+			// starts over. ponytail: a killed wtm skips this, `docker volume rm` by hand.
+			cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
+			defer cancel()
+			_, _ = c.Runner.Run(cctx, execx.Cmd{Name: "docker", Args: append([]string{"volume", "rm"}, fresh...)})
+			return fmt.Errorf("seeding the shared volumes from %s: %w", s, err)
+		}
 	}
 	return nil
+}
+
+// lockSharedVolumes serialises creating and seeding shared volumes across every
+// wtm on the machine: a stack waits until another's seeding is over.
+func (c *Client) lockSharedVolumes(ctx context.Context) (func(), error) {
+	dir, err := config.Dir()
+	if err != nil {
+		return nil, err
+	}
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return nil, fmt.Errorf("creating %s: %w", dir, err)
+	}
+	l := flock.New(filepath.Join(dir, "volumes.lock"))
+	locked, err := l.TryLock()
+	if err == nil && !locked {
+		fmt.Fprintln(c.Out, "waiting for another wtm to finish seeding a shared volume")
+		locked, err = l.TryLockContext(ctx, 500*time.Millisecond)
+	}
+	if err != nil || !locked {
+		return nil, fmt.Errorf("taking %s: %w", l.Path(), err)
+	}
+	return func() { _ = l.Unlock() }, nil
 }
 
 // bindFailed is docker's phrasing when a host port is already published. It

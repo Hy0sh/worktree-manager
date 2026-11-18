@@ -3,17 +3,41 @@ package stack
 import (
 	"context"
 	"io"
+	"os"
+	"path/filepath"
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/gofrs/flock"
+
+	"github.com/Hy0sh/worktree-manager/internal/config"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 )
 
 func newClient(t *testing.T, f *execx.Fake) (*Client, string) {
 	t.Helper()
+	t.Setenv(config.EnvConfigDir, t.TempDir())
 	dir := t.TempDir()
 	return &Client{Runner: f, Dir: dir, Out: io.Discard}, dir
+}
+
+// dockerWith answers `config` with cfg, `volume inspect` as docker would for
+// the existing volumes, and fail for the commands it names.
+func dockerWith(cfg string, existing []string, fail string) *execx.Fake {
+	return &execx.Fake{Handler: func(c execx.Cmd) (execx.Result, error) {
+		line := c.String()
+		switch {
+		case fail != "" && strings.Contains(line, fail):
+			return execx.Result{ExitCode: 1}, &execx.Error{Cmd: line, ExitCode: 1}
+		case strings.Contains(line, "config --format json"):
+			return execx.Result{Stdout: cfg}, nil
+		case strings.Contains(line, "volume inspect") && !slices.Contains(existing, c.Args[len(c.Args)-1]):
+			return execx.Result{ExitCode: 1}, &execx.Error{Cmd: line, ExitCode: 1}
+		}
+		return execx.Result{}, nil
+	}}
 }
 
 // Up and Down now talk to docker compose directly, with the project name that
@@ -46,14 +70,9 @@ func TestUpTargetsTheWorktreeProject(t *testing.T) {
 // A volume shared across stacks is external: compose refuses to start without
 // it and never creates it, so Up does, and only that one.
 func TestUpCreatesTheExternalVolumes(t *testing.T) {
-	f := &execx.Fake{Handler: func(c execx.Cmd) (execx.Result, error) {
-		if strings.Contains(c.String(), "config --format json") {
-			return execx.Result{Stdout: `{"volumes":{
-				"deps":{"name":"app-deps-1a2b3c","external":true},
-				"db":{"name":"myapp-wt-1-feat-x_db"}}}`}, nil
-		}
-		return execx.Result{}, nil
-	}}
+	f := dockerWith(`{"volumes":{
+		"deps":{"name":"app-deps-1a2b3c","external":true},
+		"db":{"name":"myapp-wt-1-feat-x_db"}}}`, nil, "")
 	c, _ := newClient(t, f)
 	if err := c.Up(context.Background(), "myapp-wt-1-feat-x", "/wt", nil, []string{"WTM_DEPS_KEY=1a2b3c"}, nil); err != nil {
 		t.Fatalf("Up: %v", err)
@@ -86,12 +105,7 @@ func TestUpLabelsOnlyDependencyVolumes(t *testing.T) {
 			[]string{"--label wtm.deps-key=1a2b3c app-deps-1a2b3c", "shared-cache"}},
 		"no key": {nil, []string{"app-deps-1a2b3c", "shared-cache"}},
 	} {
-		f := &execx.Fake{Handler: func(c execx.Cmd) (execx.Result, error) {
-			if strings.Contains(c.String(), "config --format json") {
-				return execx.Result{Stdout: cfg}, nil
-			}
-			return execx.Result{}, nil
-		}}
+		f := dockerWith(cfg, nil, "")
 		c, _ := newClient(t, f)
 		if err := c.Up(context.Background(), "p", "/wt", nil, tc.env, nil); err != nil {
 			t.Fatalf("%s: Up: %v", name, err)
@@ -107,6 +121,89 @@ func TestUpLabelsOnlyDependencyVolumes(t *testing.T) {
 		if !slices.Equal(created, tc.want) {
 			t.Fatalf("%s: got %q, want %q", name, created, tc.want)
 		}
+	}
+}
+
+const seedCfg = `{
+	"services":{
+		"api":{"volumes":[{"type":"volume","source":"deps","target":"/w/node_modules"}]},
+		"web":{"volumes":[{"type":"volume","source":"deps","target":"/w/node_modules"}]}},
+	"volumes":{"deps":{"name":"app-deps-1a2b3c","external":true}}}`
+
+// Docker fills an empty volume on first mount, minutes for a node_modules, and
+// a second stack mounting it meanwhile saw a partial tree: a volume wtm creates
+// is filled by a throwaway container before any up.
+func TestUpSeedsAFreshSharedVolumeBeforeTheUp(t *testing.T) {
+	f := dockerWith(seedCfg, nil, "")
+	c, _ := newClient(t, f)
+	if err := c.Up(context.Background(), "p", "/wt", nil, nil, nil); err != nil {
+		t.Fatalf("Up: %v", err)
+	}
+	var runs []string
+	for _, l := range f.Lines() {
+		if strings.Contains(l, " run ") {
+			runs = append(runs, l)
+		}
+	}
+	if len(runs) != 1 || !strings.HasSuffix(runs[0], "run --rm --no-deps --build -T --entrypoint true api") {
+		t.Fatalf("one seeding run from the first service mounting it, got %q", runs)
+	}
+	if !strings.Contains(lastLine(f), "up -d --build") {
+		t.Fatalf("the up comes after the seeding, last was %q", lastLine(f))
+	}
+}
+
+func TestUpLeavesAnExistingSharedVolumeAlone(t *testing.T) {
+	f := dockerWith(seedCfg, []string{"app-deps-1a2b3c"}, "")
+	c, _ := newClient(t, f)
+	if err := c.Up(context.Background(), "p", "/wt", nil, nil, nil); err != nil {
+		t.Fatalf("Up: %v", err)
+	}
+	for _, l := range f.Lines() {
+		if strings.Contains(l, "volume create") || strings.Contains(l, " run ") {
+			t.Fatalf("nothing to create nor seed, ran %q", l)
+		}
+	}
+}
+
+// A half-filled volume is never filled again by docker, so a failed seeding
+// must not leave it for the next stack to mount.
+func TestUpDropsAVolumeItFailedToSeed(t *testing.T) {
+	f := dockerWith(seedCfg, nil, "--entrypoint true")
+	c, _ := newClient(t, f)
+	if err := c.Up(context.Background(), "p", "/wt", nil, nil, nil); err == nil {
+		t.Fatal("expected the seeding failure")
+	}
+	last := f.Calls[len(f.Calls)-1]
+	if last.Line() != "docker volume rm app-deps-1a2b3c" || last.Cancelled {
+		t.Fatalf("the fresh volume must be dropped, last call %q", last.Line())
+	}
+}
+
+// A second wtm waits for the first to finish seeding instead of mounting the
+// volume halfway through.
+func TestUpWaitsForAnotherSeeding(t *testing.T) {
+	f := dockerWith(seedCfg, []string{"app-deps-1a2b3c"}, "")
+	c, _ := newClient(t, f)
+	dir, _ := config.Dir()
+	held := flock.New(filepath.Join(dir, "volumes.lock"))
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if ok, err := held.TryLock(); !ok || err != nil {
+		t.Fatalf("taking the lock: %v", err)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 200*time.Millisecond)
+	defer cancel()
+	if err := c.Up(ctx, "p", "/wt", nil, nil, nil); err == nil {
+		t.Fatal("Up must wait while another wtm holds the lock")
+	}
+	if slices.ContainsFunc(f.Lines(), func(l string) bool { return strings.Contains(l, "volume inspect") }) {
+		t.Fatal("no volume may be looked at before the lock is taken")
+	}
+	_ = held.Unlock()
+	if err := c.Up(context.Background(), "p", "/wt", nil, nil, nil); err != nil {
+		t.Fatalf("Up after release: %v", err)
 	}
 }
 

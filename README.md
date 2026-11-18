@@ -601,9 +601,12 @@ volumes:
 ```
 
 - wtm exports `WTM_DEPS_EXTERNAL=true`, so under wtm the volume is external:
-  created by wtm before `up` when docker lacks it, and docker fills an empty
-  one from the image on first mount. The first stack of a lockfile pays the
-  copy, the next ones none. Compose never removes an external volume, so
+  created by wtm before `up` when docker lacks it, then filled from the image
+  of the first service mounting it by a throwaway `docker compose run`, before
+  any container of the stack starts. Creating and filling hold a lock every
+  wtm on the machine shares, so a second stack of the same lockfile waits
+  instead of mounting a half-copied tree. The first stack of a lockfile pays
+  the copy, the next ones none. Compose never removes an external volume, so
   `wtm remove` keeps it.
 - A bare `docker compose up` outside wtm sees `external: false` and creates
   `shop-deps-local` itself instead of failing on a volume that does not
