@@ -34,7 +34,16 @@ func newCleanCmd(a *app) *cobra.Command {
 			rws := a.liveProjects(ctx, names)
 			stale := a.staleIndices(rws)
 			stacks := a.orphanStackNames(ctx, rws)
-			volumes := a.orphanVolumeNames(ctx, rws)
+			// Dependency volumes belong to no single project, so a scoped clean
+			// leaves them: only the machine-wide one may judge them.
+			volumeNames := func() []string {
+				v := a.orphanVolumeNames(ctx, rws)
+				if len(args) == 0 {
+					v = append(v, a.orphanDepsVolumes(ctx, rws)...)
+				}
+				return v
+			}
+			volumes := volumeNames()
 			images := a.orphanImageNames(ctx, rws)
 			if len(stale)+len(stacks)+len(volumes)+len(images) == 0 {
 				fmt.Fprintln(a.out, "nothing to clean")
@@ -60,7 +69,7 @@ func newCleanCmd(a *app) *cobra.Command {
 			// and report as failed a cleanup that went through. Hence a new scan.
 			failed = append(failed, a.downOrphanStacks(ctx, a.orphanStackNames(ctx, rws))...)
 			// After the stacks: a volume a container still mounts refuses to go.
-			failed = append(failed, a.drop(ctx, "volume", []string{"volume", "rm"}, a.orphanVolumeNames(ctx, rws))...)
+			failed = append(failed, a.drop(ctx, "volume", []string{"volume", "rm"}, volumeNames())...)
 			failed = append(failed, a.drop(ctx, "image", []string{"rmi"}, a.orphanImageNames(ctx, rws))...)
 			if len(failed) > 0 {
 				return fmt.Errorf("the cleanup did not finish:\n%s", strings.Join(failed, "\n"))

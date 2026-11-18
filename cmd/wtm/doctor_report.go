@@ -120,6 +120,36 @@ func (a *app) orphanVolumeNames(ctx context.Context, rws []repoWorktrees) []stri
 	return a.orphanNames(ctx, rws, "_", "volume", "ls", "-q")
 }
 
+// orphanDepsVolumes lists the labelled dependency volumes whose lockfile no
+// worktree or main checkout has any more. Held back when a project could not be
+// listed: its live volumes would read as orphans.
+func (a *app) orphanDepsVolumes(ctx context.Context, rws []repoWorktrees) []string {
+	if len(rws) != len(a.cfg.Projects) {
+		return nil
+	}
+	res, err := a.runner.Run(ctx, execx.Cmd{Name: "docker", Args: []string{"volume", "ls",
+		"--filter", "label=wtm.deps-key", "--filter", "dangling=true",
+		"--format", `{{.Name}}` + "\t" + `{{.Label "wtm.deps-key"}}`}})
+	if err != nil {
+		return nil
+	}
+	live := map[string]bool{}
+	for _, rw := range rws {
+		for _, k := range rw.DepsKeys {
+			live[k] = true
+		}
+	}
+	var out []string
+	for _, line := range strings.Split(res.Stdout, "\n") {
+		name, key, ok := strings.Cut(strings.TrimSpace(line), "\t")
+		if ok && key != "" && !live[key] {
+			out = append(out, name)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 // An untagged leftover of a rebuild carries no "<project>-<service>" name at
 // all, and stays for `docker image prune`.
 func (a *app) orphanImageNames(ctx context.Context, rws []repoWorktrees) []string {
