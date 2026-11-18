@@ -81,6 +81,10 @@ func TestDoctorReportsAndCleanDropsDepsVolumesOfAnUnusedLockfile(t *testing.T) {
 	if err := clean.RunE(clean, nil); err != nil {
 		t.Fatalf("clean: %v", err)
 	}
+	if !strings.Contains(out.String(), "dependency volumes of a lockfile no worktree uses any more:\n  deps-gone") ||
+		!strings.Contains(out.String(), "1 dependency volume(s) removed") {
+		t.Fatalf("clean should list and report them under their own heading:\n%s", out.String())
+	}
 	if lines := strings.Join(fake.Lines(), "\n"); !strings.Contains(lines, "docker volume rm deps-gone") ||
 		strings.Contains(lines, "rm deps-main") || strings.Contains(lines, "deps-live") {
 		t.Fatalf("clean should drop exactly the orphan:\n%s", lines)

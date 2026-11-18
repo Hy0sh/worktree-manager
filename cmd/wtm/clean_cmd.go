@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -36,24 +37,29 @@ func newCleanCmd(a *app) *cobra.Command {
 			stacks := a.orphanStackNames(ctx, rws)
 			// Dependency volumes belong to no single project, so a scoped clean
 			// leaves them: only the machine-wide one may judge them.
-			volumeNames := func() []string {
-				v := a.orphanVolumeNames(ctx, rws)
+			// A name the per-project sweep already holds is never listed twice.
+			scanVolumes := func() (volumes, deps []string) {
+				volumes = a.orphanVolumeNames(ctx, rws)
 				if len(args) == 0 {
-					v = append(v, a.orphanDepsVolumes(ctx, rws)...)
+					for _, n := range a.orphanDepsVolumes(ctx, rws) {
+						if !slices.Contains(volumes, n) {
+							deps = append(deps, n)
+						}
+					}
 				}
-				return v
+				return volumes, deps
 			}
-			volumes := volumeNames()
+			volumes, deps := scanVolumes()
 			images := a.orphanImageNames(ctx, rws)
-			if len(stale)+len(stacks)+len(volumes)+len(images) == 0 {
+			if len(stale)+len(stacks)+len(volumes)+len(deps)+len(images) == 0 {
 				fmt.Fprintln(a.out, "nothing to clean")
 				a.reportLeftAlone(ctx, rws)
 				return nil
 			}
-			a.printLeftovers(stale, stacks, volumes, images)
+			a.printLeftovers(stale, stacks, volumes, deps, images)
 			// A closed input answers no, which is right for a person and wrong
 			// for a script, so the way out is part of the message.
-			if !assumeYes && !confirm(a.in, a.out, cleanQuestion(stale, stacks, volumes, images)) {
+			if !assumeYes && !confirm(a.in, a.out, cleanQuestion(stale, stacks, volumes, deps, images)) {
 				return fmt.Errorf("cancelled: nothing was removed (pass --yes to answer for a script)")
 			}
 
@@ -69,7 +75,9 @@ func newCleanCmd(a *app) *cobra.Command {
 			// and report as failed a cleanup that went through. Hence a new scan.
 			failed = append(failed, a.downOrphanStacks(ctx, a.orphanStackNames(ctx, rws))...)
 			// After the stacks: a volume a container still mounts refuses to go.
-			failed = append(failed, a.drop(ctx, "volume", []string{"volume", "rm"}, volumeNames())...)
+			volumes, deps = scanVolumes()
+			failed = append(failed, a.drop(ctx, "volume", []string{"volume", "rm"}, volumes)...)
+			failed = append(failed, a.drop(ctx, "dependency volume", []string{"volume", "rm"}, deps)...)
 			failed = append(failed, a.drop(ctx, "image", []string{"rmi"}, a.orphanImageNames(ctx, rws))...)
 			if len(failed) > 0 {
 				return fmt.Errorf("the cleanup did not finish:\n%s", strings.Join(failed, "\n"))
@@ -107,7 +115,7 @@ func (a *app) reportLeftAlone(ctx context.Context, rws []repoWorktrees) {
 	}
 }
 
-func (a *app) printLeftovers(stale []staleIndex, stacks []orphanStack, volumes, images []string) {
+func (a *app) printLeftovers(stale []staleIndex, stacks []orphanStack, volumes, deps, images []string) {
 	if len(stale) > 0 {
 		fmt.Fprintln(a.out, "recorded indices with no worktree behind them:")
 		for _, s := range stale {
@@ -123,7 +131,8 @@ func (a *app) printLeftovers(stale []staleIndex, stacks []orphanStack, volumes, 
 	for _, kind := range []struct {
 		title string
 		names []string
-	}{{"volumes of removed worktrees:", volumes}, {"images of removed worktrees:", images}} {
+	}{{"volumes of removed worktrees:", volumes},
+		{"dependency volumes of a lockfile no worktree uses any more:", deps}, {"images of removed worktrees:", images}} {
 		if len(kind.names) == 0 {
 			continue
 		}
@@ -136,7 +145,7 @@ func (a *app) printLeftovers(stale []staleIndex, stacks []orphanStack, volumes, 
 
 // cleanQuestion counts only the kinds actually found: naming three of them when
 // one is empty reads as a wider sweep than the one about to run.
-func cleanQuestion(stale []staleIndex, stacks []orphanStack, volumes, images []string) string {
+func cleanQuestion(stale []staleIndex, stacks []orphanStack, volumes, deps, images []string) string {
 	var parts []string
 	if len(stale) > 0 {
 		parts = append(parts, fmt.Sprintf("%d index(es)", len(stale)))
@@ -146,6 +155,9 @@ func cleanQuestion(stale []staleIndex, stacks []orphanStack, volumes, images []s
 	}
 	if len(volumes) > 0 {
 		parts = append(parts, fmt.Sprintf("%d volume(s)", len(volumes)))
+	}
+	if len(deps) > 0 {
+		parts = append(parts, fmt.Sprintf("%d dependency volume(s)", len(deps)))
 	}
 	if len(images) > 0 {
 		parts = append(parts, fmt.Sprintf("%d image(s)", len(images)))
