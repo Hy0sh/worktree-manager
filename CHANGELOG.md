@@ -17,6 +17,10 @@ behaviour, a patch bump carries fixes.
   its name contains the lockfile key. `wtm doctor` lists those that no
   container mounts and that no worktree, nor any registered project's main
   checkout, uses any more, and `wtm clean` without a project drops them.
+  Volumes created by an earlier wtm carry no label and stay manual
+  (`docker volume rm`).
+- Every `down` of a stack now carries `WTM_DEPS_EXTERNAL`, so `--volumes` never
+  treats a dependency volume as owned by the project.
 
 ## [1.6.0] - 2026-11-17
 

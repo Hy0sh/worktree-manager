@@ -173,7 +173,9 @@ func (a *app) downOrphanStacks(ctx context.Context, orphans []orphanStack) []str
 	for _, o := range orphans {
 		dir := a.cfg.Projects[o.Project].Dir
 		client := &stack.Client{Runner: a.runner, Dir: dir, Out: a.out}
-		if err := client.Down(ctx, o.Stack, dir); err != nil {
+		// No worktree left to hash a lockfile from: external alone keeps every
+		// dependency volume out of `--volumes`.
+		if err := client.Down(ctx, o.Stack, dir, []string{"WTM_DEPS_EXTERNAL=true"}); err != nil {
 			failed = append(failed, fmt.Sprintf("  stack %s: %v", o.Stack, err))
 			continue
 		}

@@ -616,8 +616,9 @@ volumes:
 - A volume wtm creates is labelled `wtm.deps-key=<key>` when its name carries
   the key. `wtm doctor` lists those that no container mounts and that no
   worktree, nor any registered project's main checkout, uses any more;
-  `wtm clean` without a project drops them. Images stay: `docker rmi` them by
-  name.
+  `wtm clean` without a project drops them. Volumes created by an earlier wtm
+  carry no label and stay manual: `docker volume rm` them. Images stay:
+  `docker rmi` them by name.
 
 ## How ports are isolated
 
@@ -796,18 +797,18 @@ wtm clean my-app     # that project alone
 wtm clean -y         # do not ask, for a script
 ```
 
-`wtm clean` plays those commands for you, on the four findings that are
-leftovers rather than advice: the recorded indices, and the stacks, volumes and
-images of worktrees that no longer exist. Without a project argument it also
-drops the unused dependency volumes, under their own heading; `wtm clean
-my-app` leaves them, since a lockfile belongs to no single project. It prints
-what it found and asks once. Port clashes stay out, being a configuration matter, and stale dumps,
-whose refresh starts a database; so do the anonymous volumes and the build
-cache, which belong to no project, and the directories
-git has forgotten, which no check can declare expendable. The forgotten
-directories and the anonymous volumes are named at the end of the run anyway, with the command that settles each: a
-finding reported by `doctor` and unmentioned by `clean` reads as the two
-disagreeing.
+`wtm clean` plays those commands for you, on the findings that are leftovers
+rather than advice: the recorded indices, and the stacks, volumes and images of
+worktrees that no longer exist. Without a project argument it also drops the
+unused dependency volumes, under their own heading; `wtm clean my-app` leaves
+them, since a lockfile belongs to no single project. It prints what it found
+and asks once. Port clashes stay out, being a configuration matter, and stale
+dumps, whose refresh starts a database; so do the anonymous volumes and the
+build cache, which belong to no project, and the directories git has
+forgotten, which no check can declare expendable. The forgotten directories
+and the anonymous volumes are named at the end of the run anyway, with the
+command that settles each: a finding reported by `doctor` and unmentioned by
+`clean` reads as the two disagreeing.
 
 Indices go first, because releasing one takes down the stack left at that index
 and sweeps whatever carries its label. Docker is then scanned again before

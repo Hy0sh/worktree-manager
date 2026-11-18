@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -524,6 +525,15 @@ func TestRemoveTakesTheVolumesDownWithTheStack(t *testing.T) {
 	down := lastCall(f, " down")
 	if !strings.Contains(down, "--volumes") {
 		t.Fatalf("remove must take the volumes with the stack, got %q", down)
+	}
+	var env []string
+	for _, c := range f.fake.Calls {
+		if strings.Contains(strings.Join(c.Args, " "), " down") {
+			env = c.Env
+		}
+	}
+	if !slices.Contains(env, "WTM_DEPS_EXTERNAL=true") {
+		t.Fatalf("down must carry WTM_DEPS_EXTERNAL=true, got %v", env)
 	}
 }
 

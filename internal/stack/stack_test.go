@@ -126,11 +126,15 @@ func TestStopKeepsContainersAndVolumes(t *testing.T) {
 func TestDownTakesTheVolumes(t *testing.T) {
 	f := &execx.Fake{}
 	c, _ := newClient(t, f)
-	if err := c.Down(context.Background(), "myapp-wt-1-feat-x", "/wt"); err != nil {
+	env := []string{"WTM_DEPS_EXTERNAL=true"}
+	if err := c.Down(context.Background(), "myapp-wt-1-feat-x", "/wt", env); err != nil {
 		t.Fatalf("Down: %v", err)
 	}
 	if line := f.Lines()[0]; !strings.HasSuffix(line, "compose -p myapp-wt-1-feat-x down --volumes") {
 		t.Fatalf("down call = %q", line)
+	}
+	if got := f.Calls[0].Env; !slices.Equal(got, env) {
+		t.Fatalf("down env = %v, want %v", got, env)
 	}
 }
 

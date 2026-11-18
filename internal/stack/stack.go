@@ -136,8 +136,17 @@ func (c *Client) portHolder(ctx context.Context, err error) string {
 // Down takes a worktree's stack away for good, its volumes included. The
 // anonymous ones carry no compose label: left by a down, nothing finds them
 // again, not even the next up, which mounts fresh ones.
-func (c *Client) Down(ctx context.Context, project, worktreeDir string) error {
-	return c.compose(ctx, worktreeDir, "-p", project, "down", "--volumes")
+// env must match Up's WTM_DEPS_EXTERNAL, or a dependency volume reads as owned
+// by this project and `--volumes` may remove it.
+func (c *Client) Down(ctx context.Context, project, worktreeDir string, env []string) error {
+	_, err := c.Runner.Run(ctx, execx.Cmd{
+		Name: "docker",
+		Args: []string{"compose", "-p", project, "down", "--volumes"},
+		Dir:  worktreeDir,
+		Env:  env,
+		Live: true,
+	})
+	return err
 }
 
 // Stop halts a worktree's stack and keeps its containers, so the next up
