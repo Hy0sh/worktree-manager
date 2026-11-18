@@ -195,6 +195,7 @@ wtm run feat/my-branch -- claude
 wtm run feat/my-branch -- git status
 wtm run feat/my-branch -- scripts/some-compose-script.sh
 wtm logs feat/my-branch              # follows the stack's logs, from the last 200 lines
+wtm logs feat/my-branch --service api --since 1m --no-follow   # one service's last minute, then exit
 cd $(wtm path feat/my-branch)       # a bare `docker compose` there reaches the worktree's
                                      # stack too, through a generated compose.override.yaml,
                                      # unless the project has an override of its own: wtm
@@ -605,9 +606,10 @@ volumes:
   of the first service mounting it by a throwaway `docker compose run`, before
   any container of the stack starts. Creating and filling hold a lock every
   wtm on the machine shares, so a second stack of the same lockfile waits
-  instead of mounting a half-copied tree. The first stack of a lockfile pays
-  the copy, the next ones none. Compose never removes an external volume, so
-  `wtm remove` keeps it.
+  instead of mounting a half-copied tree. A fill cut short, a wtm killed
+  mid-copy included, leaves the volume to be dropped and filled again by the
+  next start. The first stack of a lockfile pays the copy, the next ones none.
+  Compose never removes an external volume, so `wtm remove` keeps it.
 - A bare `docker compose up` outside wtm sees `external: false` and creates
   `shop-deps-local` itself instead of failing on a volume that does not
   exist.

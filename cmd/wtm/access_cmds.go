@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/Hy0sh/worktree-manager/internal/execx"
@@ -74,12 +75,19 @@ func newRunCmd(a *app) *cobra.Command {
 }
 
 func newLogsCmd(a *app) *cobra.Command {
-	return &cobra.Command{
+	var (
+		tail     int
+		since    string
+		noFollow bool
+		services []string
+	)
+	cmd := &cobra.Command{
 		Use:   "logs [project] [branch]",
 		Short: "Follows the logs of the worktree's stack",
 		Long: "Follows the logs of every service of the worktree's stack, from the last\n" +
 			"200 lines, until ctrl+c. It is `wtm run <branch> -- docker compose logs\n" +
-			"--follow --tail 200`. Typed from a worktree, the branch is its own.",
+			"--follow --tail 200`. Typed from a worktree, the branch is its own.\n" +
+			"--no-follow prints and exits, for a script reading the last minute with --since 1m.",
 		Args:              needArgs(0, 2, ""),
 		ValidArgsFunction: a.completeTargets,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -88,9 +96,21 @@ func newLogsCmd(a *app) *cobra.Command {
 				return err
 			}
 			o.Out, o.Stack.Out = os.Stderr, os.Stderr
-			return worktree.Run(cmd.Context(), o, []string{"docker", "compose", "logs", "--follow", "--tail", "200"})
+			argv := []string{"docker", "compose", "logs", "--tail", strconv.Itoa(tail)}
+			if !noFollow {
+				argv = append(argv, "--follow")
+			}
+			if since != "" {
+				argv = append(argv, "--since", since)
+			}
+			return worktree.Run(cmd.Context(), o, append(argv, services...))
 		},
 	}
+	cmd.Flags().IntVar(&tail, "tail", 200, "lines to show from the end of each service's logs")
+	cmd.Flags().StringVar(&since, "since", "", "only logs newer than this, as docker takes it (10m, 2026-11-18T16:27:00Z)")
+	cmd.Flags().BoolVar(&noFollow, "no-follow", false, "print and exit instead of following")
+	cmd.Flags().StringSliceVar(&services, "service", nil, "compose service to show, repeatable (defaults to all)")
+	return cmd
 }
 
 func newPortsCmd(a *app) *cobra.Command {
