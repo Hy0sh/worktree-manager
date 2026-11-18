@@ -79,11 +79,23 @@ func (c *Client) createExternalVolumes(ctx context.Context, dir string, base, en
 	if err != nil || json.Unmarshal([]byte(res.Stdout), &cfg) != nil {
 		return nil
 	}
+	key := ""
+	for _, e := range env {
+		if v, ok := strings.CutPrefix(e, "WTM_DEPS_KEY="); ok {
+			key = v
+		}
+	}
 	for _, v := range cfg.Volumes {
 		if !v.External || v.Name == "" {
 			continue
 		}
-		if _, err := c.Runner.Run(ctx, execx.Cmd{Name: "docker", Args: []string{"volume", "create", v.Name}}); err != nil {
+		args := []string{"volume", "create"}
+		// Only a name carrying the key is a dependency volume, the only kind
+		// wtm may later garbage-collect.
+		if key != "" && strings.Contains(v.Name, key) {
+			args = append(args, "--label", "wtm.deps-key="+key)
+		}
+		if _, err := c.Runner.Run(ctx, execx.Cmd{Name: "docker", Args: append(args, v.Name)}); err != nil {
 			return fmt.Errorf("creating the shared volume %s: %w", v.Name, err)
 		}
 	}

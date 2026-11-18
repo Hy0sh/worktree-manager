@@ -21,6 +21,7 @@ func TestValidateRunEnv(t *testing.T) {
 		"COMPOSE_PROJECT_NAME": "x",
 		"COMPOSE_FILE":         "x",
 		"WTM_DEPS_KEY":         "x",
+		"WTM_DEPS_EXTERNAL":    "x",
 		"A":                    "{{database}}",
 		"B":                    "{{port:db}}",
 		"C":                    "{{port:db:abc}}",
