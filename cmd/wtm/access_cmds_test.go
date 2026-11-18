@@ -24,6 +24,21 @@ func TestRunAndExecRefuseAnEmptyCommand(t *testing.T) {
 	}
 }
 
+// A script reads the last minute of one service and moves on: following never
+// returns, and a whole stack's 200 lines bury the one error it looks for.
+func TestLogsCanPrintTheTailOfOneServiceAndExit(t *testing.T) {
+	f := newAllFixture(t, "")
+	cmd := newLogsCmd(f.app)
+	cmd.SetArgs([]string{"myapp", "feat/a", "--tail", "50", "--since", "1m", "--no-follow", "--service", "back-office"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("logs: %v", err)
+	}
+	lines := f.fake.Lines()
+	if line := lines[len(lines)-1]; !strings.HasSuffix(line, "docker compose logs --tail 50 --since 1m back-office") {
+		t.Fatalf("logs call = %q", line)
+	}
+}
+
 // Typed from inside a worktree, the branch is the one checked out there:
 // making someone spell it out again only invites naming the wrong one.
 func TestPathTakesTheBranchOfTheWorktreeItIsTypedFrom(t *testing.T) {

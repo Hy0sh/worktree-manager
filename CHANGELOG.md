@@ -7,6 +7,20 @@ behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Added
+
+- `wtm logs` takes `--tail N`, `--since`, `--no-follow` and a repeatable
+  `--service`, so a script reads one service's last minute and exits instead
+  of going through `wtm run <branch> -- docker compose logs`.
+
+### Fixed
+
+- A shared volume whose fill was cut short, a wtm killed mid-copy included,
+  is now dropped and filled again by the next start, under the same lock.
+  wtm notes each fill in progress under `~/.config/wtm/seeding/` and clears
+  the note when the copy ends. A volume still mounted by a running stack
+  cannot be dropped: the start stops and says so.
+
 ## [1.7.1] - 2026-11-18
 
 ### Fixed
