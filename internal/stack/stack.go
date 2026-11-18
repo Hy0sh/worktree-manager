@@ -79,11 +79,23 @@ func (c *Client) createExternalVolumes(ctx context.Context, dir string, base, en
 	if err != nil || json.Unmarshal([]byte(res.Stdout), &cfg) != nil {
 		return nil
 	}
+	key := ""
+	for _, e := range env {
+		if v, ok := strings.CutPrefix(e, "WTM_DEPS_KEY="); ok {
+			key = v
+		}
+	}
 	for _, v := range cfg.Volumes {
 		if !v.External || v.Name == "" {
 			continue
 		}
-		if _, err := c.Runner.Run(ctx, execx.Cmd{Name: "docker", Args: []string{"volume", "create", v.Name}}); err != nil {
+		args := []string{"volume", "create"}
+		// Only a name carrying the key is a dependency volume, the only kind
+		// wtm may later garbage-collect.
+		if key != "" && strings.Contains(v.Name, key) {
+			args = append(args, "--label", "wtm.deps-key="+key)
+		}
+		if _, err := c.Runner.Run(ctx, execx.Cmd{Name: "docker", Args: append(args, v.Name)}); err != nil {
 			return fmt.Errorf("creating the shared volume %s: %w", v.Name, err)
 		}
 	}
@@ -124,8 +136,17 @@ func (c *Client) portHolder(ctx context.Context, err error) string {
 // Down takes a worktree's stack away for good, its volumes included. The
 // anonymous ones carry no compose label: left by a down, nothing finds them
 // again, not even the next up, which mounts fresh ones.
-func (c *Client) Down(ctx context.Context, project, worktreeDir string) error {
-	return c.compose(ctx, worktreeDir, "-p", project, "down", "--volumes")
+// env must match Up's WTM_DEPS_EXTERNAL, or a dependency volume reads as owned
+// by this project and `--volumes` may remove it.
+func (c *Client) Down(ctx context.Context, project, worktreeDir string, env []string) error {
+	_, err := c.Runner.Run(ctx, execx.Cmd{
+		Name: "docker",
+		Args: []string{"compose", "-p", project, "down", "--volumes"},
+		Dir:  worktreeDir,
+		Env:  env,
+		Live: true,
+	})
+	return err
 }
 
 // Stop halts a worktree's stack and keeps its containers, so the next up

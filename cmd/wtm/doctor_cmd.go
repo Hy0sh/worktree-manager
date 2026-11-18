@@ -16,6 +16,7 @@ import (
 	"github.com/Hy0sh/worktree-manager/internal/dockermem"
 	"github.com/Hy0sh/worktree-manager/internal/execx"
 	"github.com/Hy0sh/worktree-manager/internal/stack"
+	"github.com/Hy0sh/worktree-manager/internal/worktree"
 )
 
 // reportPortClashes says which ports two stacks would fight over, between
@@ -86,6 +87,9 @@ type repoWorktrees struct {
 	// left by a pruned administrative directory. They hold no stack, and no
 	// other report can see them: everything else keys off git's listing.
 	Abandoned []string
+	// DepsKeys are the lockfile hashes of the worktrees and of the main checkout,
+	// whose dependency volumes are still in use or about to be reused.
+	DepsKeys []string
 }
 
 func (a *app) liveProjects(ctx context.Context, names []string) []repoWorktrees {
@@ -103,11 +107,12 @@ func (a *app) liveProjects(ctx context.Context, names []string) []repoWorktrees 
 		}
 		repo := filepath.Base(p.Dir)
 		live := make([]string, 0, len(worktrees))
-		var unindexed []string
+		var unindexed, depsKeys []string
 		var drifted []stack.Worktree
 		present := map[string]bool{}
 		for _, wt := range worktrees {
 			present[wt.Branch] = true
+			depsKeys = append(depsKeys, worktree.DepsKey(wt.Path))
 			// Switched outside wtm, listed under its recorded branch: neither
 			// stale for create to release nor an orphan stack for clean to drop.
 			if wt.Holds != "" {
@@ -125,6 +130,9 @@ func (a *app) liveProjects(ctx context.Context, names []string) []repoWorktrees 
 		if !compose.Has(p.Dir) {
 			unindexed = nil
 		}
+		// The next worktree cut from base reuses the main checkout's volumes.
+		depsKeys = append(depsKeys, worktree.DepsKey(p.Dir))
+		depsKeys = slices.DeleteFunc(depsKeys, func(k string) bool { return k == "" })
 		var stale []string
 		for branch := range p.WorktreeIndices {
 			if !present[branch] {
@@ -136,7 +144,8 @@ func (a *app) liveProjects(ctx context.Context, names []string) []repoWorktrees 
 		// failure here is the filesystem's: nothing to report either way.
 		abandoned, _ := client.Abandoned(ctx)
 		out = append(out, repoWorktrees{Repo: repo, Name: name, Live: live,
-			Unindexed: unindexed, Stale: stale, Drifted: drifted, Abandoned: abandoned})
+			Unindexed: unindexed, Stale: stale, Drifted: drifted, Abandoned: abandoned,
+			DepsKeys: depsKeys})
 	}
 	return out
 }
@@ -244,6 +253,11 @@ func (a *app) reportOrphanVolumes(orphans []string) {
 		orphans, fmt.Sprintf("drop them with `docker volume rm %s`", strings.Join(orphans, " ")))
 }
 
+func (a *app) reportOrphanDepsVolumes(orphans []string) {
+	a.section(fmt.Sprintf("%d dependency volume(s) of a lockfile no worktree uses any more:", len(orphans)),
+		orphans, fmt.Sprintf("drop them with `docker volume rm %s`", strings.Join(orphans, " ")))
+}
+
 // reportAnonymousVolumes counts what the orphan report cannot see: volumes an
 // image created on its own, labelled anonymous, that no container mounts.
 // Machine-wide by nature, hence a count and a command rather than an attribution.
@@ -337,6 +351,7 @@ func newDoctorCmd(a *app) *cobra.Command {
 				stacks := a.orphanStackNames(cmd.Context(), rws)
 				volumes := a.orphanVolumeNames(cmd.Context(), rws)
 				images := a.orphanImageNames(cmd.Context(), rws)
+				depsVolumes := a.orphanDepsVolumes(cmd.Context(), rws)
 				a.reportStaleIndices(stale)
 				a.reportDrifted(rws)
 				// Before the three reports it holds back, so a reader meeting
@@ -344,11 +359,12 @@ func newDoctorCmd(a *app) *cobra.Command {
 				a.reportUnindexed(rws)
 				a.reportOrphanStacks(stacks)
 				a.reportOrphanVolumes(volumes)
+				a.reportOrphanDepsVolumes(depsVolumes)
 				a.reportOrphanImages(images)
 				// Each block above ends on its own command line, one per
 				// finding: seven of them on a busy machine, and nothing would
 				// otherwise say a single verb covers the lot.
-				if len(stale)+len(stacks)+len(volumes)+len(images) > 0 {
+				if len(stale)+len(stacks)+len(volumes)+len(images)+len(depsVolumes) > 0 {
 					fmt.Fprintln(a.out, "\n`wtm clean` runs all of that in one go.")
 				}
 				// Last, and outside that sentence: clean does not touch these.

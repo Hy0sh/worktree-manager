@@ -7,6 +7,23 @@ behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+## [1.7.0] - 2026-11-18
+
+### Added
+
+- `WTM_DEPS_EXTERNAL=true` on every compose call, in `wtm env` and in
+  `wtm run`, so a compose file can write
+  `external: ${WTM_DEPS_EXTERNAL:-false}` on its dependency volumes: external
+  under wtm, created by compose itself with a bare `docker compose up`.
+- A dependency volume wtm creates carries the label `wtm.deps-key=<key>` when
+  its name contains the lockfile key. `wtm doctor` lists those that no
+  container mounts and that no worktree, nor any registered project's main
+  checkout, uses any more, and `wtm clean` without a project drops them.
+  Volumes created by an earlier wtm carry no label and stay manual
+  (`docker volume rm`).
+- Every `down` of a stack now carries `WTM_DEPS_EXTERNAL`, so `--volumes` never
+  treats a dependency volume as owned by the project.
+
 ## [1.6.0] - 2026-11-17
 
 ### Added
@@ -1372,7 +1389,8 @@ First tagged release. The whole worktree lifecycle behind one binary:
   identical so worktrees created with it keep working.
 - A project without a compose file is not an error, there is simply no stack.
 
-[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v1.6.0...HEAD
+[Unreleased]: https://github.com/Hy0sh/worktree-manager/compare/v1.7.0...HEAD
+[1.7.0]: https://github.com/Hy0sh/worktree-manager/compare/v1.6.0...v1.7.0
 [1.6.0]: https://github.com/Hy0sh/worktree-manager/compare/v1.5.0...v1.6.0
 [1.5.0]: https://github.com/Hy0sh/worktree-manager/compare/v1.4.1...v1.5.0
 [1.4.1]: https://github.com/Hy0sh/worktree-manager/compare/v1.4.0...v1.4.1

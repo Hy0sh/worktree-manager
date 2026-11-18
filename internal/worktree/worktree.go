@@ -397,7 +397,7 @@ func Remove(ctx context.Context, o Options) error {
 			return err
 		default:
 			stackKnown = true
-			if err := o.Stack.Down(ctx, o.projectName(wt), wt.Path); err != nil {
+			if err := o.Stack.Down(ctx, o.projectName(wt), wt.Path, stackEnv(o, wt, wt.Path)); err != nil {
 				return fmt.Errorf("stopping the stack: %w", err)
 			}
 		}
@@ -479,7 +479,7 @@ func releaseStale(ctx context.Context, o Options, n int) error {
 		// A failed Down means containers may still be running under the old
 		// project name, so the index must stay reserved or the next worktree
 		// allocated there would collide with them: same rule as Stop and Remove.
-		if err := o.Stack.Down(ctx, o.projectName(wt), o.Project.Dir); err != nil {
+		if err := o.Stack.Down(ctx, o.projectName(wt), o.Project.Dir, stackEnv(o, wt, o.Project.Dir)); err != nil {
 			return fmt.Errorf("taking down the stack left at index %d for %s (index kept): %w", n, o.Branch, err)
 		}
 		removeLeftovers(ctx, o, wt)

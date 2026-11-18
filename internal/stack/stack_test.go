@@ -67,8 +67,46 @@ func TestUpCreatesTheExternalVolumes(t *testing.T) {
 			created = append(created, after)
 		}
 	}
-	if !slices.Equal(created, []string{"app-deps-1a2b3c"}) {
+	if !slices.Equal(created, []string{"--label wtm.deps-key=1a2b3c app-deps-1a2b3c"}) {
 		t.Fatalf("only the external volume should be created, got %q", created)
+	}
+}
+
+// Only a volume named after the lockfile key is a dependency volume; the label
+// is what a later cleanup finds it by, so nothing else may carry it.
+func TestUpLabelsOnlyDependencyVolumes(t *testing.T) {
+	cfg := `{"volumes":{
+		"deps":{"name":"app-deps-1a2b3c","external":true},
+		"cache":{"name":"shared-cache","external":true}}}`
+	for name, tc := range map[string]struct {
+		env  []string
+		want []string
+	}{
+		"key in env": {[]string{"WTM_DEPS_KEY=1a2b3c"},
+			[]string{"--label wtm.deps-key=1a2b3c app-deps-1a2b3c", "shared-cache"}},
+		"no key": {nil, []string{"app-deps-1a2b3c", "shared-cache"}},
+	} {
+		f := &execx.Fake{Handler: func(c execx.Cmd) (execx.Result, error) {
+			if strings.Contains(c.String(), "config --format json") {
+				return execx.Result{Stdout: cfg}, nil
+			}
+			return execx.Result{}, nil
+		}}
+		c, _ := newClient(t, f)
+		if err := c.Up(context.Background(), "p", "/wt", nil, tc.env, nil); err != nil {
+			t.Fatalf("%s: Up: %v", name, err)
+		}
+		var created []string
+		for _, l := range f.Lines() {
+			if after, ok := strings.CutPrefix(l, "docker volume create "); ok {
+				created = append(created, after)
+			}
+		}
+		slices.Sort(created)
+		slices.Sort(tc.want)
+		if !slices.Equal(created, tc.want) {
+			t.Fatalf("%s: got %q, want %q", name, created, tc.want)
+		}
 	}
 }
 
@@ -88,11 +126,15 @@ func TestStopKeepsContainersAndVolumes(t *testing.T) {
 func TestDownTakesTheVolumes(t *testing.T) {
 	f := &execx.Fake{}
 	c, _ := newClient(t, f)
-	if err := c.Down(context.Background(), "myapp-wt-1-feat-x", "/wt"); err != nil {
+	env := []string{"WTM_DEPS_EXTERNAL=true"}
+	if err := c.Down(context.Background(), "myapp-wt-1-feat-x", "/wt", env); err != nil {
 		t.Fatalf("Down: %v", err)
 	}
 	if line := f.Lines()[0]; !strings.HasSuffix(line, "compose -p myapp-wt-1-feat-x down --volumes") {
 		t.Fatalf("down call = %q", line)
+	}
+	if got := f.Calls[0].Env; !slices.Equal(got, env) {
+		t.Fatalf("down env = %v, want %v", got, env)
 	}
 }
 

@@ -18,8 +18,8 @@ var lockfiles = []string{
 	"Gemfile.lock", "go.sum", "Cargo.lock",
 }
 
-// depsKey hashes the lockfiles found at dir's root, "" when there is none.
-func depsKey(dir string) string {
+// DepsKey hashes the lockfiles found at dir's root, "" when there is none.
+func DepsKey(dir string) string {
 	h := sha256.New()
 	found := false
 	for _, name := range lockfiles {
@@ -41,8 +41,10 @@ func depsKey(dir string) string {
 // interpolates with.
 func stackEnv(o Options, wt stack.Worktree, dir string) []string {
 	env := portEnv(o, wt)
-	if key := depsKey(dir); key != "" {
+	if key := DepsKey(dir); key != "" {
 		env = append(env, "WTM_DEPS_KEY="+key)
 	}
-	return env
+	// Lets a compose file write `external: ${WTM_DEPS_EXTERNAL:-false}`: external
+	// under wtm (survives `down --volumes`), created by compose itself elsewhere.
+	return append(env, "WTM_DEPS_EXTERNAL=true")
 }

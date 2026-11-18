@@ -596,21 +596,29 @@ services:
       - deps:/app/node_modules
 volumes:
   deps:
-    external: true
+    external: ${WTM_DEPS_EXTERNAL:-false}
     name: shop-deps-${WTM_DEPS_KEY:-local}
 ```
 
-- An `external` volume is created by wtm before `up` when docker lacks it, and
-  docker fills an empty one from the image on first mount: the first stack of a
-  lockfile pays the copy, the next ones none. Compose never removes an external
-  volume, so `wtm remove` keeps it.
+- wtm exports `WTM_DEPS_EXTERNAL=true`, so under wtm the volume is external:
+  created by wtm before `up` when docker lacks it, and docker fills an empty
+  one from the image on first mount. The first stack of a lockfile pays the
+  copy, the next ones none. Compose never removes an external volume, so
+  `wtm remove` keeps it.
+- A bare `docker compose up` outside wtm sees `external: false` and creates
+  `shop-deps-local` itself instead of failing on a volume that does not
+  exist.
 - An image labelled `wtm.shared` survives `wtm remove`, which otherwise drops
   every image the stack built and makes the next one unpack it again.
 - A branch that changes its lockfile gets another key, hence its own volumes:
   it never installs into a tree another stack is running on.
 - Keep a tree a running tool writes into (a bundler cache) per stack.
-- Nothing drops the volumes and images of a lockfile no worktree uses any more:
-  `docker volume rm` and `docker rmi` them by name.
+- A volume wtm creates is labelled `wtm.deps-key=<key>` when its name carries
+  the key. `wtm doctor` lists those that no container mounts and that no
+  worktree, nor any registered project's main checkout, uses any more;
+  `wtm clean` without a project drops them. Volumes created by an earlier wtm
+  carry no label and stay manual: `docker volume rm` them. Images stay:
+  `docker rmi` them by name.
 
 ## How ports are isolated
 
@@ -659,10 +667,15 @@ either way.
 
 ### Host commands: `run_env`
 
-A script run on your machine has no compose file to read: for a port published
-as a literal, wtm exports no variable, so the script falls back to its default
-port, which is the main stack's (it fails when that stack is stopped, and
-writes into it when it runs). `run_env` is a per-project set of variables whose
+For a port published as a literal, wtm exports no variable, so a script run on
+your machine falls back to its default port, which is the main stack's (it
+fails when that stack is stopped, and writes into it when it runs). When the
+project has no override of its own, wtm generates `compose.override.yaml` with
+the rebased ports, and a script that reads it already aims at the worktree's
+stack. When the project has its own override, wtm copies it unchanged and the
+rebased ports live only in `.wtm-ports.yaml`, in the same `ports:` shape: a
+script reading `compose.override.yaml` finds the main stack's ports. Either
+read `.wtm-ports.yaml`, or use `run_env`, a per-project set of variables whose
 values may name a port of the stack:
 
 ```sh
@@ -770,6 +783,10 @@ Then the dumps that commits to the migrations have overtaken, as `backup list`
 counts them, each with its `wtm backup refresh`: advice, never a blocker, for
 the reason given under [Seeding a fresh worktree](#seeding-a-fresh-worktree).
 
+Then the [dependency volumes](#sharing-dependencies-across-stacks) of a
+lockfile no worktree and no main checkout uses any more, when no container
+mounts them; nothing is reported if a registered project cannot be listed.
+
 Last come the anonymous volumes no container mounts, left by images that name
 their own data directory: those belong to no project, so they are counted even
 with an empty registry, with the command that drops them.
@@ -780,16 +797,18 @@ wtm clean my-app     # that project alone
 wtm clean -y         # do not ask, for a script
 ```
 
-`wtm clean` plays those commands for you, on the four findings that are
-leftovers rather than advice: the recorded indices, and the stacks, volumes and
-images of worktrees that no longer exist. It prints what it found and asks
-once. Port clashes stay out, being a configuration matter, and stale dumps,
-whose refresh starts a database; so do the anonymous volumes and the build
-cache, which belong to no project, and the directories
-git has forgotten, which no check can declare expendable. The forgotten
-directories and the anonymous volumes are named at the end of the run anyway, with the command that settles each: a
-finding reported by `doctor` and unmentioned by `clean` reads as the two
-disagreeing.
+`wtm clean` plays those commands for you, on the findings that are leftovers
+rather than advice: the recorded indices, and the stacks, volumes and images of
+worktrees that no longer exist. Without a project argument it also drops the
+unused dependency volumes, under their own heading; `wtm clean my-app` leaves
+them, since a lockfile belongs to no single project. It prints what it found
+and asks once. Port clashes stay out, being a configuration matter, and stale
+dumps, whose refresh starts a database; so do the anonymous volumes and the
+build cache, which belong to no project, and the directories git has
+forgotten, which no check can declare expendable. The forgotten directories
+and the anonymous volumes are named at the end of the run anyway, with the
+command that settles each: a finding reported by `doctor` and unmentioned by
+`clean` reads as the two disagreeing.
 
 Indices go first, because releasing one takes down the stack left at that index
 and sweeps whatever carries its label. Docker is then scanned again before

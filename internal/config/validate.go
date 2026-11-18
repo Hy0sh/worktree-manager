@@ -13,7 +13,7 @@ var (
 	envKey      = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
 	template    = regexp.MustCompile(`\{\{[^}]*\}\}`)
 	portUse     = regexp.MustCompile(`^\{\{port:([^:{}]*):([0-9]+)\}\}$`)
-	reservedEnv = []string{"COMPOSE_PROJECT_NAME", "COMPOSE_FILE", "WTM_DEPS_KEY"}
+	reservedEnv = []string{"COMPOSE_PROJECT_NAME", "COMPOSE_FILE", "WTM_DEPS_KEY", "WTM_DEPS_EXTERNAL"}
 )
 
 const runEnvForm = "{{port:<service>:<container port>}}"
