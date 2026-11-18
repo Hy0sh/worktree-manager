@@ -7,6 +7,17 @@ behaviour, a patch bump carries fixes.
 
 ## [Unreleased]
 
+### Added
+
+- `WTM_DEPS_EXTERNAL=true` on every compose call, in `wtm env` and in
+  `wtm run`, so a compose file can write
+  `external: ${WTM_DEPS_EXTERNAL:-false}` on its dependency volumes: external
+  under wtm, created by compose itself with a bare `docker compose up`.
+- A dependency volume wtm creates carries the label `wtm.deps-key=<key>` when
+  its name contains the lockfile key. `wtm doctor` lists those that no
+  container mounts and that no worktree, nor any registered project's main
+  checkout, uses any more, and `wtm clean` without a project drops them.
+
 ## [1.6.0] - 2026-11-17
 
 ### Added
